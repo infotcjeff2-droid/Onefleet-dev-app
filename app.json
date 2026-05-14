@@ -35,7 +35,8 @@
       "expo-router"
     ],
     "experiments": {
-      "typedRoutes": true
+      "typedRoutes": true,
+      "baseUrl": "/onefleet-app-v1"
     },
     "extra": {
       "eas": {
