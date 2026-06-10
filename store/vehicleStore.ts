@@ -1,18 +1,22 @@
 import { create } from 'zustand';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Vehicle } from '@/types';
 import { mockVehicles } from '@/constants/mockData';
+import { storage } from '@/utils/storage';
+import { fetchFleetSnapshot, hasSupabaseEnv, pushFleetSnapshot } from '@/utils/fleetSync';
 
 const STORAGE_KEY = 'vehicles';
 
 interface VehicleState {
   vehicles: Vehicle[];
   isLoading: boolean;
+  isSyncing: boolean;
+  syncError: string | null;
   searchQuery: string;
   statusFilter: string;
   setSearchQuery: (query: string) => void;
   setStatusFilter: (status: string) => void;
   loadVehicles: () => Promise<void>;
+  syncVehicles: () => Promise<void>;
   addVehicle: (vehicle: Omit<Vehicle, 'id' | 'createdAt'>) => Promise<Vehicle>;
   updateVehicle: (id: string, updates: Partial<Vehicle>) => Promise<void>;
   deleteVehicle: (id: string) => Promise<void>;
@@ -22,9 +26,25 @@ interface VehicleState {
 
 const generateId = () => `v${Date.now()}`;
 
+async function persistVehicles(vehicles: Vehicle[]) {
+  await storage.setItem(STORAGE_KEY, JSON.stringify(vehicles));
+}
+
+function pushVehiclesInBackground(vehicles: Vehicle[], onError: (message: string) => void) {
+  if (!hasSupabaseEnv) {
+    return;
+  }
+
+  void pushFleetSnapshot({ vehicles }).catch((err) => {
+    onError(err instanceof Error ? err.message : 'Vehicle sync failed');
+  });
+}
+
 export const useVehicleStore = create<VehicleState>((set, get) => ({
   vehicles: [],
   isLoading: true,
+  isSyncing: false,
+  syncError: null,
   searchQuery: '',
   statusFilter: 'all',
 
@@ -33,15 +53,38 @@ export const useVehicleStore = create<VehicleState>((set, get) => ({
 
   loadVehicles: async () => {
     try {
-      const stored = await AsyncStorage.getItem(STORAGE_KEY);
+      const stored = await storage.getItem(STORAGE_KEY);
       if (stored) {
         set({ vehicles: JSON.parse(stored), isLoading: false });
       } else {
         set({ vehicles: mockVehicles, isLoading: false });
-        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(mockVehicles));
+        await persistVehicles(mockVehicles);
       }
     } catch {
       set({ vehicles: mockVehicles, isLoading: false });
+    }
+  },
+
+  syncVehicles: async () => {
+    if (!hasSupabaseEnv) {
+      return;
+    }
+
+    set({ isSyncing: true, syncError: null });
+    try {
+      const remote = await fetchFleetSnapshot();
+      if (remote?.vehicles?.length) {
+        set({ vehicles: remote.vehicles });
+        await persistVehicles(remote.vehicles);
+      } else {
+        const localVehicles = get().vehicles.length ? get().vehicles : mockVehicles;
+        await persistVehicles(localVehicles);
+        await pushFleetSnapshot({ vehicles: localVehicles });
+      }
+    } catch (err) {
+      set({ syncError: err instanceof Error ? err.message : 'Vehicle sync failed' });
+    } finally {
+      set({ isSyncing: false });
     }
   },
 
@@ -53,27 +96,26 @@ export const useVehicleStore = create<VehicleState>((set, get) => ({
     };
     const updated = [...get().vehicles, newVehicle];
     set({ vehicles: updated });
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    await persistVehicles(updated);
+    pushVehiclesInBackground(updated, (message) => set({ syncError: message }));
     return newVehicle;
   },
 
   updateVehicle: async (id, updates) => {
-    const updated = get().vehicles.map((v) =>
-      v.id === id ? { ...v, ...updates } : v
-    );
+    const updated = get().vehicles.map((v) => (v.id === id ? { ...v, ...updates } : v));
     set({ vehicles: updated });
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    await persistVehicles(updated);
+    pushVehiclesInBackground(updated, (message) => set({ syncError: message }));
   },
 
   deleteVehicle: async (id) => {
     const updated = get().vehicles.filter((v) => v.id !== id);
     set({ vehicles: updated });
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    await persistVehicles(updated);
+    pushVehiclesInBackground(updated, (message) => set({ syncError: message }));
   },
 
-  getVehicleById: (id) => {
-    return get().vehicles.find((v) => v.id === id);
-  },
+  getVehicleById: (id) => get().vehicles.find((v) => v.id === id),
 
   getFilteredVehicles: () => {
     const { vehicles, searchQuery, statusFilter } = get();

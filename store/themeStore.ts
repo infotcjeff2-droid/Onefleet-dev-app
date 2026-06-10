@@ -8,7 +8,7 @@ interface ThemeState {
 
 export const useThemeStore = create<ThemeState>((set) => ({
   colors: defaultColors,
-  isDark: true,
+  isDark: false,
 }));
 
 export { defaultColors };

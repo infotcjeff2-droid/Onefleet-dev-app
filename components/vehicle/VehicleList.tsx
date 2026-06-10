@@ -11,10 +11,12 @@ import { SearchBar } from './SearchBar';
 import { FilterChips } from './FilterChips';
 import { colors, spacing, typography } from '@/constants/theme';
 import { Vehicle } from '@/types';
+import { useTranslation } from '@/i18n';
 
 export function VehicleList() {
   const router = useRouter();
   const scrollViewRef = useRef<ScrollView>(null);
+  const { t } = useTranslation();
   const {
     isLoading,
     searchQuery,
@@ -72,10 +74,12 @@ export function VehicleList() {
         <SearchBar
           value={searchQuery}
           onChangeText={setSearchQuery}
+          t={t}
         />
         <FilterChips
           selected={statusFilter}
           onSelect={setStatusFilter}
+          t={t}
         />
 
         {vehicles.length === 0 ? (
@@ -83,15 +87,15 @@ export function VehicleList() {
             <View style={styles.emptyIcon}>
               <Car size={48} color={colors.textTertiary} />
             </View>
-            <Text style={styles.emptyTitle}>No vehicles found</Text>
+            <Text style={styles.emptyTitle}>{t('vehicles.noVehicles')}</Text>
             <Text style={styles.emptySubtitle}>
               {searchQuery
                 ? `No results for "${searchQuery}"`
-                : 'Add your first vehicle to get started'}
+                : t('vehicles.addFirst')}
             </Text>
             {!searchQuery && (
               <Button
-                title="Add Vehicle"
+                title={t('vehicles.addTitle')}
                 onPress={handleAddPress}
                 icon={<Plus size={18} color="#FFF" />}
                 style={{ marginTop: spacing.lg }}
@@ -119,7 +123,7 @@ export function VehicleList() {
       {vehicles.length > 0 && (
         <View style={styles.fabContainer}>
           <Button
-            title="Add Vehicle"
+            title={t('vehicles.addTitle')}
             onPress={handleAddPress}
             icon={<Plus size={18} color="#FFF" />}
             fullWidth

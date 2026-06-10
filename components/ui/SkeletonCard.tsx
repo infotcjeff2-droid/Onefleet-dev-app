@@ -34,7 +34,7 @@ export function SkeletonCard({ style }: SkeletonCardProps) {
       <View style={styles.imagePlaceholder}>
         <Animated.View style={[styles.shimmerOverlay, shimmerStyle]}>
           <LinearGradient
-            colors={['transparent', 'rgba(255,255,255,0.08)', 'transparent']}
+            colors={['transparent', 'rgba(0,0,0,0.06)', 'transparent']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.shimmerGradient}

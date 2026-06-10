@@ -1,4 +1,7 @@
 import { Vehicle } from '@/types';
+import { Driver } from '@/store/driverStore';
+
+export { type Driver };
 
 export const mockVehicles: Vehicle[] = [
   {
@@ -164,7 +167,7 @@ export const transmissionLabels: Record<string, string> = {
   manual: 'Manual',
 };
 
-export type DeliveryStatus = 'pending' | 'assigned' | 'in_transit' | 'delivered' | 'signed';
+export type DeliveryStatus = 'pending' | 'assigned' | 'in_transit' | 'delivered' | 'signed' | 'expired';
 
 export interface DeliveryOrder {
   id: string;
@@ -185,20 +188,6 @@ export interface DeliveryOrder {
   signedAt?: string;
   createdAt: string;
 }
-
-export interface Driver {
-  id: string;
-  name: string;
-  phone: string;
-  vehiclePlate?: string;
-  status: 'available' | 'busy' | 'offline';
-}
-
-export const mockDrivers: Driver[] = [
-  { id: 'd001', name: 'John Smith', phone: '+1234567890', vehiclePlate: 'ABC-1234', status: 'available' },
-  { id: 'd002', name: 'Mike Johnson', phone: '+1234567891', vehiclePlate: 'XYZ-5678', status: 'busy' },
-  { id: 'd003', name: 'David Lee', phone: '+1234567892', vehiclePlate: 'DEF-9012', status: 'available' },
-];
 
 export const mockDeliveries: DeliveryOrder[] = [
   {
@@ -221,14 +210,14 @@ export const mockDeliveries: DeliveryOrder[] = [
     customerName: 'Global Trading',
     customerPhone: '+1234567891',
     pickupAddress: '789 Warehouse Blvd, Port Area',
-    pickupTime: '2026-05-13 11:00',
+    pickupTime: '2026-05-27 10:00',
     dropoffAddress: '321 Office Tower, Business Park',
     cargoDescription: 'Office Furniture - Desks & Chairs',
     cargoWeight: 300,
     status: 'assigned',
     assignedDriverId: 'd001',
-    assignedDriverName: 'John Smith',
-    createdAt: '2026-05-13T09:00:00Z',
+    assignedDriverName: 'Driver',
+    createdAt: '2026-05-27T09:00:00Z',
   },
   {
     id: 'del003',
@@ -313,8 +302,10 @@ export const mockDeliveries: DeliveryOrder[] = [
   },
 ];
 
-export const statusLabels: Record<string, string> = {
-  active: 'Active',
-  maintenance: 'Maintenance',
-  inactive: 'Inactive',
-};
+export function getStatusLabels(t: (key: string) => string) {
+  return {
+    active: t('vehicles.active'),
+    maintenance: t('vehicles.maintenance'),
+    inactive: t('vehicles.inactive'),
+  };
+}

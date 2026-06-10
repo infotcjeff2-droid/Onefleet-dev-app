@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Vehicle } from '@/types';
 import { colors, borderRadius, spacing, typography } from '@/constants/theme';
 import { statusLabels } from '@/constants/mockData';
+import { useTranslation } from '@/i18n';
 
 interface VehicleCardProps {
   vehicle: Vehicle;
@@ -20,6 +21,7 @@ function formatMileage(miles: number): string {
 }
 
 export function VehicleCard({ vehicle, onPress, index = 0 }: VehicleCardProps) {
+  const { t } = useTranslation();
 
   return (
     <Pressable
@@ -39,7 +41,7 @@ export function VehicleCard({ vehicle, onPress, index = 0 }: VehicleCardProps) {
           <View style={styles.imageOverlay} />
           <View style={styles.statusBadge}>
             <Badge
-              label={statusLabels[vehicle.status]}
+              label={t('vehicles.' + vehicle.status)}
               variant={vehicle.status}
               dot
               delay={index * 50}

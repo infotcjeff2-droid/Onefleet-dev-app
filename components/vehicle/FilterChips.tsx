@@ -1,19 +1,20 @@
-import { ScrollView, Pressable, Text, StyleSheet, View } from 'react-native';
+import { ScrollView, Pressable, Text, StyleSheet } from 'react-native';
 import { colors, borderRadius, spacing, typography } from '@/constants/theme';
-
-const filters = [
-  { key: 'all', label: 'All' },
-  { key: 'active', label: 'Active' },
-  { key: 'maintenance', label: 'Maintenance' },
-  { key: 'inactive', label: 'Inactive' },
-];
 
 interface FilterChipsProps {
   selected: string;
   onSelect: (key: string) => void;
+  t?: (key: string) => string;
 }
 
-export function FilterChips({ selected, onSelect }: FilterChipsProps) {
+export function FilterChips({ selected, onSelect, t }: FilterChipsProps) {
+  const filters = [
+    { key: 'all', label: t ? t('vehicles.all') : 'All' },
+    { key: 'active', label: t ? t('vehicles.active') : 'Active' },
+    { key: 'maintenance', label: t ? t('vehicles.maintenance') : 'Maintenance' },
+    { key: 'inactive', label: t ? t('vehicles.inactive') : 'Inactive' },
+  ];
+
   return (
     <ScrollView
       horizontal

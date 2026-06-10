@@ -3,14 +3,18 @@ import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Pre
 import { Link, useRouter, Redirect } from 'expo-router';
 import { Mail, Lock, Shield, Truck } from 'lucide-react-native';
 import { useAuthStore } from '@/store/authStore';
+import { useUserManagementStore } from '@/store/userManagementStore';
 import { Button } from '@/components/ui/Button';
 import { TextInput } from '@/components/ui/TextInput';
 import { SocialButtons } from '@/components/auth/SocialButtons';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
+import { useTranslation } from '@/i18n';
 
 export default function LoginScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
   const { isAuthenticated, isLoading, login, checkAuth } = useAuthStore();
+  const loadUsers = useUserManagementStore((s) => s.loadUsers);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -18,6 +22,7 @@ export default function LoginScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
+    loadUsers();
     checkAuth();
   }, []);
 
@@ -37,7 +42,7 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
-      setError('Please enter email and password');
+      setError(t('auth.enterEmailPassword'));
       return;
     }
     setError('');
@@ -47,7 +52,7 @@ export default function LoginScreen() {
     if (result.success) {
       router.replace('/(tabs)');
     } else {
-      setError(result.error || 'Login failed');
+      setError(result.error || t('auth.loginFailed'));
       setPassword('');
     }
   };
@@ -103,7 +108,7 @@ export default function LoginScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -117,44 +122,44 @@ export default function LoginScreen() {
               <Shield size={12} color={colors.primary} />
             </View>
           </View>
-          <Text style={styles.tagline}>Vehicle Fleet Management</Text>
+          <Text style={styles.tagline}>{t('auth.tagline')}</Text>
         </View>
 
         <View style={styles.form}>
-          <Text style={styles.welcomeTitle}>Welcome back</Text>
-          <Text style={styles.welcomeSubtitle}>Sign in to manage your fleet</Text>
+          <Text style={styles.welcomeTitle}>{t('auth.welcome')}</Text>
+          <Text style={styles.welcomeSubtitle}>{t('auth.welcomeSub')}</Text>
 
           <TextInput
-            label="Email"
-            placeholder="you@example.com"
+            label={t('auth.email')}
+            placeholder={t('auth.emailPlaceholder')}
             value={email}
             onChangeText={(v) => { setEmail(v); setError(''); }}
             keyboardType="email-address"
             autoCapitalize="none"
             autoComplete="email"
             icon={<Mail size={18} color={colors.textSecondary} />}
-            error={error && !error.includes('password') ? error : undefined}
+            error={error && !error.includes(t('auth.password')) ? error : undefined}
           />
 
           <TextInput
-            label="Password"
-            placeholder="Enter your password"
+            label={t('auth.password')}
+            placeholder={t('auth.passwordPlaceholder')}
             value={password}
             onChangeText={(v) => { setPassword(v); setError(''); }}
             secureTextEntry
             autoComplete="password"
             icon={<Lock size={18} color={colors.textSecondary} />}
-            error={error && error.includes('password') ? error : undefined}
+            error={error && error.includes(t('auth.password')) ? error : undefined}
           />
 
           <View style={styles.forgotRow}>
             <Pressable>
-              <Text style={styles.forgotText}>Forgot password?</Text>
+              <Text style={styles.forgotText}>{t('auth.forgotPassword')}</Text>
             </Pressable>
           </View>
 
           <Button
-            title="Sign In"
+            title={t('auth.signIn')}
             onPress={handleLogin}
             loading={isSubmitting}
             fullWidth
@@ -171,7 +176,7 @@ export default function LoginScreen() {
                 pressed && { opacity: 0.7 },
               ]}
             >
-              <Text style={styles.demoButtonText}>Try Demo Account</Text>
+              <Text style={styles.demoButtonText}>{t('auth.tryDemo')}</Text>
             </Pressable>
             <View style={styles.roleButtonsRow}>
               <Pressable
@@ -182,7 +187,7 @@ export default function LoginScreen() {
                 ]}
               >
                 <Shield size={14} color={colors.primary} />
-                <Text style={styles.roleButtonText}>Admin</Text>
+                <Text style={styles.roleButtonText}>{t('auth.admin')}</Text>
               </Pressable>
               <Pressable
                 onPress={handleCompanyLogin}
@@ -194,7 +199,7 @@ export default function LoginScreen() {
                 <View style={[styles.roleIconBox, { backgroundColor: colors.secondaryGlow }]}>
                   <Text style={styles.roleIconText}>C</Text>
                 </View>
-                <Text style={styles.roleButtonText}>Company</Text>
+                <Text style={styles.roleButtonText}>{t('auth.company')}</Text>
               </Pressable>
               <Pressable
                 onPress={handleDriverLogin}
@@ -206,17 +211,17 @@ export default function LoginScreen() {
                 <View style={[styles.roleIconBox, { backgroundColor: colors.accentSecondary + '30' }]}>
                   <Truck size={12} color={colors.accentSecondary} />
                 </View>
-                <Text style={styles.roleButtonText}>Driver</Text>
+                <Text style={styles.roleButtonText}>{t('auth.driver')}</Text>
               </Pressable>
             </View>
           </View>
         </View>
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>Don't have an account?</Text>
+          <Text style={styles.footerText}>{t('auth.noAccount')}</Text>
           <Link href="/register" asChild>
             <Pressable>
-              <Text style={styles.footerLink}> Sign up</Text>
+              <Text style={styles.footerLink}> {t('auth.signUp')}</Text>
             </Pressable>
           </Link>
         </View>
@@ -240,7 +245,8 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: spacing['2xl'],
     paddingTop: 80,
-    paddingBottom: spacing['3xl'],
+    paddingBottom: spacing['4xl'],
+    minHeight: '100%',
   },
   header: {
     alignItems: 'center',

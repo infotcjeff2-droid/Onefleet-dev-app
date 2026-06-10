@@ -4,9 +4,11 @@ import { Link, useRouter } from 'expo-router';
 import { Mail, Lock, User, ArrowLeft } from 'lucide-react-native';
 import { Button } from '@/components/ui/Button';
 import { TextInput } from '@/components/ui/TextInput';
+import { useTranslation } from '@/i18n';
 import { colors, spacing, typography } from '@/constants/theme';
 
 export default function RegisterScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -22,22 +24,22 @@ export default function RegisterScreen() {
     if (/[A-Z]/.test(pwd)) score++;
     if (/[0-9]/.test(pwd)) score++;
     if (/[^A-Za-z0-9]/.test(pwd)) score++;
-    if (score <= 1) return { label: 'Weak', color: colors.danger, pct: 25 };
-    if (score === 2) return { label: 'Fair', color: colors.warning, pct: 50 };
-    if (score === 3) return { label: 'Good', color: colors.secondary, pct: 75 };
-    return { label: 'Strong', color: colors.success, pct: 100 };
+    if (score <= 1) return { label: t('auth.weak'), color: colors.danger, pct: 25 };
+    if (score === 2) return { label: t('auth.fair'), color: colors.warning, pct: 50 };
+    if (score === 3) return { label: t('auth.good'), color: colors.secondary, pct: 75 };
+    return { label: t('auth.strong'), color: colors.success, pct: 100 };
   };
 
   const strength = getPasswordStrength(password);
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
-    if (!name.trim()) newErrors.name = 'Name is required';
-    if (!email.trim()) newErrors.email = 'Email is required';
-    else if (!/\S+@\S+\.\S+/.test(email)) newErrors.email = 'Invalid email format';
-    if (!password) newErrors.password = 'Password is required';
-    else if (password.length < 6) newErrors.password = 'Password must be at least 6 characters';
-    if (password !== confirmPassword) newErrors.confirmPassword = 'Passwords do not match';
+    if (!name.trim()) newErrors.name = t('error.nameRequired');
+    if (!email.trim()) newErrors.email = t('error.emailRequired');
+    else if (!/\S+@\S+\.\S+/.test(email)) newErrors.email = t('error.invalidEmailFormat');
+    if (!password) newErrors.password = t('error.passwordRequired');
+    else if (password.length < 6) newErrors.password = t('error.passwordMinLength');
+    if (password !== confirmPassword) newErrors.confirmPassword = t('error.passwordsDoNotMatch');
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -56,10 +58,10 @@ export default function RegisterScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.topBar}>
-        <Pressable onPress={() => router.back()} style={styles.backButton}>
+        <Pressable onPress={() => router.canGoBack() ? router.back() : router.replace('/(auth)/login')} style={styles.backButton}>
           <ArrowLeft size={20} color={colors.textPrimary} />
         </Pressable>
-        <Text style={styles.topBarTitle}>Create Account</Text>
+        <Text style={styles.topBarTitle}>{t('auth.createAccount')}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -68,13 +70,13 @@ export default function RegisterScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.title}>Join FleetPro</Text>
-        <Text style={styles.subtitle}>Create your account to start managing your fleet</Text>
+        <Text style={styles.title}>{t('auth.welcome')}</Text>
+        <Text style={styles.subtitle}>{t('auth.welcomeSub')}</Text>
 
         <View style={styles.form}>
           <TextInput
-            label="Full Name"
-            placeholder="John Doe"
+            label={t('auth.fullName')}
+            placeholder={t('auth.namePlaceholder')}
             value={name}
             onChangeText={(v) => { setName(v); setErrors((e) => ({ ...e, name: '' })); }}
             error={errors.name}
@@ -83,8 +85,8 @@ export default function RegisterScreen() {
           />
 
           <TextInput
-            label="Email"
-            placeholder="you@example.com"
+            label={t('auth.email')}
+            placeholder={t('auth.emailPlaceholder')}
             value={email}
             onChangeText={(v) => { setEmail(v); setErrors((e) => ({ ...e, email: '' })); }}
             error={errors.email}
@@ -95,8 +97,8 @@ export default function RegisterScreen() {
           />
 
           <TextInput
-            label="Password"
-            placeholder="Create a password"
+            label={t('auth.password')}
+            placeholder={t('auth.passwordPlaceholder')}
             value={password}
             onChangeText={(v) => { setPassword(v); setErrors((e) => ({ ...e, password: '' })); }}
             error={errors.password}
@@ -120,8 +122,8 @@ export default function RegisterScreen() {
           )}
 
           <TextInput
-            label="Confirm Password"
-            placeholder="Confirm your password"
+            label={t('auth.confirmPassword')}
+            placeholder={t('auth.confirmPasswordPlaceholder')}
             value={confirmPassword}
             onChangeText={(v) => { setConfirmPassword(v); setErrors((e) => ({ ...e, confirmPassword: '' })); }}
             error={errors.confirmPassword}
@@ -133,14 +135,15 @@ export default function RegisterScreen() {
           <Pressable style={styles.termsRow}>
             <View style={styles.checkbox} />
             <Text style={styles.termsText}>
-              I agree to the{' '}
-              <Text style={styles.termsLink}>Terms of Service</Text> and{' '}
-              <Text style={styles.termsLink}>Privacy Policy</Text>
+              {t('auth.termsText')}{' '}
+              <Text style={styles.termsLink}>{t('auth.termsLink')}</Text>{' '}
+              and{' '}
+              <Text style={styles.termsLink}>{t('auth.privacyPolicy')}</Text>
             </Text>
           </Pressable>
 
           <Button
-            title="Create Account"
+            title={t('auth.createAccount')}
             onPress={handleRegister}
             loading={isSubmitting}
             fullWidth
@@ -151,10 +154,10 @@ export default function RegisterScreen() {
       </ScrollView>
 
       <View style={styles.footer}>
-        <Text style={styles.footerText}>Already have an account?</Text>
+        <Text style={styles.footerText}>{t('auth.haveAccount')}</Text>
         <Link href="/login" asChild>
           <Pressable>
-            <Text style={styles.footerLink}> Sign in</Text>
+            <Text style={styles.footerLink}> {t('auth.signIn')}</Text>
           </Pressable>
         </Link>
       </View>

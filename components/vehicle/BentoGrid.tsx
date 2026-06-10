@@ -7,6 +7,7 @@ import { useThemeStore } from '@/store/themeStore';
 import { defaultColors } from '@/store/themeStore';
 import { borderRadius, spacing, typography, statusColors } from '@/constants/theme';
 import { statusLabels, fuelTypeLabels, transmissionLabels } from '@/constants/mockData';
+import { useTranslation } from '@/i18n';
 
 interface BentoGridProps {
   vehicle: Vehicle;
@@ -23,6 +24,7 @@ function daysUntil(dateStr: string): { text: string; urgent: boolean; expired: b
 }
 
 export function BentoGrid({ vehicle }: BentoGridProps) {
+  const { t } = useTranslation();
   const { colors } = useThemeStore();
   const statusColor = statusColors[vehicle.status];
   const insuranceInfo = daysUntil(vehicle.insuranceExpiry);
@@ -61,7 +63,7 @@ export function BentoGrid({ vehicle }: BentoGridProps) {
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <View>
             <Text style={{ fontSize: typography.fontSize.xs, fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 }}>Current Status</Text>
-            <Badge label={statusLabels[vehicle.status]} variant={vehicle.status} size="md" dot style={{ marginTop: spacing.sm }} />
+            <Badge label={t('vehicles.' + vehicle.status)} variant={vehicle.status} size="md" dot style={{ marginTop: spacing.sm }} />
           </View>
           <View style={{ width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', backgroundColor: statusColor.bg }}>
             <View style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: statusColor.dot }} />

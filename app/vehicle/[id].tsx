@@ -9,7 +9,7 @@ import { BentoGrid } from '@/components/vehicle/BentoGrid';
 import { Button } from '@/components/ui/Button';
 import { SkeletonCard } from '@/components/ui/SkeletonCard';
 import { colors, spacing, typography, borderRadius, layout } from '@/constants/theme';
-import { bodyTypeLabels } from '@/constants/mockData';
+import { useTranslation } from '@/i18n';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HEADER_MAX_HEIGHT = 280;
@@ -20,6 +20,7 @@ export default function VehicleDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { getVehicleById, deleteVehicle, isLoading } = useVehicleStore();
+  const { t } = useTranslation();
 
   const [vehicle, setVehicle] = useState(getVehicleById(id));
   const scrollY = useSharedValue(0);
@@ -39,24 +40,24 @@ export default function VehicleDetailScreen() {
   if (!vehicle) {
     return (
       <View style={styles.notFoundContainer}>
-        <Text style={styles.notFoundText}>Vehicle not found</Text>
-        <Button title="Go Back" onPress={() => router.back()} />
+        <Text style={styles.notFoundText}>{t('vehicles.notFound')}</Text>
+        <Button title={t('common.back')} onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)')} />
       </View>
     );
   }
 
   const handleDelete = () => {
     Alert.alert(
-      'Delete Vehicle',
-      `Are you sure you want to delete the ${vehicle.make} ${vehicle.model}? This action cannot be undone.`,
+      t('vehicles.deleteVehicle'),
+      t('vehicles.deleteConfirmMessage', { make: vehicle.make, model: vehicle.model }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Delete',
+          text: t('common.delete'),
           style: 'destructive',
           onPress: async () => {
             await deleteVehicle(id);
-            router.back();
+            router.canGoBack() ? router.back() : router.replace('/(tabs)');
           },
         },
       ]
@@ -65,8 +66,8 @@ export default function VehicleDetailScreen() {
 
   const handleShare = () => {
     Alert.alert(
-      'Share Vehicle',
-      `Sharing ${vehicle.make} ${vehicle.model} (${vehicle.plateNumber})`
+      t('vehicles.shareVehicle'),
+      t('vehicles.shareMessage', { make: vehicle.make, model: vehicle.model, plateNumber: vehicle.plateNumber })
     );
   };
 
@@ -108,21 +109,11 @@ export default function VehicleDetailScreen() {
         }}
       />
 
-      {/* Animated Header */}
-      <Animated.View style={[styles.header, { paddingTop: insets.top }, headerAnimatedStyle]}>
-        <Animated.View style={[styles.headerImage, imageOpacityStyle]}>
-          <Image
-            source={{ uri: vehicle.imageUrl }}
-            style={styles.heroImage}
-            resizeMode="cover"
-          />
-          <View style={styles.imageOverlay} />
-        </Animated.View>
-
-        {/* Top bar */}
+      {/* Top Bar (always on top) */}
+      <View style={[styles.topBarWrapper, { paddingTop: insets.top }]}>
         <View style={styles.topBar}>
           <Pressable
-            onPress={() => router.back()}
+            onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)')}
             style={styles.backBtn}
           >
             <ChevronLeft size={22} color={colors.textPrimary} />
@@ -144,6 +135,18 @@ export default function VehicleDetailScreen() {
             </Pressable>
           </View>
         </View>
+      </View>
+
+      {/* Animated Header Image */}
+      <Animated.View style={[styles.header, headerAnimatedStyle]}>
+        <Animated.View style={[styles.headerImage, imageOpacityStyle]}>
+          <Image
+            source={{ uri: vehicle.imageUrl }}
+            style={styles.heroImage}
+            resizeMode="cover"
+          />
+          <View style={styles.imageOverlay} />
+        </Animated.View>
 
         {/* Hero content */}
         <Animated.View style={[styles.heroContent, imageOpacityStyle]}>
@@ -153,7 +156,7 @@ export default function VehicleDetailScreen() {
           <View style={styles.heroMeta}>
             <Text style={styles.heroYear}>{vehicle.year}</Text>
             <View style={styles.heroDot} />
-            <Text style={styles.heroBodyType}>{bodyTypeLabels[vehicle.bodyType]}</Text>
+            <Text style={styles.heroBodyType}>{t(`vehicles.${vehicle.bodyType}`)}</Text>
             <View style={styles.heroDot} />
             <Text style={styles.heroColor}>{vehicle.color}</Text>
           </View>
@@ -166,16 +169,16 @@ export default function VehicleDetailScreen() {
           scrollY.value = e.nativeEvent.contentOffset.y;
         }}
         scrollEventThrottle={16}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: HEADER_MAX_HEIGHT + insets.top }]}
         showsVerticalScrollIndicator={false}
+        style={styles.scrollView}
       >
-        <View style={{ height: HEADER_MAX_HEIGHT }} />
         <BentoGrid vehicle={vehicle} />
 
         {/* Action Bar */}
         <View style={styles.actionBar}>
           <Button
-            title="Edit"
+            title={t('common.edit')}
             onPress={() => router.push(`/vehicle/add?edit=${vehicle.id}`)}
             variant="secondary"
             size="lg"
@@ -183,7 +186,7 @@ export default function VehicleDetailScreen() {
             style={{ flex: 1, marginRight: spacing.md }}
           />
           <Button
-            title="Delete"
+            title={t('common.delete')}
             onPress={handleDelete}
             variant="danger"
             size="lg"
@@ -236,7 +239,7 @@ const styles = StyleSheet.create({
   },
   imageOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(13, 15, 20, 0.4)',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
   },
   topBar: {
     flexDirection: 'row',
@@ -245,15 +248,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     height: layout.headerHeight,
   },
+  topBarWrapper: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+  },
   backBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(13, 15, 20, 0.6)',
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: 'rgba(0, 0, 0, 0.1)',
   },
   compactTitle: {
     flex: 1,
@@ -262,7 +272,7 @@ const styles = StyleSheet.create({
   compactTitleText: {
     fontSize: typography.fontSize.base,
     fontWeight: '700',
-    color: colors.textPrimary,
+    color: '#FFFFFF',
   },
   topBarActions: {
     flexDirection: 'row',
@@ -272,11 +282,11 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(13, 15, 20, 0.6)',
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: 'rgba(0, 0, 0, 0.1)',
   },
   heroContent: {
     position: 'absolute',
@@ -334,6 +344,9 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingBottom: spacing['3xl'],
+  },
+  scrollView: {
+    zIndex: 1,
   },
   actionBar: {
     flexDirection: 'row',

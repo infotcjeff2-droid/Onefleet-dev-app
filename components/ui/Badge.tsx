@@ -20,12 +20,12 @@ interface BadgeProps {
 }
 
 const variantMap: Record<BadgeVariant, { bg: string; text: string; dot: string }> = {
-  active: { bg: 'rgba(0, 200, 150, 0.28)', text: '#00F0BC', dot: '#00F0BC' },
-  maintenance: { bg: 'rgba(255, 181, 71, 0.32)', text: '#FFCC77', dot: '#FFCC77' },
-  inactive: { bg: 'rgba(90, 97, 120, 0.32)', text: '#B0B7CC', dot: '#B0B7CC' },
-  info: { bg: 'rgba(59, 158, 255, 0.28)', text: '#70BAFF', dot: '#70BAFF' },
-  warning: { bg: 'rgba(255, 181, 71, 0.32)', text: '#FFCC77', dot: '#FFCC77' },
-  danger: { bg: 'rgba(255, 71, 87, 0.32)', text: '#FF7A8A', dot: '#FF7A8A' },
+  active: { bg: 'rgba(0, 168, 122, 0.12)', text: '#00A87A', dot: '#00A87A' },
+  maintenance: { bg: 'rgba(230, 149, 0, 0.12)', text: '#E69500', dot: '#E69500' },
+  inactive: { bg: 'rgba(90, 97, 120, 0.12)', text: '#5A6178', dot: '#5A6178' },
+  info: { bg: 'rgba(43, 127, 212, 0.12)', text: '#2B7FD4', dot: '#2B7FD4' },
+  warning: { bg: 'rgba(230, 149, 0, 0.12)', text: '#E69500', dot: '#E69500' },
+  danger: { bg: 'rgba(217, 63, 74, 0.12)', text: '#D93F4A', dot: '#D93F4A' },
 };
 
 export function Badge({ label, variant = 'active', size = 'sm', dot = false, style, delay = 0 }: BadgeProps) {

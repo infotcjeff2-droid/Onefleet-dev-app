@@ -6,7 +6,7 @@
 body {
   margin: 0;
   padding: 0;
-  background-color: #0D0F14;
+  background-color: #FFFFFF;
   font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -18,14 +18,14 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #161A23;
+  background: #F5F6FA;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #2A3040;
+  background: #C8CAD6;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3D4560;
+  background: #8B92A8;
 }

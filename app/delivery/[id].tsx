@@ -15,13 +15,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { useAuthStore } from '@/store/authStore';
-import { useDeliveryStore } from '@/store/deliveryStore';
-import { mockDrivers } from '@/constants/mockData';
+import { getEffectiveDeliveryStatus, useDeliveryStore } from '@/store/deliveryStore';
 import { DeliveryOrder, DeliveryStatus } from '@/constants/mockData';
+import { useDriverStore } from '@/store/driverStore';
+import { useUserManagementStore } from '@/store/userManagementStore';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 import {
   Package,
-  MapPin,
   Clock,
   User,
   Phone,
@@ -29,23 +29,27 @@ import {
   FileText,
   X,
   CheckCircle,
-  ChevronRight,
   ArrowLeft,
   Scale,
   StickyNote,
+  AlertTriangle,
 } from 'lucide-react-native';
+import { useTranslation } from '@/i18n';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
-const statusConfig: Record<DeliveryStatus, { label: string; color: string; bg: string }> = {
-  pending: { label: 'Pending', color: colors.warning, bg: `${colors.warning}20` },
-  assigned: { label: 'Assigned', color: colors.secondary, bg: `${colors.secondary}20` },
-  in_transit: { label: 'In Transit', color: colors.accent, bg: `${colors.accent}20` },
-  delivered: { label: 'Delivered', color: colors.success, bg: `${colors.success}20` },
-  signed: { label: 'Signed', color: colors.primary, bg: `${colors.primary}20` },
-};
+function buildStatusConfig(t: (key: string) => string): Record<DeliveryStatus, { label: string; color: string; bg: string }> {
+  return {
+    pending: { label: t('delivery.pending'), color: colors.warning, bg: `${colors.warning}20` },
+    assigned: { label: t('delivery.assigned'), color: colors.secondary, bg: `${colors.secondary}20` },
+    in_transit: { label: t('delivery.inTransit'), color: colors.accent, bg: `${colors.accent}20` },
+    delivered: { label: t('delivery.delivered'), color: colors.success, bg: `${colors.success}20` },
+    signed: { label: t('delivery.signed'), color: colors.primary, bg: `${colors.primary}20` },
+    expired: { label: t('delivery.expired'), color: colors.danger, bg: `${colors.danger}20` },
+  };
+}
 
-function InfoRow({ icon, label, value, iconColor }: { icon: React.ReactNode; label: string; value: string; iconColor?: string }) {
+function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
     <View style={styles.infoRow}>
       <View style={styles.infoIcon}>{icon}</View>
@@ -57,7 +61,8 @@ function InfoRow({ icon, label, value, iconColor }: { icon: React.ReactNode; lab
   );
 }
 
-function StatusBadge({ status }: { status: DeliveryStatus }) {
+function StatusBadge({ status, t }: { status: DeliveryStatus; t: (key: string) => string }) {
+  const statusConfig = buildStatusConfig(t);
   const cfg = statusConfig[status];
   return (
     <View style={[styles.badge, { backgroundColor: cfg.bg }]}>
@@ -70,19 +75,39 @@ function AssignDriverModal({
   visible,
   onClose,
   onAssign,
+  drivers,
 }: {
   visible: boolean;
   onClose: () => void;
   onAssign: (driverId: string, driverName: string) => void;
+  drivers: Array<{ id: string; name: string; phone: string; vehiclePlate?: string }>;
 }) {
+  const { t } = useTranslation();
   const [selectedDriverId, setSelectedDriverId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (visible) {
+      useDriverStore.getState().loadDrivers();
+      useUserManagementStore.getState().loadUsers();
+    }
+  }, [visible]);
+
+  useEffect(() => {
+    if (visible) {
+      const validIds = new Set(drivers.map((driver) => driver.id));
+      if (selectedDriverId && !validIds.has(selectedDriverId)) {
+        setSelectedDriverId(null);
+      }
+    }
+  }, [drivers, selectedDriverId, visible]);
 
   const handleConfirm = () => {
     if (!selectedDriverId) {
-      Alert.alert('Error', 'Please select a driver');
+      Alert.alert(t('common.error'), t('delivery.selectDriver'));
       return;
     }
-    const driver = mockDrivers.find((d) => d.id === selectedDriverId);
+
+    const driver = drivers.find((item) => item.id === selectedDriverId);
     if (driver) {
       onAssign(selectedDriverId, driver.name);
       setSelectedDriverId(null);
@@ -95,11 +120,11 @@ function AssignDriverModal({
       <View style={styles.modalOverlay}>
         <Animated.View entering={FadeInUp.springify()} style={styles.modalContent}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Assign Driver</Text>
+            <Text style={styles.modalTitle}>{t('delivery.selectDriverTitle')}</Text>
             <Pressable onPress={onClose} hitSlop={12}><X size={20} color={colors.textSecondary} /></Pressable>
           </View>
           <ScrollView style={styles.driverList}>
-            {mockDrivers.map((driver) => (
+            {drivers.map((driver) => (
               <Pressable
                 key={driver.id}
                 onPress={() => setSelectedDriverId(driver.id)}
@@ -119,8 +144,8 @@ function AssignDriverModal({
             ))}
           </ScrollView>
           <View style={styles.modalActions}>
-            <Button title="Cancel" variant="ghost" onPress={onClose} style={{ flex: 1 }} />
-            <Button title="Confirm" onPress={handleConfirm} style={{ flex: 1 }} disabled={!selectedDriverId} />
+            <Button title={t('common.cancel')} variant="ghost" onPress={onClose} style={{ flex: 1 }} />
+            <Button title={t('common.confirm')} onPress={handleConfirm} style={{ flex: 1 }} disabled={!selectedDriverId} />
           </View>
         </Animated.View>
       </View>
@@ -137,6 +162,7 @@ function SignatureModal({
   onClose: () => void;
   onConfirm: (signatureData: string) => void;
 }) {
+  const { t } = useTranslation();
   const [lines, setLines] = useState<{ x: number; y: number; id: number }[]>([]);
   const [currentLine, setCurrentLine] = useState<{ x: number; y: number }[]>([]);
   const lineIdRef = useRef(0);
@@ -149,7 +175,7 @@ function SignatureModal({
     if (currentLine.length > 0) {
       setLines((prev) => [
         ...prev,
-        ...currentLine.map((p) => ({ ...p, id: lineIdRef.current++ })),
+        ...currentLine.map((point) => ({ ...point, id: lineIdRef.current++ })),
       ]);
       setCurrentLine([]);
     }
@@ -173,10 +199,10 @@ function SignatureModal({
       <View style={styles.modalOverlay}>
         <Animated.View entering={FadeInUp.springify()} style={styles.modalContent}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Electronic Signature</Text>
+            <Text style={styles.modalTitle}>{t('delivery.electronicSignature')}</Text>
             <Pressable onPress={onClose} hitSlop={12}><X size={20} color={colors.textSecondary} /></Pressable>
           </View>
-          <Text style={styles.signatureHint}>Sign below to confirm delivery</Text>
+          <Text style={styles.signatureHint}>{t('delivery.signBelowConfirm')}</Text>
           <Pressable
             style={styles.signaturePad}
             onPressIn={(e) => {
@@ -193,17 +219,17 @@ function SignatureModal({
               {lines.map((point) => (
                 <View key={point.id} style={[styles.signatureDot, { left: point.x - 1, top: point.y - 1 }]} />
               ))}
-              {currentLine.map((point, i) => (
-                <View key={`current-${i}`} style={[styles.signatureDot, { left: point.x - 1, top: point.y - 1 }]} />
+              {currentLine.map((point, index) => (
+                <View key={`current-${index}`} style={[styles.signatureDot, { left: point.x - 1, top: point.y - 1 }]} />
               ))}
               {!hasSignature && (
-                <Text style={styles.signaturePlaceholder}>Draw your signature here</Text>
+                <Text style={styles.signaturePlaceholder}>{t('delivery.drawSignatureHere')}</Text>
               )}
             </View>
           </Pressable>
           <View style={styles.modalActions}>
-            <Button title="Clear" variant="ghost" onPress={handleClear} style={{ flex: 1 }} />
-            <Button title="Confirm Signature" onPress={handleConfirm} style={{ flex: 2 }} disabled={!hasSignature} />
+            <Button title={t('delivery.clear')} variant="ghost" onPress={handleClear} style={{ flex: 1 }} />
+            <Button title={t('delivery.confirmSignature')} onPress={handleConfirm} style={{ flex: 2 }} disabled={!hasSignature} />
           </View>
         </Animated.View>
       </View>
@@ -212,11 +238,14 @@ function SignatureModal({
 }
 
 export default function DeliveryDetailScreen() {
+  const { t } = useTranslation();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { role } = useAuthStore();
-  const { deliveries, assignDriver, updateStatus, addSignature } = useDeliveryStore();
+  const { deliveries, assignDriver, updateStatus, addSignature, removeDriver, syncExpiredDeliveries } = useDeliveryStore();
+  const { drivers, loadDrivers } = useDriverStore();
+  const { users: managedUsers, loadUsers } = useUserManagementStore();
   const isAdmin = role === 'admin' || role === 'company';
 
   const [order, setOrder] = useState<DeliveryOrder | null>(null);
@@ -224,42 +253,81 @@ export default function DeliveryDetailScreen() {
   const [signatureModalVisible, setSignatureModalVisible] = useState(false);
 
   useEffect(() => {
-    const found = deliveries.find((d) => d.id === id);
-    setOrder(found || null);
-  }, [id, deliveries]);
+    syncExpiredDeliveries();
+    const found = deliveries.find((delivery) => delivery.id === id);
+    setOrder(found ? { ...found, status: getEffectiveDeliveryStatus(found) } : null);
+  }, [id, deliveries, syncExpiredDeliveries]);
+
+  useEffect(() => {
+    loadDrivers();
+    loadUsers();
+  }, [loadDrivers, loadUsers]);
+
+  useEffect(() => {
+    if (order?.assignedDriverId) {
+      const validIds = new Set([
+        ...drivers.map((driver) => driver.id),
+        ...managedUsers.filter((user) => user.role === 'driver').map((user) => user.id),
+      ]);
+      if (!validIds.has(order.assignedDriverId)) {
+        removeDriver(order.id);
+      }
+    }
+  }, [drivers, managedUsers, order, removeDriver]);
 
   if (!order) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
+      <View style={[styles.container, { paddingTop: insets.top }]}> 
         <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.notFound}>
           <FileText size={48} color={colors.textTertiary} />
           <Text style={styles.notFoundText}>Order not found</Text>
-          <Button title="Go Back" onPress={() => router.back()} />
+          <Button title="Go Back" onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/delivery')} />
         </View>
       </View>
     );
   }
 
+  const statusConfig = buildStatusConfig(t);
   const statusCfg = statusConfig[order.status];
+  const isExpired = order.status === 'expired';
 
-  const handleAssign = () => setAssignModalVisible(true);
+  const mergedDrivers = [
+    ...drivers,
+    ...managedUsers
+      .filter((managedUser) => managedUser.role === 'driver' && !drivers.some((driver) => driver.id === managedUser.id))
+      .map((driver) => ({ id: driver.id, name: driver.name, phone: '', vehiclePlate: '' })),
+  ];
+
+  const handleAssign = () => {
+    if (isExpired) {
+      Alert.alert(t('delivery.expired'), t('delivery.expiredReadonly'));
+      return;
+    }
+    setAssignModalVisible(true);
+  };
 
   const handleDriverAssign = (driverId: string, driverName: string) => {
     assignDriver(order.id, driverId, driverName);
   };
 
   const handleStartTransit = () => {
-    Alert.alert('Start Transit', 'Mark this delivery as in transit?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Confirm', onPress: () => updateStatus(order.id, 'in_transit') },
+    Alert.alert(t('delivery.startTransit'), 'Mark this delivery as in transit?', [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('common.confirm'),
+        onPress: () => {
+          updateStatus(order.id, 'in_transit');
+          router.replace({ pathname: '/delivery/[id]', params: { id: order.id } });
+        },
+      },
     ]);
   };
 
   const handleMarkDelivered = () => {
-    Alert.alert('Mark Delivered', 'Confirm delivery completed?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Confirm', onPress: () => updateStatus(order.id, 'delivered') },
+    Alert.alert(t('delivery.markDelivered'), t('delivery.confirmDeliveryComplete'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('common.confirm'), onPress: () => updateStatus(order.id, 'delivered') },
     ]);
   };
 
@@ -267,38 +335,39 @@ export default function DeliveryDetailScreen() {
 
   const handleSignatureConfirm = (signatureData: string) => {
     addSignature(order.id, signatureData);
+    router.replace('/(tabs)/delivery');
   };
 
-  const actionButtons: { label: string; onPress: () => void; variant?: 'primary' | 'secondary' | 'danger'; icon?: React.ReactNode }[] = [];
+  const actionButtons: { label: string; onPress: () => void; variant?: 'primary' | 'secondary'; icon?: React.ReactNode }[] = [];
 
-  if (isAdmin && order.status === 'pending') {
-    actionButtons.push({ label: 'Assign Driver', onPress: handleAssign, variant: 'primary', icon: <Truck size={16} color="#fff" /> });
-  }
-  if (!isAdmin && order.status === 'assigned') {
-    actionButtons.push({ label: 'Start Transit', onPress: handleStartTransit, variant: 'primary', icon: <Truck size={16} color="#fff" /> });
-  }
-  if (!isAdmin && order.status === 'in_transit') {
-    actionButtons.push({ label: 'Mark Delivered', onPress: handleMarkDelivered, variant: 'secondary', icon: <CheckCircle size={16} color={colors.primary} /> });
-  }
-  if (!isAdmin && order.status === 'delivered') {
-    actionButtons.push({ label: 'Sign Delivery', onPress: handleSign, variant: 'secondary', icon: <CheckCircle size={16} color={colors.primary} /> });
+  if (!isExpired) {
+    if (isAdmin && order.status === 'pending') {
+      actionButtons.push({ label: t('delivery.assignDriver'), onPress: handleAssign, variant: 'primary', icon: <Truck size={16} color="#fff" /> });
+    }
+    if (!isAdmin && order.status === 'assigned') {
+      actionButtons.push({ label: t('delivery.startTransit'), onPress: handleStartTransit, variant: 'primary', icon: <Truck size={16} color="#fff" /> });
+    }
+    if (!isAdmin && order.status === 'in_transit') {
+      actionButtons.push({ label: t('delivery.markDelivered'), onPress: handleMarkDelivered, variant: 'secondary', icon: <CheckCircle size={16} color={colors.primary} /> });
+    }
+    if (!isAdmin && order.status === 'delivered') {
+      actionButtons.push({ label: t('delivery.signDelivery'), onPress: handleSign, variant: 'secondary', icon: <CheckCircle size={16} color={colors.primary} /> });
+    }
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={[styles.container, { paddingTop: insets.top }]}> 
       <Stack.Screen options={{ headerShown: false }} />
 
-      {/* Top bar */}
       <View style={styles.topBar}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+        <Pressable onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/delivery')} style={styles.backBtn}>
           <ArrowLeft size={20} color={colors.textPrimary} />
         </Pressable>
-        <Text style={styles.topBarTitle}>Order Details</Text>
+        <Text style={styles.topBarTitle}>{t('nav.deliveryDetail')}</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Order header card */}
         <Animated.View entering={FadeInDown.springify()}>
           <Card style={styles.headerCard}>
             <View style={styles.headerTop}>
@@ -306,28 +375,33 @@ export default function DeliveryDetailScreen() {
                 <FileText size={18} color={colors.primary} />
                 <Text style={styles.orderNo}>{order.orderNo}</Text>
               </View>
-              <StatusBadge status={order.status} />
+              <StatusBadge status={order.status} t={t} />
             </View>
-            <View style={[styles.statusTimeline, { borderLeftColor: statusCfg.color }]}>
-              {(['pending', 'assigned', 'in_transit', 'delivered', 'signed'] as DeliveryStatus[]).map((s, i) => {
-                const isDone =
-                  (s === 'pending' && ['assigned', 'in_transit', 'delivered', 'signed'].includes(order.status)) ||
-                  (s === 'assigned' && ['in_transit', 'delivered', 'signed'].includes(order.status)) ||
-                  (s === 'in_transit' && ['delivered', 'signed'].includes(order.status)) ||
-                  (s === 'delivered' && order.status === 'signed') ||
-                  s === order.status;
-                const isCurrent = s === order.status;
+
+            {isExpired && (
+              <View style={styles.expiredBanner}>
+                <AlertTriangle size={16} color={colors.danger} />
+                <Text style={styles.expiredBannerText}>{t('delivery.expiredReadonly')}</Text>
+              </View>
+            )}
+
+            <View style={[styles.statusTimeline, { borderLeftColor: statusCfg.color }]}> 
+              {(['pending', 'assigned', 'in_transit', 'delivered', 'signed', 'expired'] as DeliveryStatus[]).map((status) => {
+                const isCurrent = status === order.status;
+                const isDone = isCurrent || (order.status === 'signed' && status !== 'expired') || (order.status === 'expired' && status === 'expired');
                 return (
-                  <View key={s} style={styles.timelineItem}>
-                    <View style={[
-                      styles.timelineDot,
-                      isDone && { backgroundColor: statusCfg.color, borderColor: statusCfg.color },
-                      isCurrent && styles.timelineDotCurrent,
-                    ]}>
+                  <View key={status} style={styles.timelineItem}>
+                    <View
+                      style={[
+                        styles.timelineDot,
+                        isDone && { backgroundColor: statusCfg.color, borderColor: statusCfg.color },
+                        isCurrent && styles.timelineDotCurrent,
+                      ]}
+                    >
                       {isDone && <CheckCircle size={10} color="#fff" />}
                     </View>
                     <Text style={[styles.timelineLabel, isCurrent && { color: statusCfg.color, fontWeight: '700' }]}>
-                      {statusConfig[s].label}
+                      {statusConfig[status].label}
                     </Text>
                   </View>
                 );
@@ -336,7 +410,6 @@ export default function DeliveryDetailScreen() {
           </Card>
         </Animated.View>
 
-        {/* Customer info */}
         <Animated.View entering={FadeInDown.delay(80).springify()}>
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Customer</Text>
@@ -348,33 +421,41 @@ export default function DeliveryDetailScreen() {
           </View>
         </Animated.View>
 
-        {/* Pickup & Dropoff */}
         <Animated.View entering={FadeInDown.delay(120).springify()}>
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Route</Text>
             <Card style={styles.infoCard}>
-              <View style={styles.routeRow}>
-                <View style={[styles.routeDot, { backgroundColor: colors.primary }]} />
-                <View style={styles.routeLine} />
-                <View style={[styles.routeDot, { backgroundColor: colors.danger }]} />
-              </View>
-              <View style={styles.routeInfo}>
-                <View style={styles.routePoint}>
-                  <Text style={styles.routeLabel}>Pickup</Text>
-                  <Text style={styles.routeAddress}>{order.pickupAddress}</Text>
-                  <Text style={styles.routeTime}>{order.pickupTime}</Text>
+              <View style={styles.routeContainer}>
+                <View style={styles.routeStop}>
+                  <View style={[styles.routeIconCircle, { backgroundColor: `${colors.primary}20` }]}>
+                    <View style={[styles.routeIconDot, { backgroundColor: colors.primary }]} />
+                  </View>
+                  <View style={styles.routeStopInfo}>
+                    <Text style={styles.routeStopLabel}>PICKUP</Text>
+                    <Text style={styles.routeStopAddress}>{order.pickupAddress}</Text>
+                    <Text style={styles.routeStopTime}>{order.pickupTime}</Text>
+                  </View>
                 </View>
-                <View style={[styles.routePoint, { marginTop: spacing['2xl'] }]}>
-                  <Text style={styles.routeLabel}>Dropoff</Text>
-                  <Text style={styles.routeAddress}>{order.dropoffAddress}</Text>
-                  {order.dropoffTime && <Text style={styles.routeTime}>{order.dropoffTime}</Text>}
+
+                <View style={styles.routeConnector}>
+                  <View style={[styles.routeConnectorLine, { backgroundColor: colors.border }]} />
+                </View>
+
+                <View style={styles.routeStop}>
+                  <View style={[styles.routeIconCircle, { backgroundColor: `${colors.danger}20` }]}>
+                    <View style={[styles.routeIconDot, { backgroundColor: colors.danger }]} />
+                  </View>
+                  <View style={styles.routeStopInfo}>
+                    <Text style={styles.routeStopLabel}>DROPOFF</Text>
+                    <Text style={styles.routeStopAddress}>{order.dropoffAddress}</Text>
+                    {order.dropoffTime && <Text style={styles.routeStopTime}>{order.dropoffTime}</Text>}
+                  </View>
                 </View>
               </View>
             </Card>
           </View>
         </Animated.View>
 
-        {/* Cargo */}
         <Animated.View entering={FadeInDown.delay(160).springify()}>
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Cargo</Text>
@@ -392,7 +473,6 @@ export default function DeliveryDetailScreen() {
           </View>
         </Animated.View>
 
-        {/* Driver */}
         {order.assignedDriverName && (
           <Animated.View entering={FadeInDown.delay(200).springify()}>
             <View style={styles.section}>
@@ -407,7 +487,7 @@ export default function DeliveryDetailScreen() {
                     <View style={styles.signedRow}>
                       <CheckCircle size={16} color={colors.success} />
                       <Text style={styles.signedText}>
-                        Signed at {new Date(order.signedAt!).toLocaleString()}
+                        {t('delivery.signedAt')} {new Date(order.signedAt!).toLocaleString()}
                       </Text>
                     </View>
                   </>
@@ -417,18 +497,17 @@ export default function DeliveryDetailScreen() {
           </Animated.View>
         )}
 
-        {/* Action buttons */}
         {actionButtons.length > 0 && (
           <Animated.View entering={FadeInDown.delay(240).springify()} style={styles.actionSection}>
-            {actionButtons.map((btn, i) => (
+            {actionButtons.map((button, index) => (
               <Button
-                key={i}
-                title={btn.label}
-                onPress={btn.onPress}
-                variant={btn.variant || 'primary'}
+                key={index}
+                title={button.label}
+                onPress={button.onPress}
+                variant={button.variant || 'primary'}
                 size="lg"
                 fullWidth
-                icon={btn.icon}
+                icon={button.icon}
               />
             ))}
           </Animated.View>
@@ -441,6 +520,7 @@ export default function DeliveryDetailScreen() {
         visible={assignModalVisible}
         onClose={() => setAssignModalVisible(false)}
         onAssign={handleDriverAssign}
+        drivers={mergedDrivers}
       />
 
       <SignatureModal
@@ -456,93 +536,169 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   scrollView: { flex: 1 },
   topBar: {
+    height: 56,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
   },
   backBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  topBarTitle: { fontSize: typography.fontSize.base, fontWeight: '600', color: colors.textPrimary },
-  notFound: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.lg },
-  notFoundText: { fontSize: typography.fontSize.lg, color: colors.textSecondary, fontWeight: '600' },
-  headerCard: { margin: spacing.lg, padding: spacing.lg },
-  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg },
+  topBarTitle: { fontSize: typography.fontSize.lg, fontWeight: '700', color: colors.textPrimary },
+  headerCard: { marginHorizontal: spacing.lg, marginTop: spacing.lg, padding: spacing.lg },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.md },
   orderNoContainer: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  orderNo: { fontSize: typography.fontSize.xl, fontWeight: '700', color: colors.textPrimary },
+  orderNo: { fontSize: typography.fontSize.lg, fontWeight: '700', color: colors.textPrimary },
   badge: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: borderRadius.full },
-  badgeText: { fontSize: typography.fontSize.xs, fontWeight: '700', textTransform: 'uppercase' },
-  statusTimeline: {
+  badgeText: { fontSize: typography.fontSize.xs, fontWeight: '700' },
+  expiredBanner: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingLeft: spacing.md,
-    borderLeftWidth: 2,
-    marginLeft: spacing.sm,
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: `${colors.danger}10`,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
   },
+  expiredBannerText: { flex: 1, color: colors.danger, fontSize: typography.fontSize.sm, fontWeight: '600' },
+  statusTimeline: { borderLeftWidth: 2, paddingLeft: spacing.md, gap: spacing.sm },
   timelineItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   timelineDot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: colors.surface,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     borderWidth: 2,
     borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: -spacing.md + 1,
+    backgroundColor: colors.card,
   },
-  timelineDotCurrent: { width: 20, height: 20, borderRadius: 10, borderWidth: 2 },
-  timelineLabel: { fontSize: 10, color: colors.textTertiary, fontWeight: '600', marginTop: 2 },
-  section: { paddingHorizontal: spacing.lg, marginTop: spacing.lg },
-  sectionTitle: { fontSize: typography.fontSize.sm, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: spacing.sm, marginLeft: spacing.xs },
-  infoCard: { padding: 0, overflow: 'hidden' },
-  infoRow: { flexDirection: 'row', alignItems: 'flex-start', padding: spacing.lg, gap: spacing.md },
+  timelineDotCurrent: { transform: [{ scale: 1.05 }] },
+  timelineLabel: { fontSize: typography.fontSize.sm, color: colors.textSecondary },
+  section: { marginTop: spacing.xl, paddingHorizontal: spacing.lg },
+  sectionTitle: { fontSize: typography.fontSize.base, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.md },
+  infoCard: { padding: spacing.lg },
+  infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   infoIcon: { marginTop: 2 },
   infoContent: { flex: 1 },
-  infoLabel: { fontSize: typography.fontSize.xs, color: colors.textTertiary, fontWeight: '600', textTransform: 'uppercase', marginBottom: 2 },
-  infoValue: { fontSize: typography.fontSize.base, color: colors.textPrimary, fontWeight: '500' },
-  divider: { height: 1, backgroundColor: colors.border, marginLeft: spacing.lg + 16 + spacing.md },
-  routeRow: { width: 24, alignItems: 'center', paddingLeft: spacing.lg, paddingTop: spacing.lg },
-  routeLine: { width: 2, flex: 1, backgroundColor: colors.border, minHeight: 60 },
-  routeDot: { width: 12, height: 12, borderRadius: 6, marginLeft: -5 },
-  routeInfo: { flex: 1, padding: spacing.lg, paddingTop: 0, marginTop: -spacing.lg },
-  routePoint: {},
-  routeLabel: { fontSize: typography.fontSize.xs, color: colors.textTertiary, fontWeight: '600', textTransform: 'uppercase', marginBottom: 2 },
-  routeAddress: { fontSize: typography.fontSize.sm, color: colors.textPrimary, fontWeight: '500' },
-  routeTime: { fontSize: typography.fontSize.xs, color: colors.textSecondary, marginTop: 2 },
-  signedRow: { flexDirection: 'row', alignItems: 'center', padding: spacing.lg, gap: spacing.sm },
+  infoLabel: { fontSize: typography.fontSize.xs, color: colors.textTertiary, marginBottom: 4, textTransform: 'uppercase' },
+  infoValue: { fontSize: typography.fontSize.base, color: colors.textPrimary, lineHeight: 22 },
+  divider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.md },
+  routeContainer: { gap: spacing.sm },
+  routeStop: { flexDirection: 'row', gap: spacing.md },
+  routeIconCircle: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  routeIconDot: { width: 10, height: 10, borderRadius: 5 },
+  routeStopInfo: { flex: 1 },
+  routeStopLabel: { fontSize: typography.fontSize.xs, fontWeight: '700', color: colors.textTertiary, marginBottom: 4 },
+  routeStopAddress: { fontSize: typography.fontSize.base, color: colors.textPrimary },
+  routeStopTime: { fontSize: typography.fontSize.sm, color: colors.textSecondary, marginTop: 4 },
+  routeConnector: { paddingLeft: 11, height: 20 },
+  routeConnectorLine: { width: 2, flex: 1 },
+  signedRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   signedText: { fontSize: typography.fontSize.sm, color: colors.success, fontWeight: '600' },
-  actionSection: { paddingHorizontal: spacing.lg, marginTop: spacing.xl, gap: spacing.md },
-  modalOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: colors.surface, borderTopLeftRadius: borderRadius.xl, borderTopRightRadius: borderRadius.xl, maxHeight: '80%', paddingBottom: spacing['3xl'] },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.border },
+  actionSection: { marginTop: spacing.xl, paddingHorizontal: spacing.lg, gap: spacing.md },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: colors.card,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    maxHeight: '82%',
+    paddingBottom: spacing.xl,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
   modalTitle: { fontSize: typography.fontSize.lg, fontWeight: '700', color: colors.textPrimary },
-  driverList: { maxHeight: 300, paddingHorizontal: spacing.lg },
-  driverItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.border, gap: spacing.md },
-  driverItemSelected: { backgroundColor: colors.primaryGlow, borderRadius: borderRadius.md, paddingHorizontal: spacing.sm },
-  driverAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
-  driverAvatarText: { fontSize: typography.fontSize.lg, fontWeight: '700', color: '#fff' },
+  driverList: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
+  driverItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  driverItemSelected: { borderColor: colors.primary, backgroundColor: colors.primaryGlow },
+  driverAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  driverAvatarText: { color: '#fff', fontWeight: '700', fontSize: typography.fontSize.base },
   driverInfo: { flex: 1 },
   driverName: { fontSize: typography.fontSize.base, fontWeight: '600', color: colors.textPrimary },
   driverDetail: { fontSize: typography.fontSize.sm, color: colors.textSecondary, marginTop: 2 },
-  radioCircle: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  radioCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   radioCircleSelected: { borderColor: colors.primary },
   radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary },
-  modalActions: { flexDirection: 'row', paddingHorizontal: spacing.lg, paddingTop: spacing.lg, gap: spacing.md },
-  signatureHint: { fontSize: typography.fontSize.sm, color: colors.textSecondary, textAlign: 'center', paddingVertical: spacing.md, paddingHorizontal: spacing.lg },
-  signaturePad: { marginHorizontal: spacing.lg, height: 150, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.border, borderStyle: 'dashed', overflow: 'hidden', backgroundColor: colors.card },
-  signaturePadInner: { flex: 1, position: 'relative', alignItems: 'center', justifyContent: 'center' },
-  signatureDot: { position: 'absolute', width: 4, height: 4, borderRadius: 2, backgroundColor: colors.textPrimary },
-  signaturePlaceholder: { fontSize: typography.fontSize.sm, color: colors.textTertiary, position: 'absolute' },
+  modalActions: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+  },
+  signatureHint: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    color: colors.textSecondary,
+    fontSize: typography.fontSize.sm,
+  },
+  signaturePad: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    height: 220,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    overflow: 'hidden',
+  },
+  signaturePadInner: { flex: 1 },
+  signaturePlaceholder: {
+    position: 'absolute',
+    alignSelf: 'center',
+    top: '45%',
+    color: colors.textTertiary,
+    fontSize: typography.fontSize.sm,
+  },
+  signatureDot: {
+    position: 'absolute',
+    width: 3,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: colors.textPrimary,
+  },
+  notFound: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md, paddingHorizontal: spacing.xl },
+  notFoundText: { fontSize: typography.fontSize.base, color: colors.textSecondary },
 });

@@ -23,7 +23,7 @@ export function Header({ title, showBack = false, rightAction, transparent = fal
       <View style={styles.leftSection}>
         {showBack && (
           <Pressable
-            onPress={() => router.back()}
+            onPress={() => router.canGoBack() ? router.back() : router.replace('/')}
             style={styles.backButton}
             hitSlop={12}
           >

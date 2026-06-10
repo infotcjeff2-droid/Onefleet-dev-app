@@ -1,41 +1,41 @@
 export const colors = {
   // Backgrounds
-  background: '#0D0F14',
-  surface: '#161A23',
-  card: '#1E2330',
-  cardHover: '#252B3B',
+  background: '#FFFFFF',
+  surface: '#F5F6FA',
+  card: '#FFFFFF',
+  cardHover: '#F0F1F5',
 
   // Borders
-  border: '#2A3040',
-  borderActive: '#3D4560',
+  border: '#E0E2EA',
+  borderActive: '#C8CAD6',
 
   // Primary
-  primary: '#00C896',
-  primaryDark: '#00A87A',
+  primary: '#00A87A',
+  primaryDark: '#008F68',
   primaryGlow: 'rgba(0, 200, 150, 0.15)',
 
   // Secondary
-  secondary: '#3B9EFF',
+  secondary: '#2B7FD4',
   secondaryGlow: 'rgba(59, 158, 255, 0.15)',
 
   // Accent
-  accent: '#FF7043',
-  accentSecondary: '#FFB547',
+  accent: '#E85A2C',
+  accentSecondary: '#E69500',
 
   // Text
-  textPrimary: '#F0F2F8',
-  textSecondary: '#8B92A8',
-  textTertiary: '#5A6178',
+  textPrimary: '#0D0F14',
+  textSecondary: '#5A6178',
+  textTertiary: '#8B92A8',
 
   // Semantic
-  danger: '#FF4757',
+  danger: '#D93F4A',
   dangerGlow: 'rgba(255, 71, 87, 0.15)',
-  success: '#00C896',
-  warning: '#FFB547',
+  success: '#00A87A',
+  warning: '#E69500',
 
   // Overlay
-  overlay: 'rgba(13, 15, 20, 0.8)',
-  overlayLight: 'rgba(13, 15, 20, 0.5)',
+  overlay: 'rgba(13, 15, 20, 0.6)',
+  overlayLight: 'rgba(13, 15, 20, 0.3)',
 } as const;
 
 export const spacing = {
@@ -84,10 +84,10 @@ export const typography = {
 } as const;
 
 export const shadows = {
-  card: '0 4px 12px rgba(0, 0, 0, 0.3)',
-  cardHover: '0 8px 24px rgba(0, 0, 0, 0.4)',
+  card: '0 4px 12px rgba(0, 0, 0, 0.08)',
+  cardHover: '0 8px 24px rgba(0, 0, 0, 0.12)',
   glow: (color: string) => `0 0 20px ${color}`,
-  button: '0 2px 8px rgba(0, 200, 150, 0.3)',
+  button: '0 2px 8px rgba(0, 168, 122, 0.25)',
 } as const;
 
 export const animation = {
@@ -111,8 +111,8 @@ export const layout = {
 } as const;
 
 export const statusColors = {
-  active: { bg: 'rgba(0, 200, 150, 0.15)', text: '#00C896', dot: '#00C896' },
-  maintenance: { bg: 'rgba(255, 181, 71, 0.15)', text: '#FFB547', dot: '#FFB547' },
-  inactive: { bg: 'rgba(139, 146, 168, 0.15)', text: '#8B92A8', dot: '#8B92A8' },
-  danger: { bg: 'rgba(255, 71, 87, 0.15)', text: '#FF4757', dot: '#FF4757' },
+  active: { bg: 'rgba(0, 168, 122, 0.12)', text: '#00A87A', dot: '#00A87A' },
+  maintenance: { bg: 'rgba(230, 149, 0, 0.12)', text: '#E69500', dot: '#E69500' },
+  inactive: { bg: 'rgba(90, 97, 120, 0.12)', text: '#5A6178', dot: '#5A6178' },
+  danger: { bg: 'rgba(217, 63, 74, 0.12)', text: '#D93F4A', dot: '#D93F4A' },
 } as const;

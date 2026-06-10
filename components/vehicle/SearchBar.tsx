@@ -6,9 +6,10 @@ interface SearchBarProps {
   value: string;
   onChangeText: (text: string) => void;
   placeholder?: string;
+  t?: (key: string) => string;
 }
 
-export function SearchBar({ value, onChangeText, placeholder = 'Search vehicles...' }: SearchBarProps) {
+export function SearchBar({ value, onChangeText, placeholder, t }: SearchBarProps) {
   return (
     <View style={styles.container}>
       <View style={styles.iconLeft}>
@@ -16,7 +17,7 @@ export function SearchBar({ value, onChangeText, placeholder = 'Search vehicles.
       </View>
       <RNTextInput
         style={styles.input}
-        placeholder={placeholder}
+        placeholder={placeholder ?? (t ? t('vehicles.searchPlaceholder') : 'Search vehicles...')}
         placeholderTextColor={colors.textTertiary}
         value={value}
         onChangeText={onChangeText}

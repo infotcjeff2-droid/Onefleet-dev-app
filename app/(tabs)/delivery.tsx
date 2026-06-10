@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,9 +15,10 @@ import { useRouter } from 'expo-router';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { useAuthStore } from '@/store/authStore';
-import { useDeliveryStore } from '@/store/deliveryStore';
-import { mockDrivers } from '@/constants/mockData';
+import { getEffectiveDeliveryStatus, useDeliveryStore } from '@/store/deliveryStore';
 import { DeliveryOrder, DeliveryStatus } from '@/constants/mockData';
+import { useDriverStore, Driver } from '@/store/driverStore';
+import { useUserManagementStore } from '@/store/userManagementStore';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 import { Header } from '@/components/ui/Header';
 import {
@@ -32,23 +33,25 @@ import {
   X,
   Plus,
   ChevronRight,
+  AlertTriangle,
 } from 'lucide-react-native';
+import { useTranslation } from '@/i18n';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
-const statusConfig: Record<DeliveryStatus, { label: string; color: string; bg: string }> = {
-  pending: { label: 'Pending', color: colors.warning, bg: `${colors.warning}20` },
-  assigned: { label: 'Assigned', color: colors.secondary, bg: `${colors.secondary}20` },
-  in_transit: { label: 'In Transit', color: colors.accent, bg: `${colors.accent}20` },
-  delivered: { label: 'Delivered', color: colors.success, bg: `${colors.success}20` },
-  signed: { label: 'Signed', color: colors.primary, bg: `${colors.primary}20` },
-};
-
-function StatusBadge({ status }: { status: DeliveryStatus }) {
+function StatusBadge({ status, t }: { status: DeliveryStatus; t: (key: string) => string }) {
+  const statusConfig: Record<DeliveryStatus, { labelKey: string; color: string; bg: string }> = {
+    pending: { labelKey: 'delivery.pending', color: colors.warning, bg: `${colors.warning}20` },
+    assigned: { labelKey: 'delivery.assigned', color: colors.secondary, bg: `${colors.secondary}20` },
+    in_transit: { labelKey: 'delivery.inTransit', color: colors.accent, bg: `${colors.accent}20` },
+    delivered: { labelKey: 'delivery.delivered', color: colors.success, bg: `${colors.success}20` },
+    signed: { labelKey: 'delivery.signed', color: colors.primary, bg: `${colors.primary}20` },
+    expired: { labelKey: 'delivery.expired', color: colors.danger, bg: `${colors.danger}20` },
+  };
   const cfg = statusConfig[status];
   return (
-    <View style={[styles.badge, { backgroundColor: cfg.bg }]}>
-      <Text style={[styles.badgeText, { color: cfg.color }]}>{cfg.label}</Text>
+    <View style={[styles.badge, { backgroundColor: cfg.bg }]}> 
+      <Text style={[styles.badgeText, { color: cfg.color }]}>{t(cfg.labelKey)}</Text>
     </View>
   );
 }
@@ -61,15 +64,19 @@ function DeliveryCard({
   onStartTransit,
   onMarkDelivered,
   onSign,
+  t,
 }: {
   item: DeliveryOrder;
   isAdmin: boolean;
   onPress: () => void;
   onAssign: () => void;
-  onStartTransit: () => void;
+  onStartTransit: (item: DeliveryOrder) => void;
   onMarkDelivered: () => void;
   onSign: () => void;
+  t: (key: string) => string;
 }) {
+  const isExpired = item.status === 'expired';
+
   return (
     <Animated.View entering={FadeInDown.springify()}>
       <Card style={styles.deliveryCard} onPress={onPress}>
@@ -79,7 +86,7 @@ function DeliveryCard({
             <Text style={styles.orderNo}>{item.orderNo}</Text>
           </View>
           <View style={styles.cardHeaderRight}>
-            <StatusBadge status={item.status} />
+            <StatusBadge status={item.status} t={t} />
             <ChevronRight size={16} color={colors.textTertiary} />
           </View>
         </View>
@@ -109,22 +116,32 @@ function DeliveryCard({
           )}
         </View>
 
+        {isExpired && (
+          <View style={styles.expiredNotice}>
+            <AlertTriangle size={14} color={colors.danger} />
+            <Text style={styles.expiredNoticeText}>{t('delivery.expiredReadonly')}</Text>
+          </View>
+        )}
+
         <View style={styles.cardActions}>
           {isAdmin && item.status === 'pending' && (
-            <Button title="Assign Driver" size="sm" onPress={onAssign} fullWidth />
+            <Button title={t('delivery.assignDriver')} size="sm" onPress={onAssign} fullWidth />
           )}
           {!isAdmin && item.status === 'assigned' && (
-            <Button title="Start Transit" size="sm" onPress={onStartTransit} fullWidth icon={<Truck size={14} color="#fff" />} />
+            <Button title={t('delivery.startTransit')} size="sm" onPress={() => onStartTransit(item)} fullWidth icon={<Truck size={14} color="#fff" />} />
+          )}
+          {!isAdmin && item.status === 'in_transit' && (
+            <Button title={t('delivery.markDelivered')} size="sm" onPress={onMarkDelivered} fullWidth variant="secondary" icon={<CheckCircle size={14} color={colors.primary} />} />
           )}
           {!isAdmin && item.status === 'delivered' && (
-            <Button title="Sign Delivery" size="sm" onPress={onSign} fullWidth variant="secondary" icon={<CheckCircle size={14} color={colors.primary} />} />
+            <Button title={t('delivery.signDelivery')} size="sm" onPress={onSign} fullWidth variant="secondary" icon={<CheckCircle size={14} color={colors.primary} />} />
           )}
         </View>
 
         {item.signatureData && (
           <View style={styles.signedIndicator}>
             <CheckCircle size={14} color={colors.success} />
-            <Text style={styles.signedText}>Signed at {new Date(item.signedAt!).toLocaleString()}</Text>
+            <Text style={styles.signedText}>{t('delivery.signedAt')} {new Date(item.signedAt!).toLocaleString()}</Text>
           </View>
         )}
       </Card>
@@ -169,19 +186,51 @@ function AssignDriverModal({
   visible,
   onClose,
   onAssign,
+  removeDriver,
+  deliveries,
+  selectedDeliveryId,
+  t,
 }: {
   visible: boolean;
   onClose: () => void;
   onAssign: (driverId: string, driverName: string) => void;
+  removeDriver: (deliveryId: string) => void;
+  deliveries: DeliveryOrder[];
+  selectedDeliveryId: string | null;
+  t: (key: string) => string;
 }) {
+  const storeDrivers = useDriverStore((state) => state.drivers);
+  const managedDrivers = useUserManagementStore((state) => state.users).filter((u) => u.role === 'driver');
+  const validDriverIds = new Set([...storeDrivers.map((d) => d.id), ...managedDrivers.map((u) => u.id)]);
+  const drivers = [
+    ...storeDrivers,
+    ...managedDrivers
+      .filter((m) => !storeDrivers.some((d) => d.id === m.id))
+      .map((u) => ({ id: u.id, name: u.name, phone: '', vehiclePlate: '', status: 'available' as const })),
+  ];
   const [selectedDriverId, setSelectedDriverId] = useState<string | null>(null);
+
+  useEffect(() => {
+    useDriverStore.getState().loadDrivers();
+    useUserManagementStore.getState().loadUsers();
+  }, [visible]);
+
+  useEffect(() => {
+    if (visible && selectedDeliveryId) {
+      const delivery = deliveries.find((d) => d.id === selectedDeliveryId);
+      if (delivery?.assignedDriverId && !validDriverIds.has(delivery.assignedDriverId)) {
+        removeDriver(selectedDeliveryId);
+        Alert.alert(t('delivery.driverRemoved'), t('delivery.driverRemovedMsg'));
+      }
+    }
+  }, [visible, selectedDeliveryId, deliveries, validDriverIds, removeDriver, t]);
 
   const handleConfirm = () => {
     if (!selectedDriverId) {
-      Alert.alert('Error', 'Please select a driver');
+      Alert.alert(t('common.error'), t('delivery.selectDriver'));
       return;
     }
-    const driver = mockDrivers.find((d) => d.id === selectedDriverId);
+    const driver = drivers.find((d) => d.id === selectedDriverId);
     if (driver) {
       onAssign(selectedDriverId, driver.name);
       setSelectedDriverId(null);
@@ -194,11 +243,11 @@ function AssignDriverModal({
       <View style={styles.modalOverlay}>
         <Animated.View entering={FadeInUp.springify()} style={styles.modalContent}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Assign Driver</Text>
+            <Text style={styles.modalTitle}>{t('delivery.selectDriverTitle')}</Text>
             <Pressable onPress={onClose} hitSlop={12}><X size={20} color={colors.textSecondary} /></Pressable>
           </View>
           <ScrollView style={styles.driverList}>
-            {mockDrivers.map((driver) => (
+            {drivers.map((driver) => (
               <Pressable
                 key={driver.id}
                 onPress={() => setSelectedDriverId(driver.id)}
@@ -218,8 +267,8 @@ function AssignDriverModal({
             ))}
           </ScrollView>
           <View style={styles.modalActions}>
-            <Button title="Cancel" variant="ghost" onPress={onClose} style={{ flex: 1 }} />
-            <Button title="Confirm" onPress={handleConfirm} style={{ flex: 1 }} disabled={!selectedDriverId} />
+            <Button title={t('common.cancel')} variant="ghost" onPress={onClose} style={{ flex: 1 }} />
+            <Button title={t('common.confirm')} onPress={handleConfirm} style={{ flex: 1 }} disabled={!selectedDriverId} />
           </View>
         </Animated.View>
       </View>
@@ -231,10 +280,12 @@ function SignatureModal({
   visible,
   onClose,
   onConfirm,
+  t,
 }: {
   visible: boolean;
   onClose: () => void;
   onConfirm: (signatureData: string) => void;
+  t: (key: string) => string;
 }) {
   const [lines, setLines] = useState<{ x: number; y: number; id: number }[]>([]);
   const [currentLine, setCurrentLine] = useState<{ x: number; y: number }[]>([]);
@@ -248,7 +299,7 @@ function SignatureModal({
     if (currentLine.length > 0) {
       setLines((prev) => [
         ...prev,
-        ...currentLine.map((p) => ({ ...p, id: lineIdRef.current++ })),
+        ...currentLine.map((point) => ({ ...point, id: lineIdRef.current++ })),
       ]);
       setCurrentLine([]);
     }
@@ -272,10 +323,10 @@ function SignatureModal({
       <View style={styles.modalOverlay}>
         <Animated.View entering={FadeInUp.springify()} style={styles.modalContent}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Electronic Signature</Text>
+            <Text style={styles.modalTitle}>{t('delivery.electronicSignature')}</Text>
             <Pressable onPress={onClose} hitSlop={12}><X size={20} color={colors.textSecondary} /></Pressable>
           </View>
-          <Text style={styles.signatureHint}>Sign below to confirm delivery</Text>
+          <Text style={styles.signatureHint}>{t('delivery.signBelowConfirm')}</Text>
           <Pressable
             style={styles.signaturePad}
             onPressIn={(e) => {
@@ -292,17 +343,17 @@ function SignatureModal({
               {lines.map((point) => (
                 <View key={point.id} style={[styles.signatureDot, { left: point.x - 1, top: point.y - 1 }]} />
               ))}
-              {currentLine.map((point, i) => (
-                <View key={`current-${i}`} style={[styles.signatureDot, { left: point.x - 1, top: point.y - 1 }]} />
+              {currentLine.map((point, index) => (
+                <View key={`current-${index}`} style={[styles.signatureDot, { left: point.x - 1, top: point.y - 1 }]} />
               ))}
               {!hasSignature && (
-                <Text style={styles.signaturePlaceholder}>Draw your signature here</Text>
+                <Text style={styles.signaturePlaceholder}>{t('delivery.drawSignatureHere')}</Text>
               )}
             </View>
           </Pressable>
           <View style={styles.modalActions}>
-            <Button title="Clear" variant="ghost" onPress={handleClear} style={{ flex: 1 }} />
-            <Button title="Confirm Signature" onPress={handleConfirm} style={{ flex: 2 }} disabled={!hasSignature} />
+            <Button title={t('delivery.clear')} variant="ghost" onPress={handleClear} style={{ flex: 1 }} />
+            <Button title={t('delivery.confirmSignature')} onPress={handleConfirm} style={{ flex: 2 }} disabled={!hasSignature} />
           </View>
         </Animated.View>
       </View>
@@ -314,11 +365,15 @@ function NewOrderModal({
   visible,
   onClose,
   onSubmit,
+  t,
 }: {
   visible: boolean;
   onClose: () => void;
   onSubmit: (order: Omit<DeliveryOrder, 'id' | 'createdAt'>) => void;
+  t: (key: string) => string;
 }) {
+  const drivers = useDriverStore((state) => state.drivers);
+  const managedDrivers = useUserManagementStore((state) => state.users).filter((u) => u.role === 'driver');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [pickupAddress, setPickupAddress] = useState('');
@@ -326,7 +381,14 @@ function NewOrderModal({
   const [cargoDescription, setCargoDescription] = useState('');
   const [cargoWeight, setCargoWeight] = useState('');
   const [notes, setNotes] = useState('');
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [selectedDriverId, setSelectedDriverId] = useState<string | null>(null);
+
+  const mergedDrivers: Driver[] = [
+    ...drivers,
+    ...managedDrivers
+      .filter((managedDriver) => !drivers.some((driver) => driver.id === managedDriver.id))
+      .map((driver) => ({ id: driver.id, name: driver.name, phone: '', vehiclePlate: '', status: 'available' as const })),
+  ];
 
   const reset = () => {
     setCustomerName('');
@@ -336,7 +398,7 @@ function NewOrderModal({
     setCargoDescription('');
     setCargoWeight('');
     setNotes('');
-    setErrors({});
+    setSelectedDriverId(null);
   };
 
   const handleClose = () => {
@@ -344,20 +406,13 @@ function NewOrderModal({
     onClose();
   };
 
-  const validate = () => {
-    const errs: Record<string, string> = {};
-    if (!customerName.trim()) errs.customerName = 'Required';
-    if (!customerPhone.trim()) errs.customerPhone = 'Required';
-    if (!pickupAddress.trim()) errs.pickupAddress = 'Required';
-    if (!dropoffAddress.trim()) errs.dropoffAddress = 'Required';
-    if (!cargoDescription.trim()) errs.cargoDescription = 'Required';
-    if (!cargoWeight.trim() || isNaN(Number(cargoWeight))) errs.cargoWeight = 'Enter a valid number';
-    setErrors(errs);
-    return Object.keys(errs).length === 0;
-  };
-
   const handleSubmit = () => {
-    if (!validate()) return;
+    if (!customerName.trim() || !customerPhone.trim() || !pickupAddress.trim() || !dropoffAddress.trim()) {
+      Alert.alert(t('common.error'), t('delivery.required'));
+      return;
+    }
+
+    const selectedDriver = mergedDrivers.find((driver) => driver.id === selectedDriverId);
     const now = new Date();
     onSubmit({
       orderNo: '',
@@ -367,71 +422,55 @@ function NewOrderModal({
       pickupTime: now.toISOString().slice(0, 16).replace('T', ' '),
       dropoffAddress: dropoffAddress.trim(),
       cargoDescription: cargoDescription.trim(),
-      cargoWeight: Number(cargoWeight),
+      cargoWeight: cargoWeight.trim() ? Number(cargoWeight) : 0,
       notes: notes.trim() || undefined,
-      status: 'pending',
+      status: selectedDriver ? 'assigned' : 'pending',
+      assignedDriverId: selectedDriverId ?? undefined,
+      assignedDriverName: selectedDriver?.name,
     });
     reset();
     onClose();
   };
 
-  const field = (
-    label: string,
-    value: string,
-    setter: (v: string) => void,
-    placeholder: string,
-    error?: string,
-    keyboardType: 'default' | 'phone-pad' = 'default'
-  ) => (
-    <View style={styles.formField}>
-      <Text style={styles.formLabel}>{label}</Text>
-      <View style={[styles.formInputWrap, error && { borderColor: colors.danger }]}>
-        <RNTextInput
-          style={styles.formInput}
-          value={value}
-          onChangeText={setter}
-          placeholder={placeholder}
-          placeholderTextColor={colors.textTertiary}
-          keyboardType={keyboardType}
-        />
-      </View>
-      {error && <Text style={styles.formError}>{error}</Text>}
-    </View>
-  );
-
   return (
     <Modal visible={visible} transparent animationType="slide">
       <View style={styles.modalOverlay}>
-        <Animated.View entering={FadeInUp.springify()} style={styles.newOrderModalContent}>
+        <Animated.View entering={FadeInUp.springify()} style={[styles.modalContent, styles.newOrderModalContent]}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>New Order</Text>
+            <Text style={styles.modalTitle}>{t('delivery.newDelivery')}</Text>
             <Pressable onPress={handleClose} hitSlop={12}><X size={20} color={colors.textSecondary} /></Pressable>
           </View>
-          <ScrollView style={styles.newOrderForm} showsVerticalScrollIndicator={false}>
-            {field('Customer Name', customerName, setCustomerName, 'Enter customer name', errors.customerName)}
-            {field('Phone', customerPhone, setCustomerPhone, '+1234567890', errors.customerPhone, 'phone-pad')}
-            {field('Pickup Address', pickupAddress, setPickupAddress, 'Enter pickup address', errors.pickupAddress)}
-            {field('Dropoff Address', dropoffAddress, setDropoffAddress, 'Enter dropoff address', errors.dropoffAddress)}
-            {field('Cargo Description', cargoDescription, setCargoDescription, 'e.g. 20 boxes electronics', errors.cargoDescription)}
-            {field('Cargo Weight (kg)', cargoWeight, setCargoWeight, '0', errors.cargoWeight, 'phone-pad')}
-            <View style={styles.formField}>
-              <Text style={styles.formLabel}>Notes (optional)</Text>
-              <View style={[styles.formInputWrap, styles.formInputWrapMultiline]}>
-                <RNTextInput
-                  style={[styles.formInput, styles.formInputMultiline]}
-                  value={notes}
-                  onChangeText={setNotes}
-                  placeholder="Additional notes..."
-                  placeholderTextColor={colors.textTertiary}
-                  multiline
-                  numberOfLines={3}
-                />
-              </View>
-            </View>
+          <ScrollView style={styles.formScrollView} showsVerticalScrollIndicator={false}>
+            <RNTextInput style={styles.input} placeholder={t('delivery.customerName')} value={customerName} onChangeText={setCustomerName} />
+            <RNTextInput style={styles.input} placeholder={t('delivery.phone')} value={customerPhone} onChangeText={setCustomerPhone} keyboardType="phone-pad" />
+            <RNTextInput style={styles.input} placeholder={t('delivery.pickupAddress')} value={pickupAddress} onChangeText={setPickupAddress} />
+            <RNTextInput style={styles.input} placeholder={t('delivery.dropoffAddress')} value={dropoffAddress} onChangeText={setDropoffAddress} />
+            <RNTextInput style={styles.input} placeholder={t('delivery.cargoDescription')} value={cargoDescription} onChangeText={setCargoDescription} />
+            <RNTextInput style={styles.input} placeholder={t('delivery.cargoWeight')} value={cargoWeight} onChangeText={setCargoWeight} keyboardType="numeric" />
+            <RNTextInput style={[styles.input, styles.notesInput]} placeholder={t('delivery.notes')} value={notes} onChangeText={setNotes} multiline />
+            <Text style={styles.fieldLabel}>{t('delivery.chooseDriver')}</Text>
+            {mergedDrivers.map((driver) => (
+              <Pressable
+                key={driver.id}
+                onPress={() => setSelectedDriverId(driver.id)}
+                style={[styles.driverItem, selectedDriverId === driver.id && styles.driverItemSelected]}
+              >
+                <View style={styles.driverAvatar}>
+                  <Text style={styles.driverAvatarText}>{driver.name.charAt(0)}</Text>
+                </View>
+                <View style={styles.driverInfo}>
+                  <Text style={styles.driverName}>{driver.name}</Text>
+                  <Text style={styles.driverDetail}>{driver.vehiclePlate} | {driver.phone}</Text>
+                </View>
+                <View style={[styles.radioCircle, selectedDriverId === driver.id && styles.radioCircleSelected]}>
+                  {selectedDriverId === driver.id && <View style={styles.radioDot} />}
+                </View>
+              </Pressable>
+            ))}
           </ScrollView>
           <View style={styles.modalActions}>
-            <Button title="Cancel" variant="ghost" onPress={handleClose} style={{ flex: 1 }} />
-            <Button title="Create Order" onPress={handleSubmit} style={{ flex: 1.5 }} />
+            <Button title={t('common.cancel')} variant="ghost" onPress={handleClose} style={{ flex: 1 }} />
+            <Button title={t('delivery.createDelivery')} onPress={handleSubmit} style={{ flex: 1.5 }} />
           </View>
         </Animated.View>
       </View>
@@ -442,9 +481,19 @@ function NewOrderModal({
 const today = new Date().toISOString().slice(0, 10);
 
 export default function DeliveryScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
-  const { role } = useAuthStore();
-  const { deliveries, assignDriver, updateStatus, addSignature, addOrder } = useDeliveryStore();
+  const { role, user } = useAuthStore();
+  const { deliveries, assignDriver, updateStatus, addSignature, addOrder, syncExpiredDeliveries } = useDeliveryStore();
+  const { loadDrivers } = useDriverStore();
+  const loadUsers = useUserManagementStore((state) => state.loadUsers);
+
+  useEffect(() => {
+    loadDrivers();
+    loadUsers();
+    syncExpiredDeliveries();
+  }, [loadDrivers, loadUsers, syncExpiredDeliveries]);
+
   const isAdmin = role === 'admin' || role === 'company';
   const isDriver = role === 'driver';
 
@@ -455,22 +504,25 @@ export default function DeliveryScreen() {
   const [signingDeliveryId, setSigningDeliveryId] = useState<string | null>(null);
   const [newOrderModalVisible, setNewOrderModalVisible] = useState(false);
 
-  const displayDeliveries = isDriver
-    ? deliveries.filter((d) => d.assignedDriverId === 'd001')
-    : deliveries;
+  const normalizedDeliveries = deliveries.map((delivery) => ({ ...delivery, status: getEffectiveDeliveryStatus(delivery) }));
+  const displayDeliveries = isDriver && user
+    ? normalizedDeliveries.filter((delivery) => delivery.assignedDriverId === user.id)
+    : normalizedDeliveries;
 
-  const todayDeliveries = displayDeliveries.filter(
-    (d) => d.pickupTime.slice(0, 10) === today
-  );
-  const pastDeliveries = displayDeliveries.filter(
-    (d) => d.pickupTime.slice(0, 10) !== today
-  );
+  const todayDeliveries = displayDeliveries.filter((delivery) => delivery.pickupTime.slice(0, 10) === today);
+  const pastDeliveries = displayDeliveries.filter((delivery) => delivery.pickupTime.slice(0, 10) !== today);
 
-  const tabs = ['Today', 'Past'];
+  const tabs = [t('delivery.today'), t('delivery.past')];
   const counts = [todayDeliveries.length, pastDeliveries.length];
   const currentList = activeTab === 0 ? todayDeliveries : pastDeliveries;
 
   const handleAssign = (deliveryId: string) => {
+    const delivery = normalizedDeliveries.find((item) => item.id === deliveryId);
+    if (delivery?.status === 'expired') {
+      Alert.alert(t('delivery.expired'), t('delivery.expiredReadonly'));
+      return;
+    }
+
     setSelectedDeliveryId(deliveryId);
     setAssignModalVisible(true);
   };
@@ -481,17 +533,15 @@ export default function DeliveryScreen() {
     }
   };
 
-  const handleStartTransit = (deliveryId: string) => {
-    Alert.alert('Start Transit', 'Mark this delivery as in transit?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Confirm', onPress: () => updateStatus(deliveryId, 'in_transit') },
-    ]);
+  const handleStartTransit = (item: DeliveryOrder) => {
+    updateStatus(item.id, 'in_transit');
+    router.replace(`/delivery/${item.id}`);
   };
 
   const handleMarkDelivered = (deliveryId: string) => {
-    Alert.alert('Mark Delivered', 'Confirm delivery completed?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Confirm', onPress: () => updateStatus(deliveryId, 'delivered') },
+    Alert.alert(t('delivery.markDelivered'), t('delivery.confirmDeliveryComplete'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('common.confirm'), onPress: () => updateStatus(deliveryId, 'delivered') },
     ]);
   };
 
@@ -503,6 +553,7 @@ export default function DeliveryScreen() {
   const handleSignatureConfirm = (signatureData: string) => {
     if (signingDeliveryId) {
       addSignature(signingDeliveryId, signatureData);
+      router.replace('/(tabs)/delivery');
     }
   };
 
@@ -510,60 +561,45 @@ export default function DeliveryScreen() {
     addOrder(order);
   };
 
-  const pageTitle = isDriver ? 'My Deliveries' : isAdmin ? 'Delivery Management' : 'Deliveries';
+  const pageTitle = isDriver ? t('delivery.myDeliveries') : isAdmin ? t('delivery.management') : t('delivery.title');
 
   const stats = {
     total: displayDeliveries.length,
-    pending: displayDeliveries.filter((d) => d.status === 'pending').length,
-    assigned: displayDeliveries.filter((d) => d.status === 'assigned').length,
-    inTransit: displayDeliveries.filter((d) => d.status === 'in_transit').length,
-    done: displayDeliveries.filter((d) => d.status === 'delivered' || d.status === 'signed').length,
+    pending: displayDeliveries.filter((delivery) => delivery.status === 'pending').length,
+    assigned: displayDeliveries.filter((delivery) => delivery.status === 'assigned').length,
+    inTransit: displayDeliveries.filter((delivery) => delivery.status === 'in_transit').length,
+    done: displayDeliveries.filter((delivery) => ['delivered', 'signed', 'expired'].includes(delivery.status)).length,
   };
 
   return (
     <View style={styles.container}>
-      <Header
-        title={pageTitle}
-        rightAction={
-          isAdmin ? (
-            <Pressable
-              style={styles.addButton}
-              onPress={() => setNewOrderModalVisible(true)}
-            >
-              <Plus size={20} color={colors.primary} />
-            </Pressable>
-          ) : undefined
-        }
-      />
+      <Header title={pageTitle} />
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Stats */}
         <View style={styles.statsRow}>
           {[
-            { label: 'Total', value: stats.total, color: colors.primary },
-            { label: 'Pending', value: stats.pending, color: colors.warning },
-            { label: 'Assigned', value: stats.assigned, color: colors.secondary },
-            { label: 'In Transit', value: stats.inTransit, color: colors.accent },
-            { label: 'Done', value: stats.done, color: colors.success },
-          ].map((s) => (
-            <View key={s.label} style={styles.statItem}>
-              <View style={[styles.statDot, { backgroundColor: s.color }]} />
-              <Text style={styles.statValue}>{s.value}</Text>
-              <Text style={styles.statLabel}>{s.label}</Text>
+            { labelKey: 'delivery.total', value: stats.total, color: colors.primary },
+            { labelKey: 'delivery.pending', value: stats.pending, color: colors.warning },
+            { labelKey: 'delivery.assigned', value: stats.assigned, color: colors.secondary },
+            { labelKey: 'delivery.inTransit', value: stats.inTransit, color: colors.accent },
+            { labelKey: 'delivery.done', value: stats.done, color: colors.success },
+          ].map((stat) => (
+            <View key={stat.labelKey} style={styles.statItem}>
+              <View style={[styles.statDot, { backgroundColor: stat.color }]} />
+              <Text style={styles.statValue}>{stat.value}</Text>
+              <Text style={styles.statLabel}>{t(stat.labelKey)}</Text>
             </View>
           ))}
         </View>
 
-        {/* Tabs */}
         <TabBar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} counts={counts} />
 
-        {/* Order list */}
         <View style={styles.section}>
           {currentList.length === 0 ? (
             <Card style={styles.emptyCard}>
               <Package size={32} color={colors.textTertiary} />
               <Text style={styles.emptyText}>
-                {activeTab === 0 ? "No today's orders" : 'No past orders'}
+                {activeTab === 0 ? t('delivery.noTodaysOrders') : t('delivery.noPastOrders')}
               </Text>
             </Card>
           ) : (
@@ -574,9 +610,10 @@ export default function DeliveryScreen() {
                 isAdmin={isAdmin}
                 onPress={() => router.push({ pathname: '/delivery/[id]', params: { id: item.id } })}
                 onAssign={() => handleAssign(item.id)}
-                onStartTransit={() => handleStartTransit(item.id)}
+                onStartTransit={handleStartTransit}
                 onMarkDelivered={() => handleMarkDelivered(item.id)}
                 onSign={() => handleSignPress(item.id)}
+                t={t}
               />
             ))
           )}
@@ -587,28 +624,29 @@ export default function DeliveryScreen() {
         visible={assignModalVisible}
         onClose={() => setAssignModalVisible(false)}
         onAssign={handleDriverAssign}
+        removeDriver={useDeliveryStore.getState().removeDriver}
+        deliveries={normalizedDeliveries}
+        selectedDeliveryId={selectedDeliveryId}
+        t={t}
       />
 
       <SignatureModal
         visible={signatureModalVisible}
         onClose={() => setSignatureModalVisible(false)}
         onConfirm={handleSignatureConfirm}
+        t={t}
       />
 
       <NewOrderModal
         visible={newOrderModalVisible}
         onClose={() => setNewOrderModalVisible(false)}
         onSubmit={handleNewOrder}
+        t={t}
       />
 
-      {isAdmin && (
-        <Pressable
-          style={styles.fab}
-          onPress={() => setNewOrderModalVisible(true)}
-        >
-          <Plus size={28} color="#fff" />
-        </Pressable>
-      )}
+      <Pressable style={styles.fab} onPress={() => setNewOrderModalVisible(true)}>
+        <Plus size={28} color="#fff" />
+      </Pressable>
     </View>
   );
 }
@@ -616,16 +654,6 @@ export default function DeliveryScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   scrollView: { flex: 1 },
-  addButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.primaryGlow,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.primary,
-  },
   statsRow: {
     flexDirection: 'row',
     paddingHorizontal: spacing.lg,
@@ -693,93 +721,156 @@ const styles = StyleSheet.create({
   orderNo: { fontSize: typography.fontSize.base, fontWeight: '700', color: colors.textPrimary },
   cardHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   badge: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: borderRadius.full },
-  badgeText: { fontSize: typography.fontSize.xs, fontWeight: '700', textTransform: 'uppercase' },
-  cardBody: { padding: spacing.lg },
-  infoRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: spacing.sm, gap: spacing.sm },
-  infoText: { flex: 1, fontSize: typography.fontSize.sm, color: colors.textSecondary, lineHeight: 20 },
-  cardActions: { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg },
+  badgeText: { fontSize: 12, fontWeight: '700' },
+  cardBody: { padding: spacing.lg, gap: spacing.sm },
+  infoRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  infoText: { flex: 1, fontSize: typography.fontSize.sm, color: colors.textSecondary },
+  expiredNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
+  expiredNoticeText: { flex: 1, fontSize: typography.fontSize.xs, color: colors.danger, fontWeight: '600' },
+  cardActions: { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg, gap: spacing.sm },
   signedIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    gap: spacing.xs,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.lg,
   },
   signedText: { fontSize: typography.fontSize.xs, color: colors.success, fontWeight: '600' },
-  emptyCard: { alignItems: 'center', paddingVertical: spacing['3xl'], gap: spacing.md },
-  emptyText: { fontSize: typography.fontSize.sm, color: colors.textTertiary },
-  modalOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
+  emptyCard: { alignItems: 'center', paddingVertical: spacing.xxl, gap: spacing.md },
+  emptyText: { color: colors.textSecondary, fontSize: typography.fontSize.base },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    justifyContent: 'flex-end',
+  },
   modalContent: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.card,
     borderTopLeftRadius: borderRadius.xl,
     borderTopRightRadius: borderRadius.xl,
-    maxHeight: '80%',
-    paddingBottom: spacing['3xl'],
+    maxHeight: '82%',
+    paddingBottom: spacing.xl,
   },
-  newOrderModalContent: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: borderRadius.xl,
-    borderTopRightRadius: borderRadius.xl,
-    maxHeight: '90%',
-    paddingBottom: spacing['3xl'],
-  },
+  newOrderModalContent: { maxHeight: '88%' },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
   modalTitle: { fontSize: typography.fontSize.lg, fontWeight: '700', color: colors.textPrimary },
-  driverList: { maxHeight: 300, paddingHorizontal: spacing.lg },
+  driverList: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
   driverItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
     gap: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
   },
-  driverItemSelected: { backgroundColor: colors.primaryGlow, borderRadius: borderRadius.md, paddingHorizontal: spacing.sm },
-  driverAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
-  driverAvatarText: { fontSize: typography.fontSize.lg, fontWeight: '700', color: '#fff' },
+  driverItemSelected: { borderColor: colors.primary, backgroundColor: colors.primaryGlow },
+  driverAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  driverAvatarText: { color: '#fff', fontWeight: '700', fontSize: typography.fontSize.base },
   driverInfo: { flex: 1 },
   driverName: { fontSize: typography.fontSize.base, fontWeight: '600', color: colors.textPrimary },
   driverDetail: { fontSize: typography.fontSize.sm, color: colors.textSecondary, marginTop: 2 },
-  radioCircle: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  radioCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   radioCircleSelected: { borderColor: colors.primary },
   radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary },
-  modalActions: { flexDirection: 'row', paddingHorizontal: spacing.lg, paddingTop: spacing.lg, gap: spacing.md },
-  signatureHint: { fontSize: typography.fontSize.sm, color: colors.textSecondary, textAlign: 'center', paddingVertical: spacing.md, paddingHorizontal: spacing.lg },
-  signaturePad: { marginHorizontal: spacing.lg, height: 150, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.border, borderStyle: 'dashed', overflow: 'hidden', backgroundColor: colors.card },
-  signaturePadInner: { flex: 1, position: 'relative', alignItems: 'center', justifyContent: 'center' },
-  signatureDot: { position: 'absolute', width: 4, height: 4, borderRadius: 2, backgroundColor: colors.textPrimary },
-  signaturePlaceholder: { fontSize: typography.fontSize.sm, color: colors.textTertiary, position: 'absolute' },
-  newOrderForm: { paddingHorizontal: spacing.lg, maxHeight: 450 },
-  formField: { marginTop: spacing.lg },
-  formLabel: { fontSize: typography.fontSize.sm, fontWeight: '500', color: colors.textSecondary, marginBottom: spacing.sm },
-  formInputWrap: { backgroundColor: colors.card, borderRadius: borderRadius.md, borderWidth: 1.5, borderColor: colors.border, overflow: 'hidden' },
-  formInput: { height: 48, paddingHorizontal: spacing.lg, color: colors.textPrimary, fontSize: typography.fontSize.base },
-  formInputMultiline: { height: 80, paddingTop: spacing.md, textAlignVertical: 'top' },
-  formInputWrapMultiline: { height: 80 },
-  formError: { fontSize: typography.fontSize.xs, color: colors.danger, marginTop: spacing.xs, fontWeight: '500' },
+  modalActions: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+  },
+  signatureHint: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    color: colors.textSecondary,
+    fontSize: typography.fontSize.sm,
+  },
+  signaturePad: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    height: 220,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    overflow: 'hidden',
+  },
+  signaturePadInner: { flex: 1 },
+  signaturePlaceholder: {
+    position: 'absolute',
+    alignSelf: 'center',
+    top: '45%',
+    color: colors.textTertiary,
+    fontSize: typography.fontSize.sm,
+  },
+  signatureDot: {
+    position: 'absolute',
+    width: 3,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: colors.textPrimary,
+  },
+  formScrollView: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
+  input: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    marginBottom: spacing.md,
+    color: colors.textPrimary,
+    backgroundColor: colors.surface,
+  },
+  notesInput: { minHeight: 96, textAlignVertical: 'top' },
+  fieldLabel: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+  },
   fab: {
     position: 'absolute',
-    bottom: 90,
     right: spacing.lg,
+    bottom: spacing.xl,
     width: 60,
     height: 60,
     borderRadius: 30,
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 6,
   },
 });

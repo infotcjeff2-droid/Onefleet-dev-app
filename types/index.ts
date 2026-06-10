@@ -31,6 +31,8 @@ export interface User {
   email: string;
   name: string;
   role: UserRole;
+  phone?: string;
+  avatar?: string;
 }
 
 export type RootStackParamList = {

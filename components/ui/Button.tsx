@@ -25,19 +25,19 @@ const variantStyles = {
   },
   secondary: {
     bg: 'transparent',
-    bgPressed: 'rgba(0, 200, 150, 0.1)',
+    bgPressed: 'rgba(0, 168, 122, 0.1)',
     text: colors.primary,
     border: colors.primary,
   },
   ghost: {
     bg: 'transparent',
-    bgPressed: 'rgba(255, 255, 255, 0.05)',
+    bgPressed: 'rgba(0, 0, 0, 0.05)',
     text: colors.textPrimary,
     border: 'transparent',
   },
   danger: {
     bg: colors.danger,
-    bgPressed: '#CC3A47',
+    bgPressed: '#B83540',
     text: '#FFFFFF',
     border: 'transparent',
   },

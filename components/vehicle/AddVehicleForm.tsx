@@ -7,8 +7,7 @@ import { TextInput } from '@/components/ui/TextInput';
 import { useVehicleStore } from '@/store/vehicleStore';
 import { colors, borderRadius, spacing, typography } from '@/constants/theme';
 import { BodyType, FuelType, TransmissionType, VehicleStatus } from '@/types';
-
-const STEPS = ['Basic Info', 'Details', 'Status'];
+import { useTranslation } from '@/i18n';
 
 interface FormData {
   make: string;
@@ -48,39 +47,47 @@ const initialFormData: FormData = {
   imageUrl: 'https://images.unsplash.com/photo-1502877338535-766e1452684a?w=800&q=80',
 };
 
-const bodyTypes: { key: BodyType; label: string }[] = [
-  { key: 'sedan', label: 'Sedan' },
-  { key: 'suv', label: 'SUV' },
-  { key: 'truck', label: 'Truck' },
-  { key: 'van', label: 'Van' },
-  { key: 'motorcycle', label: 'Motorcycle' },
-  { key: 'other', label: 'Other' },
-];
-
-const fuelTypes: { key: FuelType; label: string }[] = [
-  { key: 'gasoline', label: 'Gasoline' },
-  { key: 'diesel', label: 'Diesel' },
-  { key: 'electric', label: 'Electric' },
-  { key: 'hybrid', label: 'Hybrid' },
-];
-
-const transmissions: { key: TransmissionType; label: string }[] = [
-  { key: 'automatic', label: 'Automatic' },
-  { key: 'manual', label: 'Manual' },
-];
-
-const statuses: { key: VehicleStatus; label: string }[] = [
-  { key: 'active', label: 'Active' },
-  { key: 'maintenance', label: 'Maintenance' },
-  { key: 'inactive', label: 'Inactive' },
-];
-
 interface AddVehicleFormProps {
   editId?: string;
 }
 
 export function AddVehicleForm({ editId }: AddVehicleFormProps) {
   const router = useRouter();
+  const { t } = useTranslation();
+
+  const STEPS = [
+    t('vehicles.stepBasicInfo'),
+    t('vehicles.stepDetails'),
+    t('vehicles.stepStatus'),
+  ];
+
+  const bodyTypes = [
+    { key: 'sedan', label: t('vehicles.sedan') },
+    { key: 'suv', label: t('vehicles.suv') },
+    { key: 'truck', label: t('vehicles.truck') },
+    { key: 'van', label: t('vehicles.van') },
+    { key: 'motorcycle', label: t('vehicles.motorcycle') },
+    { key: 'other', label: t('vehicles.other') },
+  ];
+
+  const fuelTypes = [
+    { key: 'gasoline', label: t('dashboard.gasoline') },
+    { key: 'diesel', label: t('dashboard.diesel') },
+    { key: 'electric', label: t('dashboard.electric') },
+    { key: 'hybrid', label: t('dashboard.hybrid') },
+  ];
+
+  const transmissions = [
+    { key: 'automatic', label: t('vehicles.automatic') },
+    { key: 'manual', label: t('vehicles.manual') },
+  ];
+
+  const statuses = [
+    { key: 'active', label: t('vehicles.active') },
+    { key: 'maintenance', label: t('vehicles.maintenance') },
+    { key: 'inactive', label: t('vehicles.inactive') },
+  ];
+
   const { getVehicleById, addVehicle, updateVehicle } = useVehicleStore();
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<FormData>(initialFormData);
@@ -126,14 +133,14 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
     const newErrors: Partial<Record<keyof FormData, string>> = {};
 
     if (currentStep === 0) {
-      if (!form.make.trim()) newErrors.make = 'Make is required';
-      if (!form.model.trim()) newErrors.model = 'Model is required';
-      if (!form.year || isNaN(Number(form.year))) newErrors.year = 'Valid year is required';
+      if (!form.make.trim()) newErrors.make = t('error.required');
+      if (!form.model.trim()) newErrors.model = t('error.required');
+      if (!form.year || isNaN(Number(form.year))) newErrors.year = t('error.required');
     }
 
     if (currentStep === 1) {
-      if (!form.plateNumber.trim()) newErrors.plateNumber = 'Plate number is required';
-      if (!form.color.trim()) newErrors.color = 'Color is required';
+      if (!form.plateNumber.trim()) newErrors.plateNumber = t('error.required');
+      if (!form.color.trim()) newErrors.color = t('error.required');
     }
 
     setErrors(newErrors);
@@ -178,9 +185,9 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
       } else {
         await addVehicle(vehicleData);
       }
-      router.back();
+      router.canGoBack() ? router.back() : router.replace('/(tabs)');
     } catch {
-      Alert.alert('Error', `Failed to ${isEditMode ? 'update' : 'add'} vehicle`);
+      Alert.alert(t('common.error'), isEditMode ? t('vehicles.updateFailed') : t('vehicles.addFailed'));
     } finally {
       setIsSubmitting(false);
     }
@@ -247,31 +254,31 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
   const renderStep0 = () => (
     <View>
       <TextInput
-        label="Make *"
-        placeholder="e.g. Toyota"
+        label={t('vehicles.make') + ' *'}
+        placeholder={t('vehicles.makePlaceholder')}
         value={form.make}
         onChangeText={(v) => updateField('make', v)}
         error={errors.make}
         autoCapitalize="words"
       />
       <TextInput
-        label="Model *"
-        placeholder="e.g. Camry"
+        label={t('vehicles.model') + ' *'}
+        placeholder={t('vehicles.modelPlaceholder')}
         value={form.model}
         onChangeText={(v) => updateField('model', v)}
         error={errors.model}
         autoCapitalize="words"
       />
       <TextInput
-        label="Year *"
-        placeholder="e.g. 2024"
+        label={t('vehicles.year') + ' *'}
+        placeholder={t('vehicles.yearPlaceholder')}
         value={form.year}
         onChangeText={(v) => updateField('year', v)}
         error={errors.year}
         keyboardType="numeric"
         maxLength={4}
       />
-      <Text style={styles.fieldLabel}>Body Type</Text>
+      <Text style={styles.fieldLabel}>{t('vehicles.bodyType')}</Text>
       {renderSelector(bodyTypes, form.bodyType, (v) => updateField('bodyType', v))}
     </View>
   );
@@ -279,32 +286,32 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
   const renderStep1 = () => (
     <View>
       <TextInput
-        label="Plate Number *"
-        placeholder="e.g. ABC-1234"
+        label={t('vehicles.plateNumber') + ' *'}
+        placeholder={t('vehicles.platePlaceholder')}
         value={form.plateNumber}
         onChangeText={(v) => updateField('plateNumber', v.toUpperCase())}
         error={errors.plateNumber}
         autoCapitalize="characters"
       />
       <TextInput
-        label="VIN"
-        placeholder="Vehicle Identification Number"
+        label={t('vehicles.vin')}
+        placeholder={t('vehicles.vinPlaceholder')}
         value={form.vin}
         onChangeText={(v) => updateField('vin', v.toUpperCase())}
         autoCapitalize="characters"
         maxLength={17}
       />
       <TextInput
-        label="Color *"
-        placeholder="e.g. Pearl White"
+        label={t('vehicles.color') + ' *'}
+        placeholder={t('vehicles.colorPlaceholder')}
         value={form.color}
         onChangeText={(v) => updateField('color', v)}
         error={errors.color}
         autoCapitalize="words"
       />
-      <Text style={styles.fieldLabel}>Fuel Type</Text>
+      <Text style={styles.fieldLabel}>{t('vehicles.fuelType')}</Text>
       {renderSelector(fuelTypes, form.fuelType, (v) => updateField('fuelType', v))}
-      <Text style={[styles.fieldLabel, { marginTop: spacing.lg }]}>Transmission</Text>
+      <Text style={[styles.fieldLabel, { marginTop: spacing.lg }]}>{t('vehicles.transmission')}</Text>
       {renderSelector(transmissions, form.transmission, (v) => updateField('transmission', v))}
     </View>
   );
@@ -312,35 +319,35 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
   const renderStep2 = () => (
     <View>
       <TextInput
-        label="Current Mileage"
-        placeholder="e.g. 15000"
+        label={t('vehicles.mileage')}
+        placeholder={t('vehicles.mileagePlaceholder')}
         value={form.mileage}
         onChangeText={(v) => updateField('mileage', v)}
         keyboardType="numeric"
       />
       <TextInput
-        label="Purchase Date"
+        label={t('vehicles.purchaseDate')}
         placeholder="YYYY-MM-DD"
         value={form.purchaseDate}
         onChangeText={(v) => updateField('purchaseDate', v)}
       />
       <TextInput
-        label="Insurance Expiry"
+        label={t('vehicles.insuranceExpiry')}
         placeholder="YYYY-MM-DD"
         value={form.insuranceExpiry}
         onChangeText={(v) => updateField('insuranceExpiry', v)}
       />
       <TextInput
-        label="Registration Expiry"
+        label={t('vehicles.registrationExpiry')}
         placeholder="YYYY-MM-DD"
         value={form.registrationExpiry}
         onChangeText={(v) => updateField('registrationExpiry', v)}
       />
-      <Text style={styles.fieldLabel}>Status</Text>
+      <Text style={styles.fieldLabel}>{t('vehicles.status')}</Text>
       {renderSelector(statuses, form.status, (v) => updateField('status', v))}
       <TextInput
-        label="Notes"
-        placeholder="Additional notes..."
+        label={t('vehicles.notes')}
+        placeholder={t('vehicles.notesPlaceholder')}
         value={form.notes}
         onChangeText={(v) => updateField('notes', v)}
         multiline
@@ -353,8 +360,8 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={{ width: 22 }} />
-        <Text style={styles.headerTitle}>{isEditMode ? 'Edit Vehicle' : 'Add Vehicle'}</Text>
-        <Pressable onPress={() => router.back()} hitSlop={12}>
+        <Text style={styles.headerTitle}>{isEditMode ? t('vehicles.editTitle') : t('vehicles.addTitle')}</Text>
+        <Pressable onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)')} hitSlop={12}>
           <X size={22} color={colors.textSecondary} />
         </Pressable>
       </View>
@@ -374,7 +381,7 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
       <View style={styles.footer}>
         {step > 0 && (
           <Button
-            title="Back"
+            title={t('common.back')}
             onPress={handleBack}
             variant="secondary"
             size="lg"
@@ -383,7 +390,7 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
         )}
         {step < STEPS.length - 1 ? (
           <Button
-            title="Next"
+            title={t('common.next')}
             onPress={handleNext}
             variant="primary"
             size="lg"
@@ -392,7 +399,7 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
           />
         ) : (
           <Button
-            title={isEditMode ? 'Save Changes' : 'Add Vehicle'}
+            title={isEditMode ? t('common.save') : t('vehicles.addTitle')}
             onPress={handleSubmit}
             variant="primary"
             size="lg"
