@@ -1,0 +1,219 @@
+/*!
+ * Localized storage (localStorage) component
+ *
+ * Copyright (C) 2013 Ma Chao ()
+ *
+ * This program is free software and you can modify and redistribute it under the terms of the GNU General Public License published by the Free Software Foundation
+ * This program. Either use version 2 of the License, or (at your option) any later version.
+ * This program is distributed in the hope that it will be useful, but without any warranty. There is not even an implied warranty of fitness for a particular purpose. More detail
+ * See the GNU General Public License.
+ * You should have received a copy of the GNU General Public License with the program. If not, write to:
+ * The Free Software Foundation, Inc., 675 Mass Ave, Cambridge, MA02139, USA
+ */
+/*
+ *[Function description]
+ * Create a window.localStorage object for browsers that do not support local storage to provide a similar interface
+ * This object supports the following methods or properties
+setItem: function(key, value)
+getItem: function(key)
+removeItem: function(key)
+clear: function()
+length : int
+key: function(i)
+isVirtualObject : true
+ * The secondary packaging interface window.LS provides the following methods and properties (if jQuery is available, the object will also be extended), and is recommended to be used
+set: function(key, vlaue)
+get: function(key)
+remove: function(key)
+clear: function()
+each: function(callback) callback accepts two parameters key and value
+obj : function() returns a localStorage copy of the object description
+length : int
+ *
+ *[Known issues, usage limitations]
+ * The native local storage key is case-sensitive, and the simulated object is not (because userData does not distinguish the case of the key)
+ * The clear method of the simulated object can only clear the data set through this component
+ * The actual storage capacity of the simulated object is different from the native local storage.
+ * Mock objects do not support any localStorage events
+ *
+ *[Update log]
+ * Created by Ma Chao on 2012-06-20
+ * 2012-06-27 Ma Chao adds clear related methods and attributes
+ * 2012-07-02 Ma Chao Modify node storage method
+ * 2012-07-03 Ma Chao Adds secondary packaging to optimize interface use
+ * 2012-07-04 Ma Chao modified the internal logic, canceled the original solution of storing keys separately, and modified the default value to undefined when the key does not exist in the query.
+ * 2012-07-05 Ma Chao obj method to increase secondary packaging
+ * 2013-03-06 Ho Chi Minh Based on the solution provided by Liu Ruiming of Rising, it is compatible with 360 Rapid Browser IE mode (IE6), reduces the priority of the browser's own localStorage, and uses userData first.
+ * 2013-03-11 Ho Chi Minh restored the iframe proxy to create head tag user storage data, and corrected the problem that userData could not read and write the directory.
+ * 2013-03-14 Ho Chi Minh Try to use the built-in localStorage for some browsers that cannot create iframe proxies. If they do not bring their own, local storage will not be supported for the time being.
+ * 2013-03-18 Ma Chao Optimizes the loading judgment logic and code to maximize the availability of components
+ * 2013-04-23 Ma Chao Add more error handling to further improve browser compatibility
+ * 2013-05-04 Ma Chao Added the escape processing function for invalid characters in the userData key
+ * 2013-06-06 Ma Chao gives priority to detecting local storage and solves the userData usage problem under IE9 (invalid after refreshing the page)
+ */
+(function(window){
+	//prepare mock objects empty functions etc
+	var LS, noop = function(){}, document = window.document, notSupport = {set:noop,get:noop,remove:noop,clear:noop,each:noop,obj:noop,length:0};
+	
+	//Prioritize to detect whether userData is supported. If supported, use userData directly instead of localStorage.
+//To prevent IE browser from closing the localStorage function or raising the security level (*_* evil IE)
+//The evil IE9 (9.0.11)), using userData will also have the same effect as seesion. After refreshing the page, the settings will be gone...
+//Have no choice but to detect local storage first. If it cannot be used, try to use userData again.
+	(function(){
+		// Detect local storage first 2013-06-06 Ma Chao
+// Try to access local storage. If access is denied, continue to try to use userData. Note: "localStorage" in window will not return a permission error.
+// Prevent script access permission errors caused by security settings in early versions of IE10
+		if( "localStorage" in window ){
+			try{
+				LS = window.localStorage;
+				return;
+			}catch(e){
+				//If an error is reported, it means that the browser has turned off local storage or raised the security level.
+//Try to use userData
+			}
+		}
+		
+		//Continue to detect userData
+		var o = document.getElementsByTagName("head")[0], hostKey = window.location.hostname || "localStorage", d = new Date(), doc, agent;
+		
+		//typeof o.addBehavior is object under IE6 and function under IE10, so use ! to judge directly here
+//If userData is not supported, jump out and use native localStorage. If native localStorage reports an error, abandon local storage.
+		if(!o.addBehavior){
+			try{
+				LS = window.localStorage;
+			}catch(e){
+				LS = null;
+			}
+			return;
+		}
+		
+		try{ //Try to create an iframe proxy to solve the problem of cross-directory storage
+			agent = new ActiveXObject('htmlfile');
+			agent.open();
+			agent.write('<s' + 'cript>document.w=window;</s' + 'cript><iframe src="/favicon.ico"></iframe>');
+			agent.close();
+			doc = agent.w.frames[0].document;
+			//Here, the head is created through the proxy document, which allows the stored data to be accessed by the folder.
+			o = doc.createElement('head');
+			doc.appendChild(o);
+		}catch(e){
+			//Do not deal with cross-path issues, directly use the current page elements to handle
+//Cannot store across paths, but can also meet most local storage needs
+//2013-03-15 Ma Chao
+			o = document.getElementsByTagName("head")[0];
+		}
+		
+		//initialize user data
+		try{
+			d.setDate(d.getDate() + 36500);
+			o.addBehavior("#default#userData");
+			o.expires = d.toUTCString();
+			o.load(hostKey);
+			o.save(hostKey);
+		}catch(e){
+			//Prevent bugs in some shell browsers from causing subsequent js to fail to run
+//If there is an error, abandon local storage
+//2013-04-23 Ma Chao added
+			return;
+		}
+		//Start processing userData
+//The following code thanks Liu Ruiming of Ruixing for his friendly support and a lot of compatibility testing and modifications.
+//And solved the problem that the key set by userData cannot start with a number
+		var root, attrs;
+		try{
+			root = o.XMLDocument.documentElement;
+			attrs = root.attributes;
+		}catch(e){
+			//Prevent bugs in some shell browsers from causing subsequent js to fail to run
+//If there is an error, abandon local storage
+//2013-04-23 Ma Chao added
+			return;
+		}
+		var prefix = "p__hack_", spfix = "m-_-c",
+			reg1 = new RegExp("^"+prefix),
+			reg2 = new RegExp(spfix,"g"),
+			encode = function(key){ return encodeURIComponent(prefix + key).replace(/%/g, spfix); },
+			decode = function(key){ return decodeURIComponent(key.replace(reg2, "%")).replace(reg1,""); };
+		//create mock object
+		LS= {
+			length: attrs.length,
+			isVirtualObject: true,
+			getItem: function(key){
+				//In IE9, the value cannot be obtained through o.getAttribute(name);, so the following more complicated method is used.
+				return (attrs.getNamedItem( encode(key) ) || {nodeValue: null}).nodeValue||root.getAttribute(encode(key)); 
+			},
+			setItem: function(key, value){
+				//In IE9, you cannot set the #userData value through o.setAttribute(name, value);, but you can use the following method.
+				try{
+					root.setAttribute( encode(key), value);
+					o.save(hostKey);
+					this.length = attrs.length;
+				}catch(e){//IE 9 often reports no permission errors here, but it does not affect data storage.
+				}
+			},
+			removeItem: function(key){
+				//In IE9, you cannot delete the #userData value through o.removeAttribute(name);, but you can use the following method.
+				try{
+					root.removeAttribute( encode(key) );
+					o.save(hostKey);
+					this.length = attrs.length;
+				}catch(e){//IE 9 often reports no permission errors here, but it does not affect data storage.
+				}
+			},
+			clear: function(){
+				while(attrs.length){
+					this.removeItem( attrs[0].nodeName );
+				}
+				this.length = 0;
+			},
+			key: function(i){
+				return attrs[i] ? decode(attrs[i].nodeName) : undefined;
+			}
+		};
+		//provides a simulated local storage interface
+		if( !("localStorage" in window) )
+			window.localStorage = LS;
+	})();
+	
+	//secondary packaging interface
+	window.LS = !LS ? notSupport : {
+		set : function(key, value){
+			//fixed iPhone/iPad 'QUOTA_EXCEEDED_ERR' bug
+			if( this.get(key) !== undefined )
+				this.remove(key);
+			LS.setItem(key, value);
+			this.length = LS.length;
+		},
+		//When querying for a non-existent key, some browsers return null. Here, all browsers return undefined.
+		get : function(key){
+			var v = LS.getItem(key);
+			return v === null ? undefined : v;
+		},
+		remove : function(key){ LS.removeItem(key);this.length = LS.length; },
+		clear : function(){ LS.clear();this.length = 0; },
+		//Local storage data traversal, callback accepts two parameters key and value, if false is returned, the traversal will be terminated
+		each : function(callback){
+			var list = this.obj(), fn = callback || function(){}, key;
+			for(key in list)
+				if( fn.call(this, key, this.get(key)) === false )
+					break;
+		},
+		//Returns a local Storage copy of the object description
+		obj : function(){
+			var list={}, i=0, n, key;
+			if( LS.isVirtualObject ){
+				list = LS.key(-1);
+			}else{
+				n = LS.length;
+				for(; i<n; i++){
+					key = LS.key(i);
+					list[key] = this.get(key);
+				}
+			}
+			return list;
+		},
+		length : LS.length
+	};
+	//If there is jQuery, it will also be extended to jQuery
+	if( window.jQuery ) window.jQuery.LS = window.LS;
+})(window); 

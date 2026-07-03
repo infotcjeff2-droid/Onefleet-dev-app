@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { Vehicle } from '@/types';
-import { mockVehicles } from '@/constants/mockData';
 import { storage } from '@/utils/storage';
 import { fetchFleetSnapshot, hasSupabaseEnv, pushFleetSnapshot } from '@/utils/fleetSync';
 
@@ -57,11 +56,10 @@ export const useVehicleStore = create<VehicleState>((set, get) => ({
       if (stored) {
         set({ vehicles: JSON.parse(stored), isLoading: false });
       } else {
-        set({ vehicles: mockVehicles, isLoading: false });
-        await persistVehicles(mockVehicles);
+        set({ vehicles: [], isLoading: false });
       }
     } catch {
-      set({ vehicles: mockVehicles, isLoading: false });
+      set({ vehicles: [], isLoading: false });
     }
   },
 
@@ -73,11 +71,11 @@ export const useVehicleStore = create<VehicleState>((set, get) => ({
     set({ isSyncing: true, syncError: null });
     try {
       const remote = await fetchFleetSnapshot();
-      if (remote?.vehicles?.length) {
+      if (remote) {
         set({ vehicles: remote.vehicles });
         await persistVehicles(remote.vehicles);
       } else {
-        const localVehicles = get().vehicles.length ? get().vehicles : mockVehicles;
+        const localVehicles = get().vehicles;
         await persistVehicles(localVehicles);
         await pushFleetSnapshot({ vehicles: localVehicles });
       }

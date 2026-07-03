@@ -1,10 +1,22 @@
-import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Pressable, Alert } from 'react-native';
+import { useState, useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  Pressable,
+  Alert,
+  Image,
+} from 'react-native';
 import { useRouter } from 'expo-router';
-import { ChevronLeft, ChevronRight, Check, X } from 'lucide-react-native';
+import { ChevronRight, Check, X, Camera } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { Button } from '@/components/ui/Button';
 import { TextInput } from '@/components/ui/TextInput';
+import { SelectField } from '@/components/ui/SelectField';
+import { ReactQuill, ReactQuillRef } from '@/components/ui/ReactQuill';
 import { useVehicleStore } from '@/store/vehicleStore';
+import { useDriverStore } from '@/store/driverStore';
 import { colors, borderRadius, spacing, typography } from '@/constants/theme';
 import { BodyType, FuelType, TransmissionType, VehicleStatus } from '@/types';
 import { useTranslation } from '@/i18n';
@@ -16,6 +28,7 @@ interface FormData {
   bodyType: BodyType;
   vin: string;
   plateNumber: string;
+  devIdno: string;
   color: string;
   fuelType: FuelType;
   transmission: TransmissionType;
@@ -26,6 +39,7 @@ interface FormData {
   registrationExpiry: string;
   notes: string;
   imageUrl: string;
+  assignedDriverId: string;
 }
 
 const initialFormData: FormData = {
@@ -35,6 +49,7 @@ const initialFormData: FormData = {
   bodyType: 'sedan',
   vin: '',
   plateNumber: '',
+  devIdno: '',
   color: '',
   fuelType: 'gasoline',
   transmission: 'automatic',
@@ -44,7 +59,8 @@ const initialFormData: FormData = {
   insuranceExpiry: '',
   registrationExpiry: '',
   notes: '',
-  imageUrl: 'https://images.unsplash.com/photo-1502877338535-766e1452684a?w=800&q=80',
+  imageUrl: '',
+  assignedDriverId: '',
 };
 
 interface AddVehicleFormProps {
@@ -61,40 +77,45 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
     t('vehicles.stepStatus'),
   ];
 
-  const bodyTypes = [
-    { key: 'sedan', label: t('vehicles.sedan') },
-    { key: 'suv', label: t('vehicles.suv') },
-    { key: 'truck', label: t('vehicles.truck') },
-    { key: 'van', label: t('vehicles.van') },
-    { key: 'motorcycle', label: t('vehicles.motorcycle') },
-    { key: 'other', label: t('vehicles.other') },
+  const bodyTypeOptions: { value: BodyType; label: string }[] = [
+    { value: 'sedan', label: t('vehicles.sedan') },
+    { value: 'suv', label: t('vehicles.suv') },
+    { value: 'truck', label: t('vehicles.truck') },
+    { value: 'van', label: t('vehicles.van') },
+    { value: 'motorcycle', label: t('vehicles.motorcycle') },
+    { value: 'other', label: t('vehicles.other') },
   ];
 
-  const fuelTypes = [
-    { key: 'gasoline', label: t('dashboard.gasoline') },
-    { key: 'diesel', label: t('dashboard.diesel') },
-    { key: 'electric', label: t('dashboard.electric') },
-    { key: 'hybrid', label: t('dashboard.hybrid') },
+  const fuelTypeOptions: { value: FuelType; label: string }[] = [
+    { value: 'gasoline', label: t('dashboard.gasoline') },
+    { value: 'diesel', label: t('dashboard.diesel') },
+    { value: 'electric', label: t('dashboard.electric') },
+    { value: 'hybrid', label: t('dashboard.hybrid') },
   ];
 
-  const transmissions = [
-    { key: 'automatic', label: t('vehicles.automatic') },
-    { key: 'manual', label: t('vehicles.manual') },
+  const transmissionOptions: { value: TransmissionType; label: string }[] = [
+    { value: 'automatic', label: t('vehicles.automatic') },
+    { value: 'manual', label: t('vehicles.manual') },
   ];
 
-  const statuses = [
-    { key: 'active', label: t('vehicles.active') },
-    { key: 'maintenance', label: t('vehicles.maintenance') },
-    { key: 'inactive', label: t('vehicles.inactive') },
+  const statusOptions: { value: VehicleStatus; label: string }[] = [
+    { value: 'active', label: t('vehicles.active') },
+    { value: 'maintenance', label: t('vehicles.maintenance') },
+    { value: 'inactive', label: t('vehicles.inactive') },
   ];
 
   const { getVehicleById, addVehicle, updateVehicle } = useVehicleStore();
+  const { drivers, loadDrivers } = useDriverStore();
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<FormData>(initialFormData);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
 
   const isEditMode = Boolean(editId);
+
+  useEffect(() => {
+    loadDrivers();
+  }, [loadDrivers]);
 
   useEffect(() => {
     if (editId) {
@@ -107,6 +128,7 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
           bodyType: existing.bodyType,
           vin: existing.vin,
           plateNumber: existing.plateNumber,
+          devIdno: existing.devIdno || '',
           color: existing.color,
           fuelType: existing.fuelType,
           transmission: existing.transmission,
@@ -117,6 +139,7 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
           registrationExpiry: existing.registrationExpiry,
           notes: existing.notes,
           imageUrl: existing.imageUrl,
+          assignedDriverId: existing.assignedDriverId || '',
         });
       }
     }
@@ -157,6 +180,29 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
     setStep((s) => Math.max(s - 1, 0));
   };
 
+  const handlePickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert(t('profile.photoPermissionDenied'));
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [16, 9],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      updateField('imageUrl', result.assets[0].uri);
+    }
+  };
+
+  const handleRemoveImage = () => {
+    updateField('imageUrl', '');
+  };
+
   const handleSubmit = async () => {
     if (!validateStep(step)) return;
     setIsSubmitting(true);
@@ -168,6 +214,7 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
         bodyType: form.bodyType,
         vin: form.vin || 'N/A',
         plateNumber: form.plateNumber,
+        devIdno: form.devIdno.trim() || undefined,
         color: form.color,
         fuelType: form.fuelType,
         transmission: form.transmission,
@@ -178,6 +225,7 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
         registrationExpiry: form.registrationExpiry || '',
         notes: form.notes || '',
         imageUrl: form.imageUrl,
+        assignedDriverId: form.assignedDriverId || undefined,
       };
 
       if (isEditMode && editId) {
@@ -192,6 +240,16 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
       setIsSubmitting(false);
     }
   };
+
+  const driverOptions = [
+    { value: '', label: t('vehicles.selectDriverPlaceholder') },
+    ...drivers.map((driver) => ({
+      value: driver.id,
+      label: `${driver.name} ${driver.phone ? `(${driver.phone})` : ''}`,
+    })),
+  ];
+
+  const selectedDriver = drivers.find((d) => d.id === form.assignedDriverId);
 
   const renderStepIndicator = () => (
     <View style={styles.stepIndicator}>
@@ -223,36 +281,40 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
     </View>
   );
 
-  const renderSelector = <T extends string>(
-    options: { key: T; label: string }[],
-    selected: T,
-    onSelect: (key: T) => void
-  ) => (
-    <View style={styles.selectorGrid}>
-      {options.map((o) => (
-        <Pressable
-          key={o.key}
-          onPress={() => onSelect(o.key)}
-          style={[
-            styles.selectorItem,
-            selected === o.key && styles.selectorItemSelected,
-          ]}
-        >
-          <Text
-            style={[
-              styles.selectorText,
-              selected === o.key && styles.selectorTextSelected,
-            ]}
-          >
-            {o.label}
-          </Text>
-        </Pressable>
-      ))}
-    </View>
-  );
-
   const renderStep0 = () => (
     <View>
+      <Text style={styles.sectionTitle}>{t('vehicles.stepBasicInfo')}</Text>
+
+      <Text style={styles.fieldLabel}>{t('vehicles.vehicleImage')}</Text>
+      <View style={styles.imageUploadSection}>
+        {form.imageUrl ? (
+          <View style={styles.imagePreviewWrap}>
+            <Image source={{ uri: form.imageUrl }} style={styles.imagePreview} resizeMode="cover" />
+            <Pressable style={styles.removeImageBtn} onPress={handleRemoveImage}>
+              <X size={16} color="#FFF" />
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable
+            style={[styles.imageUploadPlaceholder, { borderColor: colors.border }]}
+            onPress={handlePickImage}
+          >
+            <Camera size={32} color={colors.textTertiary} />
+            <Text style={styles.imageUploadText}>{t('vehicles.uploadVehicleImage')}</Text>
+          </Pressable>
+        )}
+        {form.imageUrl && (
+          <Pressable
+            style={[styles.changeImageBtn, { borderColor: colors.primary }]}
+            onPress={handlePickImage}
+          >
+            <Text style={[styles.changeImageText, { color: colors.primary }]}>
+              {t('vehicles.changeImage')}
+            </Text>
+          </Pressable>
+        )}
+      </View>
+
       <TextInput
         label={t('vehicles.make') + ' *'}
         placeholder={t('vehicles.makePlaceholder')}
@@ -278,13 +340,19 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
         keyboardType="numeric"
         maxLength={4}
       />
-      <Text style={styles.fieldLabel}>{t('vehicles.bodyType')}</Text>
-      {renderSelector(bodyTypes, form.bodyType, (v) => updateField('bodyType', v))}
+      <SelectField
+        label={t('vehicles.bodyType')}
+        value={form.bodyType}
+        options={bodyTypeOptions}
+        onValueChange={(v) => updateField('bodyType', v)}
+      />
     </View>
   );
 
   const renderStep1 = () => (
     <View>
+      <Text style={styles.sectionTitle}>{t('vehicles.stepDetails')}</Text>
+
       <TextInput
         label={t('vehicles.plateNumber') + ' *'}
         placeholder={t('vehicles.platePlaceholder')}
@@ -292,6 +360,14 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
         onChangeText={(v) => updateField('plateNumber', v.toUpperCase())}
         error={errors.plateNumber}
         autoCapitalize="characters"
+      />
+      <TextInput
+        label="GPS Device ID (devIdno)"
+        placeholder="e.g. 50000000000"
+        value={form.devIdno}
+        onChangeText={(v) => updateField('devIdno', v)}
+        autoCapitalize="none"
+        description={t('vehicles.devIdnoHelp')}
       />
       <TextInput
         label={t('vehicles.vin')}
@@ -309,15 +385,25 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
         error={errors.color}
         autoCapitalize="words"
       />
-      <Text style={styles.fieldLabel}>{t('vehicles.fuelType')}</Text>
-      {renderSelector(fuelTypes, form.fuelType, (v) => updateField('fuelType', v))}
-      <Text style={[styles.fieldLabel, { marginTop: spacing.lg }]}>{t('vehicles.transmission')}</Text>
-      {renderSelector(transmissions, form.transmission, (v) => updateField('transmission', v))}
+      <SelectField
+        label={t('vehicles.fuelType')}
+        value={form.fuelType}
+        options={fuelTypeOptions}
+        onValueChange={(v) => updateField('fuelType', v)}
+      />
+      <SelectField
+        label={t('vehicles.transmission')}
+        value={form.transmission}
+        options={transmissionOptions}
+        onValueChange={(v) => updateField('transmission', v)}
+      />
     </View>
   );
 
   const renderStep2 = () => (
     <View>
+      <Text style={styles.sectionTitle}>{t('vehicles.stepStatus')}</Text>
+
       <TextInput
         label={t('vehicles.mileage')}
         placeholder={t('vehicles.mileagePlaceholder')}
@@ -325,6 +411,15 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
         onChangeText={(v) => updateField('mileage', v)}
         keyboardType="numeric"
       />
+
+      <SelectField
+        label={t('vehicles.selectDriver')}
+        value={form.assignedDriverId}
+        options={driverOptions}
+        onValueChange={(v) => updateField('assignedDriverId', v)}
+        description={selectedDriver ? t('vehicles.driverAssigned', { name: selectedDriver.name }) : undefined}
+      />
+
       <TextInput
         label={t('vehicles.purchaseDate')}
         placeholder="YYYY-MM-DD"
@@ -343,16 +438,20 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
         value={form.registrationExpiry}
         onChangeText={(v) => updateField('registrationExpiry', v)}
       />
-      <Text style={styles.fieldLabel}>{t('vehicles.status')}</Text>
-      {renderSelector(statuses, form.status, (v) => updateField('status', v))}
-      <TextInput
-        label={t('vehicles.notes')}
-        placeholder={t('vehicles.notesPlaceholder')}
-        value={form.notes}
-        onChangeText={(v) => updateField('notes', v)}
-        multiline
-        numberOfLines={3}
+      <SelectField
+        label={t('vehicles.status')}
+        value={form.status}
+        options={statusOptions}
+        onValueChange={(v) => updateField('status', v)}
       />
+      <View style={styles.quillWrapper}>
+        <Text style={styles.fieldLabel}>{t('vehicles.notes')}</Text>
+        <ReactQuill
+          value={form.notes}
+          onChange={(html) => updateField('notes', html)}
+          placeholder={t('vehicles.notesPlaceholder')}
+        />
+      </View>
     </View>
   );
 
@@ -493,37 +592,67 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     paddingBottom: spacing['3xl'],
   },
+  sectionTitle: {
+    fontSize: typography.fontSize.lg,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.lg,
+  },
   fieldLabel: {
     color: colors.textSecondary,
     fontSize: typography.fontSize.sm,
     fontWeight: '500',
     marginBottom: spacing.sm,
   },
-  selectorGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
+  imageUploadSection: {
     marginBottom: spacing.lg,
   },
-  selectorItem: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm + 2,
-    borderRadius: borderRadius.md,
+  imageUploadPlaceholder: {
+    height: 160,
+    borderRadius: borderRadius.lg,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: colors.card,
+  },
+  imageUploadText: {
+    marginTop: spacing.sm,
+    fontSize: typography.fontSize.sm,
+    color: colors.textTertiary,
+    fontWeight: '500',
+  },
+  imagePreviewWrap: {
+    position: 'relative',
+    borderRadius: borderRadius.lg,
+    overflow: 'hidden',
+  },
+  imagePreview: {
+    width: '100%',
+    height: 160,
+    borderRadius: borderRadius.lg,
+  },
+  removeImageBtn: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  changeImageBtn: {
+    marginTop: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
     borderWidth: 1.5,
-    borderColor: colors.border,
+    alignItems: 'center',
   },
-  selectorItemSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  selectorText: {
+  changeImageText: {
     fontSize: typography.fontSize.sm,
     fontWeight: '600',
-    color: colors.textSecondary,
-  },
-  selectorTextSelected: {
-    color: '#FFFFFF',
   },
   footer: {
     flexDirection: 'row',
@@ -532,5 +661,8 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
     backgroundColor: colors.background,
+  },
+  quillWrapper: {
+    marginBottom: spacing.lg,
   },
 });

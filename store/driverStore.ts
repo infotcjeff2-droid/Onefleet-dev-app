@@ -9,6 +9,8 @@ export interface Driver {
   vehiclePlate?: string;
   status: 'available' | 'busy' | 'offline';
   avatar?: string;
+  /** 綁定的車輛 ID */
+  assignedVehicleId?: string;
 }
 
 const DRIVER_STORAGE_KEY = 'managed_drivers';
@@ -22,6 +24,7 @@ interface StoredDriver {
   vehiclePlate?: string;
   status: 'available' | 'busy' | 'offline';
   avatar?: string;
+  assignedVehicleId?: string;
 }
 
 interface StoredUser {
@@ -34,9 +37,10 @@ interface StoredUser {
 }
 
 const defaultDrivers: Driver[] = [
-  { id: 'd001', name: 'John Smith', phone: '+1234567890', email: 'john@example.com', vehiclePlate: 'ABC-1234', status: 'available' },
-  { id: 'd002', name: 'Mike Johnson', phone: '+1234567891', email: 'mike@example.com', vehiclePlate: 'XYZ-5678', status: 'busy' },
-  { id: 'd003', name: 'David Lee', phone: '+1234567892', email: 'david@example.com', vehiclePlate: 'DEF-9012', status: 'available' },
+  { id: 'd001', name: '陳大文', phone: '+852 6123 4567', email: 'chan.daiman@example.com', vehiclePlate: 'CA 1234', status: 'available', assignedVehicleId: 'v001' },
+  { id: 'd002', name: '王小明', phone: '+852 9876 5432', email: 'wong.sioming@example.com', vehiclePlate: 'XX 5678', status: 'busy', assignedVehicleId: 'v002' },
+  { id: 'd003', name: '張志偉', phone: '+852 5555 1234', email: 'cheung.chiwai@example.com', vehiclePlate: 'EV 0001', status: 'available', assignedVehicleId: 'v003' },
+  { id: 'd004', name: '李國強', phone: '+852 6888 9999', email: 'li.kwokeung@example.com', vehiclePlate: 'TH 8899', status: 'available', assignedVehicleId: 'v008' },
 ];
 
 interface DriverState {
@@ -46,6 +50,8 @@ interface DriverState {
   updateDriver: (id: string, updates: Partial<Driver>) => Promise<void>;
   deleteDriver: (id: string) => Promise<void>;
   getDriverById: (id: string) => Driver | undefined;
+  /** 獲取綁定到指定司機的車輛 */
+  getVehiclesByDriverId: (driverId: string, vehicles: { id: string; assignedDriverId?: string; plateNumber: string }[]) => { id: string; plateNumber: string }[];
 }
 
 export const useDriverStore = create<DriverState>((set, get) => ({
@@ -96,8 +102,16 @@ export const useDriverStore = create<DriverState>((set, get) => ({
         }
       }
 
-      set({ drivers: merged });
-      await storage.setItem(DRIVER_STORAGE_KEY, JSON.stringify(merged));
+        const seen = new Set<string>();
+        const deduped: Driver[] = [];
+        for (const d of merged) {
+          if (!seen.has(d.id)) {
+            seen.add(d.id);
+            deduped.push(d);
+          }
+        }
+        set({ drivers: deduped });
+        await storage.setItem(DRIVER_STORAGE_KEY, JSON.stringify(deduped));
     } catch {
       set({ drivers: defaultDrivers });
     }
@@ -136,5 +150,9 @@ export const useDriverStore = create<DriverState>((set, get) => ({
 
   getDriverById: (id) => {
     return get().drivers.find((driver) => driver.id === id);
+  },
+
+  getVehiclesByDriverId: (driverId, vehicles) => {
+    return vehicles.filter((v) => v.assignedDriverId === driverId);
   },
 }));

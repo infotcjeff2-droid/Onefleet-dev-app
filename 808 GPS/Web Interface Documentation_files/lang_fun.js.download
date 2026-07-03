@@ -1,0 +1,291 @@
+var lang_local;	//local language
+var lang;	//Language object, obtain language information by calling lang.lable
+var rootElement;
+
+//Initialize the language, which follows the language of the browser
+function langInitByBrowser() {
+    //Start by getting the language parameters from the cookie
+    var local = GetCookie("language");
+
+    if (local == null) {
+        //Then get the language parameters according to the browser language
+        if (navigator.userAgent.indexOf('MSIE') >= 0) {
+            local = navigator.browserLanguage;
+        } else if (navigator.userAgent.indexOf('Firefox') >= 0 || navigator.userAgent.indexOf('Chrome') >= 0
+            || navigator.userAgent.indexOf('Opera') >= 0 || navigator.userAgent.indexOf('Mozilla') >= 0) {
+            local = navigator.language;
+        } else {
+            local = navigator.language;
+        }
+        if (local.indexOf('en') > -1) {
+            local = "en";
+        } else if (local.indexOf('CN') > -1 || local.indexOf('cn') > -1
+            || local.indexOf('ZH') > -1 || local.indexOf('zh') > -1) {
+            local = "zh";
+        } else {
+            local = "en";	//Default is English version
+        }
+    } else if (local.indexOf('CN') > -1 || local.indexOf('cn') > -1
+        || local.indexOf('ZH') > -1 || local.indexOf('zh') > -1) {
+        local = "zh";
+    }
+    langChange(local);
+}
+
+//Initialization language, according to the Url parameter, followed by xxx.html?lang=zh in the URL
+function langInitByUrl() {
+    var local = getUrlParameter("lang");
+
+
+    if (local == "") {
+        langInitByBrowser();
+    } else {
+        langChange(local);
+    }
+}
+
+//Append js to head
+function loadScript(src, callback) {
+    var otherJScipt = document.createElement("script");
+    otherJScipt.setAttribute("type", "text/javascript");
+    otherJScipt.setAttribute("src", src);
+    var heads = document.getElementsByTagName("head");//Append to the head tag
+    if (heads.length) {
+        heads[0].appendChild(otherJScipt);
+    } else {
+        doc.documentElement.appendChild(otherJScipt);
+    }
+    //Determine server
+    if (navigator.userAgent.indexOf("IE") >= 0) {
+        //Events under IE
+        otherJScipt.onreadystatechange = function () {
+            //Judgment under IE to determine whether loading is completed
+            if (otherJScipt && (otherJScipt.readyState == "loaded" || otherJScipt.readyState == "complete")) {
+                otherJScipt.onreadystatechange = null;
+                if (callback != null) {
+                    callback();
+                }
+            }
+        };
+    } else {
+        otherJScipt.onload = function () {
+            otherJScipt.onload = null;
+            if (callback != null) {
+                callback();
+            }
+        };
+    }
+}
+
+function langChange(local) {
+    rootElement = _getRootFrameElement();
+    if (rootElement.LS && rootElement.LS.get('excludeChinese') == 1 && local == 'zh'){
+        local = 'en';
+    }
+    if (rootElement.LS && rootElement.LS.get('excludeTaiwan') == 1 && local == 'tw'){
+        local = 'en';
+    }
+    lang_local = local;
+    //Currently only supports Chinese, English and Traditional
+    if (langIsChinese()) {
+        loadScript(getRootPathEx() + "/808gps/open/js/lang.js?tv=" + rootElement.ttxWebVersion, function () {
+            lang = new langChinese();
+            //If it is v9, correct the vehicle and license plate number information
+        });
+    } else {
+        loadScript(getRootPathEx() + "/808gps/open/js/lang_en.js?tv=" + rootElement.ttxWebVersion, function () {
+            lang = new langEnglish();
+        });
+    }
+}
+
+function repairByV9(lang) {
+
+    if (lang_local == "zh") {
+        for (var key in lang) {
+            if (key.endsWith('_fixed')){
+                continue;
+            }
+            if (lang[key].indexOf(lang.vehicles_fixed) !== -1) {
+                lang[key] = lang[key].replaceAll(lang.vehicles_fixed, lang.policeOrVehicel_fixed)
+            }
+        }
+    } else if (lang_local == 'en') {
+        for (var key in lang) {
+            if (lang[key].indexOf('Vehicle') !== -1) {
+                lang[key] = lang[key].replaceAll('Vehicle', 'Police ')
+            }
+        }
+    }
+
+
+}
+
+function langIsChinese() {
+    if (lang_local == "zh") {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+//Obtain the project root path using JS, such as: http://localhost:8083/xx
+function getRootPathEx() {
+//Obtain the current website address, such as: http://localhost:8083/xx/xx/xx.jsp
+    var curWwwPath = window.document.location.href;
+    //Get the directory after the host address, such as: xx/xx/xx.jsp
+    var pathName = window.document.location.pathname;
+    var pos = curWwwPath.indexOf(pathName);
+    //Obtain the host address, such as: http://localhost:8083
+    var localhostPaht = curWwwPath.substring(0, pos);
+    //Get the project name with "/", such as: /xx
+    var projectName = pathName.substring(0, pathName.substr(1).indexOf('/') + 1);
+    return localhostPaht;
+}
+
+var lang_local;	//local language
+var lang;	//Language object, obtain language information by calling lang.lable
+
+//Initialization language, according to the browser language
+function langInitByBrowser() {
+    //First get the language parameters from the cookie
+    var local = GetCookie("language");
+
+    if (local == null) {
+        //Then get the language parameters according to the browser language
+        if (navigator.userAgent.indexOf('MSIE') >= 0) {
+            local = navigator.browserLanguage;
+        } else if (navigator.userAgent.indexOf('Firefox') >= 0 || navigator.userAgent.indexOf('Chrome') >= 0
+            || navigator.userAgent.indexOf('Opera') >= 0 || navigator.userAgent.indexOf('Mozilla') >= 0) {
+            local = navigator.language;
+        } else {
+            local = navigator.language;
+        }
+        if (local.indexOf('en') > -1) {
+            local = "en";
+        } else if (local.indexOf('CN') > -1 || local.indexOf('cn') > -1
+            || local.indexOf('ZH') > -1 || local.indexOf('zh') > -1) {
+            local = "zh";
+        } else {
+            local = "en";	//Default is English version
+        }
+    } else if (local.indexOf('CN') > -1 || local.indexOf('cn') > -1
+        || local.indexOf('ZH') > -1 || local.indexOf('zh') > -1) {
+        local = "zh";
+    }
+    langChange(local);
+}
+
+//Initialization language, according to the Url parameter, followed by xxx.html?lang=zh in the URL
+function langInitByUrl() {
+    var local = getUrlParameter("lang");
+
+
+    if (local == "") {
+        langInitByBrowser();
+    } else {
+        langChange(local);
+    }
+}
+
+//Append js to head
+function loadScript(src, callback) {
+    var otherJScipt = document.createElement("script");
+    otherJScipt.setAttribute("type", "text/javascript");
+    otherJScipt.setAttribute("src", src);
+    var heads = document.getElementsByTagName("head");//Append to the head tag
+    if (heads.length) {
+        heads[0].appendChild(otherJScipt);
+    } else {
+        doc.documentElement.appendChild(otherJScipt);
+    }
+    //Determine server
+    if (navigator.userAgent.indexOf("IE") >= 0) {
+        //Events under IE
+        otherJScipt.onreadystatechange = function () {
+            //Judgment under IE to determine whether loading is completed
+            if (otherJScipt && (otherJScipt.readyState == "loaded" || otherJScipt.readyState == "complete")) {
+                otherJScipt.onreadystatechange = null;
+                if (callback != null) {
+                    callback();
+                }
+            }
+        };
+    } else {
+        otherJScipt.onload = function () {
+            otherJScipt.onload = null;
+            if (callback != null) {
+                callback();
+            }
+        };
+    }
+}
+
+function langChange(local) {
+    lang_local = local;
+    //Currently only supports Chinese, English and Traditional
+    if (langIsChinese()) {
+        loadScript(getRootPathEx() + "/808gps/open/js/lang.js?tv=" + rootElement.ttxWebVersion, function () {
+            lang = new langChinese();
+            //If it is v9, correct the vehicle and license plate number information
+            if (GetCookie("isPolice") == 1) {
+                repairPoliceByZh(lang)
+            }
+        });
+    } else {
+        loadScript(getRootPathEx() + "/808gps/open/js/lang_en.js?tv=" + rootElement.ttxWebVersion, function () {
+            lang = new langEnglish();
+            if (GetCookie("isPolice") == 1) {
+                repairPoliceByEn(lang)
+            }
+        });
+    }
+}
+
+function repairPoliceByEn(lang) {
+    for (var key in lang) {
+        if (lang[key].indexOf('Vehicle') !== -1) {
+            lang[key] = lang[key].replaceAll('Vehicle', 'Police')
+        }
+        if (lang[key].indexOf('Plate') !== -1) {
+            lang[key] = lang[key].replaceAll('Plate', 'Police')
+        }
+    }
+
+}
+
+function repairPoliceByZh(lang) {
+    for (var key in lang) {
+        if (key.endsWith('_fixed')){
+            continue;
+        }
+        if (lang[key].indexOf(lang.vehicles_fixed) !== -1) {
+            lang[key] = lang[key].replaceAll(lang.vehicles_fixed, lang.policeName_fixed)
+        }
+        if (lang[key].indexOf(lang.plateNumber_fixed) !== -1) {
+            lang[key] = lang[key].replaceAll(lang.plateNumber_fixed, lang.policeName_fixed)
+        }
+    }
+}
+
+function langIsChinese() {
+    if (lang_local == "zh") {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+//Obtain the project root path using JS, such as: http://localhost:8083/xx
+function getRootPathEx() {
+//Obtain the current website address, such as: http://localhost:8083/xx/xx/xx.jsp
+    var curWwwPath = window.document.location.href;
+    //Get the directory after the host address, such as: xx/xx/xx.jsp
+    var pathName = window.document.location.pathname;
+    var pos = curWwwPath.indexOf(pathName);
+    //Obtain the host address, such as: http://localhost:8083
+    var localhostPaht = curWwwPath.substring(0, pos);
+    //Get the project name with "/", such as: /xx
+    var projectName = pathName.substring(0, pathName.substr(1).indexOf('/') + 1);
+    return localhostPaht;
+}

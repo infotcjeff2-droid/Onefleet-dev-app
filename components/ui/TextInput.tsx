@@ -9,6 +9,7 @@ interface TextInputProps {
   value: string;
   onChangeText: (text: string) => void;
   error?: string;
+  description?: string;
   secureTextEntry?: boolean;
   keyboardType?: 'default' | 'email-address' | 'numeric' | 'phone-pad';
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
@@ -27,6 +28,7 @@ export function TextInput({
   value,
   onChangeText,
   error,
+  description,
   secureTextEntry = false,
   keyboardType = 'default',
   autoCapitalize = 'none',
@@ -86,6 +88,7 @@ export function TextInput({
         )}
       </View>
       {error && <Text style={styles.error}>{error}</Text>}
+      {description && !error && <Text style={styles.description}>{description}</Text>}
     </View>
   );
 }
@@ -130,5 +133,10 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     marginTop: spacing.xs,
     fontWeight: '500',
+  },
+  description: {
+    color: colors.textTertiary,
+    fontSize: typography.fontSize.xs,
+    marginTop: spacing.xs,
   },
 });

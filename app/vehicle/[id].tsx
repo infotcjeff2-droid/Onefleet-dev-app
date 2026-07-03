@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Image, StyleSheet, ScrollView, Alert, Dimensions, Pressable } from 'react-native';
+import { View, Text, Image, StyleSheet, Dimensions, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, interpolate, Extrapolation } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Edit, Trash2, Share2, ChevronLeft, MapPin } from 'lucide-react-native';
+import { ChevronLeft } from 'lucide-react-native';
 import { useVehicleStore } from '@/store/vehicleStore';
 import { BentoGrid } from '@/components/vehicle/BentoGrid';
-import { Button } from '@/components/ui/Button';
 import { SkeletonCard } from '@/components/ui/SkeletonCard';
 import { colors, spacing, typography, borderRadius, layout } from '@/constants/theme';
 import { useTranslation } from '@/i18n';
@@ -19,7 +18,7 @@ export default function VehicleDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { getVehicleById, deleteVehicle, isLoading } = useVehicleStore();
+  const { getVehicleById, isLoading } = useVehicleStore();
   const { t } = useTranslation();
 
   const [vehicle, setVehicle] = useState(getVehicleById(id));
@@ -41,35 +40,9 @@ export default function VehicleDetailScreen() {
     return (
       <View style={styles.notFoundContainer}>
         <Text style={styles.notFoundText}>{t('vehicles.notFound')}</Text>
-        <Button title={t('common.back')} onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)')} />
       </View>
     );
   }
-
-  const handleDelete = () => {
-    Alert.alert(
-      t('vehicles.deleteVehicle'),
-      t('vehicles.deleteConfirmMessage', { make: vehicle.make, model: vehicle.model }),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('common.delete'),
-          style: 'destructive',
-          onPress: async () => {
-            await deleteVehicle(id);
-            router.canGoBack() ? router.back() : router.replace('/(tabs)');
-          },
-        },
-      ]
-    );
-  };
-
-  const handleShare = () => {
-    Alert.alert(
-      t('vehicles.shareVehicle'),
-      t('vehicles.shareMessage', { make: vehicle.make, model: vehicle.model, plateNumber: vehicle.plateNumber })
-    );
-  };
 
   const headerAnimatedStyle = useAnimatedStyle(() => {
     const height = interpolate(
@@ -123,17 +96,6 @@ export default function VehicleDetailScreen() {
               {vehicle.make} {vehicle.model}
             </Text>
           </Animated.View>
-          <View style={styles.topBarActions}>
-            <Pressable onPress={handleShare} style={styles.topBarBtn}>
-              <Share2 size={20} color={colors.textPrimary} />
-            </Pressable>
-            <Pressable
-              onPress={() => router.push(`/vehicle/add?edit=${vehicle.id}`)}
-              style={styles.topBarBtn}
-            >
-              <Edit size={20} color={colors.textPrimary} />
-            </Pressable>
-          </View>
         </View>
       </View>
 
@@ -174,26 +136,6 @@ export default function VehicleDetailScreen() {
         style={styles.scrollView}
       >
         <BentoGrid vehicle={vehicle} />
-
-        {/* Action Bar */}
-        <View style={styles.actionBar}>
-          <Button
-            title={t('common.edit')}
-            onPress={() => router.push(`/vehicle/add?edit=${vehicle.id}`)}
-            variant="secondary"
-            size="lg"
-            icon={<Edit size={16} color={colors.primary} />}
-            style={{ flex: 1, marginRight: spacing.md }}
-          />
-          <Button
-            title={t('common.delete')}
-            onPress={handleDelete}
-            variant="danger"
-            size="lg"
-            icon={<Trash2 size={16} color="#FFF" />}
-            style={{ flex: 1 }}
-          />
-        </View>
       </Animated.ScrollView>
     </View>
   );
@@ -347,10 +289,5 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     zIndex: 1,
-  },
-  actionBar: {
-    flexDirection: 'row',
-    padding: spacing.lg,
-    paddingTop: spacing.xl,
   },
 });

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { DeliveryOrder, DeliveryStatus, mockDeliveries } from '@/constants/mockData';
+import { Alert } from 'react-native';
+import { DeliveryOrder, DeliveryStatus, SignatureStroke, DeliveryPhoto } from '@/types';
 import { storage } from '@/utils/storage';
 import { fetchFleetSnapshot, hasSupabaseEnv, pushFleetSnapshot } from '@/utils/fleetSync';
 
@@ -7,7 +8,14 @@ const STORAGE_KEY = 'deliveries';
 const DELIVERY_FLOW: DeliveryStatus[] = ['pending', 'assigned', 'in_transit', 'delivered', 'signed'];
 
 function parsePickupTime(pickupTime: string) {
-  return new Date(pickupTime.replace(' ', 'T'));
+  const normalized = pickupTime.replace(' ', 'T').replace(/(\d{2}:\d{2})(?::\d{2})?$/, '$1:00');
+  return new Date(normalized);
+}
+
+function isToday(date: Date, now: Date) {
+  return date.getFullYear() === now.getFullYear()
+    && date.getMonth() === now.getMonth()
+    && date.getDate() === now.getDate();
 }
 
 export function isDeliveryExpired(delivery: DeliveryOrder, now = new Date()) {
@@ -17,6 +25,10 @@ export function isDeliveryExpired(delivery: DeliveryOrder, now = new Date()) {
 
   const pickupDate = parsePickupTime(delivery.pickupTime);
   if (Number.isNaN(pickupDate.getTime())) {
+    return false;
+  }
+
+  if (isToday(pickupDate, now)) {
     return false;
   }
 
@@ -42,16 +54,22 @@ function normalizeDelivery(delivery: DeliveryOrder, now = new Date()): DeliveryO
 }
 
 function canTransitionToStatus(current: DeliveryOrder, nextStatus: DeliveryStatus) {
-  const currentStatus = getEffectiveDeliveryStatus(current);
-  if (currentStatus === 'expired') {
-    return nextStatus === 'expired';
+  if (current.status === 'signed') {
+    return false;
   }
 
   if (nextStatus === 'expired') {
     return true;
   }
 
-  return DELIVERY_FLOW.includes(nextStatus);
+  const currentIdx = DELIVERY_FLOW.indexOf(current.status);
+  const nextIdx = DELIVERY_FLOW.indexOf(nextStatus);
+
+  if (currentIdx < 0 || nextIdx < 0) {
+    return false;
+  }
+
+  return nextIdx === currentIdx + 1;
 }
 
 async function persistDeliveries(deliveries: DeliveryOrder[]) {
@@ -79,7 +97,9 @@ interface DeliveryState {
   assignDriver: (deliveryId: string, driverId: string, driverName: string) => Promise<void>;
   removeDriver: (deliveryId: string) => Promise<void>;
   updateStatus: (deliveryId: string, status: DeliveryStatus) => Promise<void>;
-  addSignature: (deliveryId: string, signatureData: string) => Promise<void>;
+  addSignature: (deliveryId: string, signatureData: string, signatureStrokes?: SignatureStroke[][]) => Promise<void>;
+  addPhoto: (deliveryId: string, photoUri: string) => Promise<void>;
+  removePhoto: (deliveryId: string, photoId: string) => Promise<void>;
   syncExpiredDeliveries: () => Promise<void>;
   resetDeliveries: () => Promise<void>;
   getDeliveriesForDriver: (driverId: string) => DeliveryOrder[];
@@ -95,14 +115,12 @@ export const useDeliveryStore = create<DeliveryState>((set, get) => ({
     try {
       const stored = await storage.getItem(STORAGE_KEY);
       if (stored) {
-        set({ deliveries: JSON.parse(stored).map((delivery: DeliveryOrder) => normalizeDelivery(delivery)), isLoading: false });
+        set({ deliveries: JSON.parse(stored), isLoading: false });
       } else {
-        const initial = mockDeliveries.map((delivery) => normalizeDelivery(delivery));
-        set({ deliveries: initial, isLoading: false });
-        await persistDeliveries(initial);
+        set({ deliveries: [], isLoading: false });
       }
     } catch {
-      set({ deliveries: mockDeliveries.map((delivery) => normalizeDelivery(delivery)), isLoading: false });
+      set({ deliveries: [], isLoading: false });
     }
   },
 
@@ -114,12 +132,11 @@ export const useDeliveryStore = create<DeliveryState>((set, get) => ({
     set({ isSyncing: true, syncError: null });
     try {
       const remote = await fetchFleetSnapshot();
-      if (remote?.deliveries?.length) {
-        const normalized = remote.deliveries.map((delivery) => normalizeDelivery(delivery));
-        set({ deliveries: normalized });
-        await persistDeliveries(normalized);
+      if (remote) {
+        set({ deliveries: remote.deliveries });
+        await persistDeliveries(remote.deliveries);
       } else {
-        const localDeliveries = get().deliveries.length ? get().deliveries : mockDeliveries.map((delivery) => normalizeDelivery(delivery));
+        const localDeliveries = get().deliveries;
         await persistDeliveries(localDeliveries);
         await pushFleetSnapshot({ deliveries: localDeliveries });
       }
@@ -190,28 +207,60 @@ export const useDeliveryStore = create<DeliveryState>((set, get) => ({
   },
 
   updateStatus: async (deliveryId, status) => {
-    const updated = get().deliveries.map((delivery) => {
-      if (delivery.id !== deliveryId) {
-        return delivery;
-      }
+    const currentDeliveries = get().deliveries;
+    const found = currentDeliveries.find((d) => d.id === deliveryId);
 
-      if (!canTransitionToStatus(delivery, status)) {
-        return normalizeDelivery(delivery);
-      }
+    if (!found) {
+      Alert.alert('Error', `找不到訂單: ${deliveryId}`);
+      return;
+    }
 
-      return normalizeDelivery({ ...delivery, status });
-    });
+    if (!canTransitionToStatus(found, status)) {
+      Alert.alert('Error', `無法轉換狀態: ${found.status} -> ${status}`);
+      return;
+    }
+
+    const updated = currentDeliveries.map((delivery) =>
+      delivery.id === deliveryId ? { ...delivery, status } : delivery,
+    );
 
     set({ deliveries: updated });
     await persistDeliveries(updated);
     pushDeliveriesInBackground(updated, (message) => set({ syncError: message }));
   },
 
-  addSignature: async (deliveryId, signatureData) => {
+  addSignature: async (deliveryId, signatureData, signatureStrokes) => {
     const now = new Date().toISOString();
     const updated = get().deliveries.map((delivery) =>
       delivery.id === deliveryId
-        ? normalizeDelivery({ ...delivery, signatureData, signedAt: now, status: 'signed' })
+        ? normalizeDelivery({ ...delivery, signatureData, signedAt: now, status: 'signed', signatureStrokes })
+        : delivery
+    );
+    set({ deliveries: updated });
+    await persistDeliveries(updated);
+    pushDeliveriesInBackground(updated, (message) => set({ syncError: message }));
+  },
+
+  addPhoto: async (deliveryId, photoUri) => {
+    const newPhoto: DeliveryPhoto = {
+      id: `photo-${Date.now()}`,
+      uri: photoUri,
+      takenAt: new Date().toISOString(),
+    };
+    const updated = get().deliveries.map((delivery) =>
+      delivery.id === deliveryId
+        ? { ...delivery, photos: [...(delivery.photos ?? []), newPhoto] }
+        : delivery
+    );
+    set({ deliveries: updated });
+    await persistDeliveries(updated);
+    pushDeliveriesInBackground(updated, (message) => set({ syncError: message }));
+  },
+
+  removePhoto: async (deliveryId, photoId) => {
+    const updated = get().deliveries.map((delivery) =>
+      delivery.id === deliveryId
+        ? { ...delivery, photos: (delivery.photos ?? []).filter((p) => p.id !== photoId) }
         : delivery
     );
     set({ deliveries: updated });
@@ -237,10 +286,9 @@ export const useDeliveryStore = create<DeliveryState>((set, get) => ({
   },
 
   resetDeliveries: async () => {
-    const initial = mockDeliveries.map((delivery) => normalizeDelivery(delivery));
-    set({ deliveries: initial });
-    await persistDeliveries(initial);
-    pushDeliveriesInBackground(initial, (message) => set({ syncError: message }));
+    set({ deliveries: [] });
+    await persistDeliveries([]);
+    pushDeliveriesInBackground([], (message) => set({ syncError: message }));
   },
 
   getDeliveriesForDriver: (driverId) => {

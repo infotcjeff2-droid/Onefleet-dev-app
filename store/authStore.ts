@@ -1,7 +1,15 @@
 import { create } from 'zustand';
 import { User, UserRole } from '@/types';
-import { adminCredentials, demoCredentials, driverCredentials, companyCredentials } from '@/constants/mockData';
 import { storage } from '@/utils/storage';
+
+const ADMIN_EMAIL = 'admin@fleetpro.com';
+const ADMIN_PASSWORD = 'admin123';
+const DEMO_EMAIL = 'demo@fleetpro.com';
+const DEMO_PASSWORD = 'demo123';
+const DRIVER_EMAIL = 'driver';
+const DRIVER_PASSWORD = 'driver';
+const COMPANY_EMAIL = 'company';
+const COMPANY_PASSWORD = 'company';
 
 interface AuthState {
   user: User | null;
@@ -31,29 +39,29 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   login: async (email: string, password: string) => {
     await new Promise((resolve) => setTimeout(resolve, 800));
 
-    if (email === adminCredentials.email && password === adminCredentials.password) {
-      const user: User = { id: 'u-admin', email, name: 'Administrator', role: 'admin' };
+    if (email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
+      const user: User = { id: 'u-admin', email, name: '系統管理員', role: 'admin' };
       set({ user, isAuthenticated: true, role: 'admin' });
       await persistUser(user);
       return { success: true };
     }
 
-    if (email === demoCredentials.email && password === demoCredentials.password) {
-      const user: User = { id: 'u-demo', email, name: 'Demo User', role: 'user' };
+    if (email === DEMO_EMAIL && password === DEMO_PASSWORD) {
+      const user: User = { id: 'u-demo', email, name: '示範用戶', role: 'user' };
       set({ user, isAuthenticated: true, role: 'user' });
       await persistUser(user);
       return { success: true };
     }
 
-    if (email === driverCredentials.email && password === driverCredentials.password) {
-      const user: User = { id: 'd001', email, name: 'Driver', role: 'driver' };
+    if (email === DRIVER_EMAIL && password === DRIVER_PASSWORD) {
+      const user: User = { id: 'd001', email, name: '陳大文', role: 'driver' };
       set({ user, isAuthenticated: true, role: 'driver' });
       await persistUser(user);
       return { success: true };
     }
 
-    if (email === companyCredentials.email && password === companyCredentials.password) {
-      const user: User = { id: 'u-company', email, name: 'Company', role: 'company' };
+    if (email === COMPANY_EMAIL && password === COMPANY_PASSWORD) {
+      const user: User = { id: 'u-company', email, name: '物流公司', role: 'company' };
       set({ user, isAuthenticated: true, role: 'company' });
       await persistUser(user);
       return { success: true };

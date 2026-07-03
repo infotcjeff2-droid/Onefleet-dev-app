@@ -15,22 +15,26 @@ interface BadgeProps {
   variant?: BadgeVariant;
   size?: 'sm' | 'md';
   dot?: boolean;
+  solid?: boolean;
   style?: ViewStyle;
   delay?: number;
 }
 
-const variantMap: Record<BadgeVariant, { bg: string; text: string; dot: string }> = {
-  active: { bg: 'rgba(0, 168, 122, 0.12)', text: '#00A87A', dot: '#00A87A' },
-  maintenance: { bg: 'rgba(230, 149, 0, 0.12)', text: '#E69500', dot: '#E69500' },
-  inactive: { bg: 'rgba(90, 97, 120, 0.12)', text: '#5A6178', dot: '#5A6178' },
-  info: { bg: 'rgba(43, 127, 212, 0.12)', text: '#2B7FD4', dot: '#2B7FD4' },
-  warning: { bg: 'rgba(230, 149, 0, 0.12)', text: '#E69500', dot: '#E69500' },
-  danger: { bg: 'rgba(217, 63, 74, 0.12)', text: '#D93F4A', dot: '#D93F4A' },
+const variantMap: Record<BadgeVariant, { bg: string; text: string; dot: string; solidBg: string; solidText: string; solidDot: string }> = {
+  active: { bg: 'rgba(0, 168, 122, 0.12)', text: '#00A87A', dot: '#00A87A', solidBg: '#00A87A', solidText: '#FFFFFF', solidDot: '#FFFFFF' },
+  maintenance: { bg: 'rgba(230, 149, 0, 0.12)', text: '#E69500', dot: '#E69500', solidBg: '#E69500', solidText: '#FFFFFF', solidDot: '#FFFFFF' },
+  inactive: { bg: 'rgba(90, 97, 120, 0.12)', text: '#5A6178', dot: '#5A6178', solidBg: '#5A6178', solidText: '#FFFFFF', solidDot: '#FFFFFF' },
+  info: { bg: 'rgba(43, 127, 212, 0.12)', text: '#2B7FD4', dot: '#2B7FD4', solidBg: '#2B7FD4', solidText: '#FFFFFF', solidDot: '#FFFFFF' },
+  warning: { bg: 'rgba(230, 149, 0, 0.12)', text: '#E69500', dot: '#E69500', solidBg: '#E69500', solidText: '#FFFFFF', solidDot: '#FFFFFF' },
+  danger: { bg: 'rgba(217, 63, 74, 0.12)', text: '#D93F4A', dot: '#D93F4A', solidBg: '#D93F4A', solidText: '#FFFFFF', solidDot: '#FFFFFF' },
 };
 
-export function Badge({ label, variant = 'active', size = 'sm', dot = false, style, delay = 0 }: BadgeProps) {
+export function Badge({ label, variant = 'active', size = 'sm', dot = false, solid = false, style, delay = 0 }: BadgeProps) {
   const v = variantMap[variant];
   const isSmall = size === 'sm';
+  const backgroundColor = solid ? v.solidBg : v.bg;
+  const textColor = solid ? v.solidText : v.text;
+  const dotColor = solid ? v.solidDot : v.dot;
 
   const scale = useSharedValue(0.7);
   const opacity = useSharedValue(0);
@@ -51,7 +55,7 @@ export function Badge({ label, variant = 'active', size = 'sm', dot = false, sty
     <Animated.View
       style={[
         styles.badge,
-        { backgroundColor: v.bg },
+        { backgroundColor },
         isSmall ? styles.badgeSmall : styles.badgeMd,
         animatedStyle,
         style,
@@ -61,14 +65,14 @@ export function Badge({ label, variant = 'active', size = 'sm', dot = false, sty
         <View
           style={[
             styles.dot,
-            { backgroundColor: v.dot },
+            { backgroundColor: dotColor },
           ]}
         />
       )}
       <Text
         style={[
           styles.text,
-          { color: v.text },
+          { color: textColor },
           isSmall ? styles.textSmall : styles.textMd,
         ]}
       >

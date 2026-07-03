@@ -1,6 +1,6 @@
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Image } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
-import { ChevronRight, Globe, Check, Database } from 'lucide-react-native';
+import { ChevronRight, Globe, Check, Database, Type } from 'lucide-react-native';
 import { Card } from '@/components/ui/Card';
 import { Header } from '@/components/ui/Header';
 import { useThemeStore } from '@/store/themeStore';
@@ -9,6 +9,7 @@ import { spacing, typography } from '@/constants/theme';
 import { useVehicleStore } from '@/store/vehicleStore';
 import { useDeliveryStore } from '@/store/deliveryStore';
 import { hasSupabaseEnv, supabaseSetupSql } from '@/utils/fleetSync';
+import { useFontScale, FontScale } from '@/contexts/FontScaleContext';
 
 type Locale = 'zh-TW' | 'en';
 
@@ -20,12 +21,19 @@ const LANGUAGES: { locale: Locale; label: string; native: string }[] = [
 export default function SettingsScreen() {
   const colors = useThemeStore((s) => s.colors);
   const { locale, setLocale } = useTranslation();
+  const { fontScale, setFontScale } = useFontScale();
   const vehicleCount = useVehicleStore((s) => s.vehicles.length);
   const deliveryCount = useDeliveryStore((s) => s.deliveries.length);
   const vehicleSyncError = useVehicleStore((s) => s.syncError);
   const deliverySyncError = useDeliveryStore((s) => s.syncError);
   const vehicleSyncing = useVehicleStore((s) => s.isSyncing);
   const deliverySyncing = useDeliveryStore((s) => s.isSyncing);
+
+  const FONT_SCALES: { scale: FontScale; label: string; labelEn: string }[] = [
+    { scale: 'normal', label: '標準', labelEn: 'Normal' },
+    { scale: 'large', label: '放大', labelEn: 'Large' },
+    { scale: 'larger', label: '更大', labelEn: 'Larger' },
+  ];
 
   const handleCopySql = async () => {
     await Clipboard.setStringAsync(supabaseSetupSql);
@@ -51,7 +59,17 @@ export default function SettingsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}> 
-      <Header title={locale === 'zh-TW' ? '設定' : 'Settings'} showBack />
+      <Header
+        title={locale === 'zh-TW' ? '設定' : 'Settings'}
+        showBack
+        leftElement={
+          <Image
+            source={require('@/assets/onefleet_2560.png')}
+            style={{ width: 90, height: 30 }}
+            resizeMode="contain"
+          />
+        }
+      />
 
       <ScrollView
         style={styles.scrollView}
@@ -91,6 +109,46 @@ export default function SettingsScreen() {
                   </View>
                 </Pressable>
                 {i < LANGUAGES.length - 1 && (
+                  <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                )}
+              </View>
+            ))}
+          </Card>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
+            {locale === 'zh-TW' ? '顯示' : 'Display'}
+          </Text>
+          <Card style={styles.settingsCard}>
+            {FONT_SCALES.map((item, i) => (
+              <View key={item.scale}>
+                <Pressable
+                  onPress={() => setFontScale(item.scale)}
+                  style={({ pressed }) => [
+                    styles.settingItem,
+                    { backgroundColor: pressed ? colors.cardHover : 'transparent' },
+                  ]}
+                >
+                  <View style={styles.settingLeft}>
+                    <View style={[styles.settingIconWrap, { backgroundColor: `${colors.primary}15` }]}>
+                      <Type size={18} color={colors.primary} />
+                    </View>
+                    <View>
+                      <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>
+                        {locale === 'zh-TW' ? item.label : item.labelEn}
+                      </Text>
+                      <Text style={[styles.settingSub, { color: colors.textTertiary }]}>
+                        {locale === 'zh-TW' ? '變更介面文字大小' : 'Change interface text size'}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.settingRight}>
+                    {fontScale === item.scale && <Check size={18} color={colors.primary} />}
+                    <ChevronRight size={16} color={colors.textTertiary} />
+                  </View>
+                </Pressable>
+                {i < FONT_SCALES.length - 1 && (
                   <View style={[styles.divider, { backgroundColor: colors.border }]} />
                 )}
               </View>

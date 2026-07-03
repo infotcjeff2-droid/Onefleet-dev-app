@@ -4,7 +4,6 @@ import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Vehicle } from '@/types';
 import { colors, borderRadius, spacing, typography } from '@/constants/theme';
-import { statusLabels } from '@/constants/mockData';
 import { useTranslation } from '@/i18n';
 
 interface VehicleCardProps {
@@ -44,6 +43,7 @@ export function VehicleCard({ vehicle, onPress, index = 0 }: VehicleCardProps) {
               label={t('vehicles.' + vehicle.status)}
               variant={vehicle.status}
               dot
+              solid
               delay={index * 50}
             />
           </View>

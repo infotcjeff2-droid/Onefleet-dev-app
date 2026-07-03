@@ -1,0 +1,1397 @@
+﻿function langEnglish() {
+    this.video_stream_tips = "If it is 1, the file can not be downloaded, and can only be downloaded in segments";
+    this.open_home = "Home";
+    this.open_webApi = "Web Api";
+    this.open_phoneApi = "Phone Api";
+    this.open_windowsApi = "Windows Api";
+    this.open_webApiFile = "Web Interface Documentation";
+    this.open_webApiDesc = "Introduce each interface on Web platform, and Input Output Description";
+    this.open_phoneApiFile = "Mobile Interface Documentation";
+    this.open_phoneApiDesc = "Introduce each interface on Mobile, and Input Output Description";
+    this.open_windowsApiFile = "Windows Interface Documentation";
+    this.open_windowsApiDesc = "Introduce each interface on Windows, and Input Output Description";
+    this.open_interfaceDesc = "Interface Desc And Error Code";
+    this.open_jsonpUseExample = "JSONP Use Example";
+    this.open_userLoginOrOut = "Login And Logout";
+    this.open_userLogin = "Login";
+    this.open_userLogout = "Logout";
+    this.open_vehicleInfo = "Query Vehicle";
+    this.open_getDevIdnoByVehiIdno = "Get DevIdno";
+    this.open_getDevOnlineStatus = "Get Device Online";
+    this.open_getDeviceStatus = "Get Device Status(GPS)";
+    this.open_getDeviceTrack = "Get Device Track";
+    this.open_getDeviceAlarmInfo = "Get Device Alarm(Page)";
+    this.open_getUserVehicleInfo = "Get User Vehicle";
+    this.open_videoOperate = "Video Business";
+    this.open_initVideo = "Init Video Plug（PC/mobile WEB）";
+
+    this.initVideoPluginByH5AndFlash = 'Init Video Plug(H5 and Flash)'
+    this.initVideoPluginByH5 = 'Init Video Plug'
+
+    this.open_initVideo_h5 = "Init Video Plug（H5）";
+    this.open_realtimeVideo_html_h5 = "Live Video（PC WEB H5）";
+    this.open_realtimeVideo_html = "Live Video(PC/mobile URL)";
+    this.open_realtimeVideo_js = "Live Video(PC/mobile JS)";
+    this.open_monitor = "Monitor（PC/mobile JS）";
+    this.open_talkback = "Talkback（PC/mobile JS）";
+    this.open_queryRecording = "Query Video";
+    this.open_downloadRecording = "Download Video";
+    this.open_remotePlayback = "Remote Playback（PC/mobile）";
+    this.open_capture = "Img Capture";
+    this.open_vehicleControlOperate = "Control Business";
+    this.open_getUserServer = "Get Subscriber Server";
+    this.open_vehicleControl = "Vehicle Control";
+    this.open_tts = "TTS";
+    this.open_deviceManagement = "Device Management";
+    this.open_addDevice = "Add Device";
+    this.open_addVehicle = "Add Vehicle";
+    this.open_delDevice = "Delete Device";
+    this.open_delVehicle = "Delete Vehicle";
+
+    this.mainDriver = 'Is main driver?';
+
+    //webAPI
+    this.success = "Success";
+    this.yes = "Yes";
+    this.no = "No";
+    this.nothing = "No";
+    this.open_one_char = "(1)";
+    this.open_two_char = "(2)";
+    this.open_three_char = "(3)";
+    this.open_four_char = "(4)";
+    this.open_five_char = "(5)";
+    this.open_six_char = "(6)";
+    this.open_seven_char = "(7)";
+    this.open_eight_char = "(8)";
+    this.open_nine_char = "(9)";
+    this.open_ten_char = "(10)";
+    this.open_eleven_char = "(11)";
+    this.open_twelve_char = "(12)";
+    this.open_thirteen_char = "(13)";
+    this.open_param_encode = "Param Encode";
+    this.open_HTTP_MIME_type = "HTTP MIME TYPE";
+    this.open_common_param = "Common Param";
+    this.open_private_param = "Private Param";
+    this.open_error_code_desc = "Error Code Desc";
+    this.open_param_encode_1 = "All requests and responses data are both of encoding utf-8 format, all parameter values in the url please do URLEncode coding;";
+    this.open_param_encode_2 = "parameter please do URL encoding(UTF-8), comply with RFC 1738 when coding.";
+    this.open_cb_jsession = "Return session after user logged";
+    this.open_cb_callback = "When a third-party call Open API by JS, by specifying the callback parameter, the platform will return JSONP code, used to solve cross-border problems.Callback parameter values can only be alphanumeric number and underscores.";
+    this.open_cb_desc = "Universal Return Param Desc(json):";
+    this.open_cb_ok = "0: Correctly returns";
+    this.open_cb_other = "Other: failure.";
+    this.open_detail_desc = "Details See also:";
+    this.open_cb_callback_desc = "Callback is carried when requesting";
+    this.open_req_type = "HTTP Request Method";
+    this.open_req_param_desc = "Input Param Desc";
+    this.open_req_see = "See Also:";
+    this.open_req_exp = "Request Example";
+    this.open_req_exp_tit = "Request Example:";
+    this.open_cb_param_desc = "Return Param Desc";
+    this.open_cb_exp = "Correctly Returns Examples";
+    this.open_ref_file = "Reference File";
+    this.open_call_method = "Call Method";
+    this.open_op_exp = "Operation Example";
+    this.open_op_exp_1 = "Operation Example";
+    this.open_op_js = "Reference JavaScript Code";
+    this.open_video_page_desc = "Can be called directly links to view live video.";
+    this.open_video_js = "JavaScript Code";
+    this.open_video_init_rule = "Default loading rules";
+    this.open_video_init_wasm_rule = "wasm file location";
+    this.open_video_init_rule_desc = "IE browser currently only supports flash player, non-IE browser loads H5 player by default";
+    this.open_video_init_path = "File path description, download all the reference files below, and place them in the same folder according to the example path";
+    this.open_op_notice = "Notice:";
+    this.open_op_jsonp = "JSONP Format";
+    this.open_jsonp_desc = "Here JSONP format is that ";
+    this.open_op_server = "Server info to vehicle control and send TTS.";
+    this.open_video_init_desc = "The video player plug-in currently supports H5 and Flash (only IE uses Flash)";
+    this.open_video_ref_js = "The introduction of jQuery and swfobject";
+    this.open_video_ref_js_2 = "cmsv6player";
+    this.open_video_html_ready = "Prepare HTML code";
+    this.open_file_across = "File time across days";
+    this.open_file_across_1 = "search for files on 20150913 such as videos that may arise in both cases";
+    this.open_file_across_2 = "Return date 20150912 23:00:00 to 20150913 01:00:00 video, and day field returns value of 12;";
+    this.open_file_across_3 = "Return date 20150913 23:00:00 to 20150914 01:00:00 video, and day field returns value of 13.";
+    this.open_download_type = "Download Type";
+    this.open_download_seg = "Segment Download";
+    this.open_download_seg_tit = "Segment Download:";
+    this.open_download_all = "Full Download:";
+    this.open_download_direct = "Direct download";
+    this.open_download_direct_tit = "Direct download:";
+    this.open_download_seg_desc = "Mainly on the device to download video files, saved on the server, and then download directly download to a local;";
+    this.open_download_seg_desc_1 = "Segmented download contains the full file download and segmented downloads.";
+    this.open_download_seg_desc_2 = "All devices support Segment downloading.";
+    this.open_download_all_desc = "The device manufacturers type of  16, 17, 20 and 22 support the direct download, if the video file contains multiple channels, you can only segment download.(When get GPS status get type of device manufacturers)";
+    this.open_download_direct_desc = "Mainly download video on the server, downloaded to the local.";
+    this.open_vehicle_ol_rq = "The vehicle must be online to operate";
+    this.open_login_account = "Account";
+    this.open_login_pwd = "Password";
+    this.open_login_pwd_desc = "Md5 encrypted password is required.";
+    this.open_vehicle_id = "Vehicle ID";
+    this.open_vehicle_idno = "Plate Number";
+    this.open_device_idno = "Device No.";
+    this.open_device_idno_desc = "If the device has been used by vehicle,then it will fail to delete the device.";
+    this.open_delDevice_desc = "Delete the device of the vehicle or not. 1 means deleting the device,otherwise don't delete.";
+    this.open_map_lnglat = "Map Coordinates Conversion";
+    this.open_map_lnglat_desc = "1 shows Coordinates converted to Google Maps Coordinates, 2 shows the Coordinates converted to Baidu map Coordinates";
+    this.open_start_time = "Start Time";
+
+
+    // driver management
+    this.findDriverInfoByDeviceId = "Inquire whether the driver of the vehicle has changed according to the equipment number";
+    this.findVehicleInfoByDeviceId = "Query the driver of the vehicle according to the equipment number";
+    this.last_down_time = "Date of most recent driver list download";
+    this.driver_management_title = "Driver Management";
+    this.findDriverInfoByDeviceIdResult = "0: indicates that update is required; 1: no update is required.";
+    this.findVehicleInfoByDeviceIdResult = "Driver information";
+
+
+    this.open_end_time = "End Time";
+    this.open_time_range_1 = "Start time is not greater than the end time, and the number of query days must not be greater than 7 days.";
+    this.open_time_range_2 = "Start time is not greater than the end time, and the number of query days must not be greater than 90 days.";
+    this.open_page_now = "Current Page";
+    this.open_page_record = "Page Record";
+    this.open_page_total = "Total Records";
+    this.open_page_allPage = "Total Page";
+    this.open_alarm_type = "Alarm Type";
+    this.open_alarm_type_desc = "In ',' split, Can't be empty.";
+    this.open_handle_status = "Handle Status";
+    this.open_handle_status_desc = "1 shows Handled, 0 shows unhandled, other query all the status.";
+    this.open_handle_status_desc_1 = "1 shows Handled, 0 shows unhandled.";
+    this.open_query_ref_server = "Query relevant server info";
+    this.open_query_video_idno = "When the query a video on server, it means the license plate number.";
+    this.open_query_location = "Search Location";
+    this.open_query_location_desc = "1 indicates the device, 2 denotes a storage server, 4 indicates download server.";
+    this.open_query_chn = "Search Channel";
+    this.open_query_begChn = "(starting from 0)";
+    this.open_query_chn_desc = "0 means channel 1, 1 means channel 2, -1 means all channel.";
+    this.open_query_year = "Search Year";
+    this.open_query_month = "Search Month";
+    this.open_query_day = "Search Day";
+    this.open_video_type = "Record Type";
+    this.open_video_type_desc_1 = "0 means General, 1 means alarm, -1 means all.";
+    this.open_video_type_desc_2 = "0 means General, 1 means alarm.";
+    this.open_file_type = "File Type";
+    this.open_file_one_type_desc = "1 indicates an image";
+    this.open_file_type_desc = "2 means a video.";
+    this.open_start_second = "Start Seconds";
+    this.open_end_second = "End Seconds";
+    this.open_start_second_desc = "The unit is second (0-86399)";
+    this.open_file_start_time = "File Start Time";
+    this.open_file_end_time = "File End Time";
+    this.open_file_start_time_desc = "Greater than or equal to the source file start time, Less than or equal to the source file end time.";
+    this.open_srcfile_start_time = "Source Files Start Time";
+    this.open_srcfile_end_time = "Source Files End Time";
+    this.open_video_tag = "File Tag";
+    this.open_video_path = "File Path";
+    this.open_file_size = "File Size";
+    this.open_video_chn = "Channel";
+    this.open_download_type = "Download Type";
+    this.open_download_type_desc = "1 means the whole file to download, 2 means segment downloaded.";
+    this.open_server_id = "Server ID";
+    this.open_server_id_desc = "When video search returns, field svr.";
+    this.open_video_location = "File Location";
+    this.open_video_find_desc = "When video search returns, field len.";
+    this.open_video_fill_1 = "Please fill in the 0";
+    this.open_video_fill_2 = "Please fill in the 1";
+    this.open_file_path = "File Path";
+    this.open_download_save_name = "After download the saved name";
+    this.open_gps_interval = "GPS Reporting Interval";
+    this.open_gps_interval_time = "Interval Time";
+    this.open_gps_interval_time_desc = "Unit second, 0-3600, 0 means did not upload the GPS.";
+    this.open_other_control = "Other Vehicle Control";
+    this.open_control_type = "Control Type";
+    this.open_tts_text = "TTS Text";
+    this.open_tts_flag = "TTS Flag";
+    this.open_tts_flag_desc = 'If the parameter is null, the default value is 4. '
+    this.open_tts_flag_desc4 = 'Emergency: 1, terminal display: 4, terminal TTS broadcast read: 8, advertising screen display: 16. '
+    this.open_tts_flag_desc2 = 'Case 1: Using "Emergency" and "Terminal Display", the value is: 1+4=5. '
+    this.open_tts_flag_desc3 = 'Case 2: Use "terminal TTS broadcast and read", "advertising screen display", the value is: 4+8=12';
+    this.open_tts_text_desc = "Length can not exceed 240 characters.";
+    this.open_jsession_id = "Jsession";
+    this.open_jsession_callback = "After user login returning jsession";
+    this.open_device_type = "Device type";
+    this.open_device_type_desc = "1 means video device, 0 means gps device, if only one device, it is video device or gps device.";
+
+    this.open_device_type_desc1 = "7 indicates video equipment, 5 indicates GPS equipment,  11 PTT terminals";
+    this.open_status_online = "Online Status";
+    this.open_status_online_desc = "1 means online, or offline.";
+    this.open_status_lng = "Lng";
+    this.open_status_lat = "Lat";
+    this.open_status_lng_desc = "If the device location is invalid, the value of 0.";
+    this.open_status_mapLng = "Map Lng";
+    this.open_status_mapLat = "Map Lat";
+    this.open_status_mapLng_desc = "Get the lng through the conversion";
+    this.open_status_mapLat_desc = "Get the lat through the conversion";
+    this.open_status_factory = "Factory Type";
+    this.open_status_subFactory = "Factory Subtype";
+    this.open_status_speed = "Speed";
+    this.open_status_speed_desc = "Unit: km/h, you must first use divided by 10.";
+    this.open_status_gpsTime = "GPS Upload Time";
+    this.open_status_protocol = "Protocol Type";
+    this.open_status_hard = "Hard Type";
+    this.open_status_hard_desc = "1 means a SD card, 2 means a hard disk, and 3 means SSD card.";
+    this.open_status_audio = "Audio Type";
+    this.open_status_network = "Network Type";
+    this.open_status_network_desc = "0 means 3G, 1 means WIFI, 2 means wired, 3 means 4G, 4 means 5G.";
+    this.open_status_server = "Gateway Server Number";
+    this.open_status_status = "Status";
+    this.open_status_temp = "Temp Sensor";
+    this.open_status_direc = "Direction";
+    this.open_status_direc_desc = "North direction is 0 degrees, clockwise increases, the maximum value of 360 degrees.";
+    this.open_status_parkTime = "Parking Time";
+    this.open_status_parkTime_desc = "Unit: sec.";
+    this.open_status_mileage = "mileage";
+    this.open_status_mileage_desc = "Unit: m.";
+    this.open_status_fuel = "Fuel";
+    this.open_status_fuel_desc = "Unit: L, you must first use divided by 100.";
+    this.open_track_data = "Track Detail";
+    this.open_alarm_info = "Alarm Info";
+    this.open_alarm_desc = "Alarm Desc";
+    this.open_alarm_endTime = "Alarm End Time (UTC) in seconds";
+    this.open_alarm_startTime = "Alarm Start Time (UTC) in seconds";
+    this.open_alarm_guid = "Alarm Unique Number";
+    this.open_alarm_param = "Alarm Param";
+    this.open_alarm_img = "Image Info";
+    this.open_alarm_img_desc = "split by ;, and http path, and can be multiple image info.";
+    this.open_alarm_handleId = "Handle User Id";
+    this.open_alarm_handleCont = "Handle Content";
+    this.open_alarm_handleTime = "Handle Time";
+    this.open_alarm_begStatus = "Alarm Start Status";
+    this.open_alarm_endStatus = "Alarm End Status";
+    this.open_alarm_begLng = "Alarm Start Lng";
+    this.open_alarm_begLat = "Alarm Start Lat";
+    this.open_alarm_endLng = "Alarm End Lng";
+    this.open_alarm_endLat = "Alarm End Lat";
+    this.open_alarm_begMapLng = "Alarm Start Map Lng";
+    this.open_alarm_begMapLat = "Alarm Start Map Lat";
+    this.open_alarm_endMapLng = "Alarm End Map Lng";
+    this.open_alarm_endMapLat = "Alarm End Map Lat";
+    this.open_alarm_begSpeed = "Alarm Start Speed";
+    this.open_alarm_endSpeed = "Alarm End Speed";
+    this.open_alarm_begMileage = "Alarm Start Mileage";
+    this.open_alarm_endMileage = "Alarm End Mileage";
+    this.open_video_cbId = "Return Code";
+    this.open_video_cbId_desc = "0 means success, the other means failure.";
+    this.open_video_chnMask = "Channel Mask";
+    this.open_video_chnMask_desc = "When a file is stored in the video contains more than one channel is active, and bitwise representation, the first 0 indicates the video file contains video channel 1, and so on.First determine chnMask, if chnMask = 0, then resolve chn.";
+    this.open_device_chn = "Device Channel";
+    this.open_device_chn_desc = "0 means channel 1, and 1 means channel 2.";
+    this.open_file_start_time_desc_1 = "Unit: sec., as 3600 = 1:00.";
+    this.open_file_end_time_desc = "Unit: sec., as 7200 = 2:00, end time may be greater than 86400, this represents a time span of days.";
+    this.open_video_year = "Year";
+    this.open_video_month = "Month";
+    this.open_video_day = "Day";
+    this.open_video_year_desc = "We must first use add 2000.";
+    this.open_video_fileName = "File Name";
+    this.open_video_lenUnit = "(Unit byte)";
+    this.open_file_location = "File Location";
+    this.open_video_recing = "Are Recording";
+    this.open_video_recing_desc = "0 means no Recording, 1 means is recording.";
+    this.open_video_server_desc = "Effective when recording on the storage server and download server.";
+    this.open_video_alarm_desc = "Effective when the alarm recording.<br>loc == 1, bit0: emergency button alarm, bit1: overspeed alarm, bit2: low speed alarm, bit3: vibration alarm, bit4: temperature alarm, bit5: motion detection alarm, bit6: UPS thread cutting alarm , bit7: collision rollover alarm, bit8: fatigue driving alarm, bit9: IO_1, bit10: IO_2, bit11: IO_3, bit12: IO_4, bit13: IO_5, bit14: IO_6, bit15: IO_7, bit16: IO_8; <br> loc != 1, the value of (arm & 0xFFFF). 2: Emergency button alarm, 11: Overspeed alarm, 3: Vibration alarm, 9: Temperature alarm, 15: Motion detection alarm, 49: Fatigue driving alarm, 19: IO_1, 20: IO_2, 21: IO_3, 22: IO_4, 23:IO_5,24:IO_6,25:IO_7,26:IO_8;";
+    this.open_download_video = "Recording download, return download file";
+    this.open_table_file = "File";
+    this.open_table_caption = "Caption";
+    this.open_table_code = "Error Code";
+    this.open_table_paramName = "Param Name";
+    this.open_table_paramType = "Param Type";
+    this.open_table_desc = "Desc";
+    this.open_table_iseq = "Whether Must";
+    this.open_table_default = "Defaults";
+    this.open_init_flash = "Video plug-in files";
+    this.open_init_js = "Video plug-in calls require JavaScript file";
+    this.open_init_cn = "Video plug Chinese language pack";
+    this.open_init_en = "Video plug English language pack";
+    this.open_init_func = "Video widget init method";
+    this.open_init_path = "Video plugin path";
+    this.open_init_path_desc = "Relative path or absolute path.";
+    this.open_init_div = "Page HTML tag id";
+
+    this.playbackDesc = "For h5 player, if isVodMode is configured as true when initializing, there can be a playback toolbar and drag operation can be performed. The h5 player can also support multi-channel synchronous playback startVodM(url, \"0,1,2,3\"), and the device needs to support multi-channel synchronous playback. The second parameter \"0,1,2,3\" Indicates the playback channel";
+    this.paramLang = 'Language type'
+    this.talkDescByH5 = 'h5 player, https can talk directly; for http talk, you need to download and install the PCM audio collection tool. The h5 player judges through the onTtxVideoMsg message callback. type=isTalking means the intercom is in progress, type=showDownLoadDialog means the pcm collection tool needs to be downloaded';
+    this.h5Environment = '（1）HTML5 Environment'
+    this.notH5Environment = '（2）Not HTML5 Environment'
+    this.channelUseAll = 'Failure to pass means to use all channels'
+    this.flashTip1 = 'The flash player is judged by the return value of startTalkback, Return 0 success, 1 means talking, 2 means no mic, 3 means mic is disabled'
+    this.flashTip2 = 'The h5 player judges through the onTtxVideoMsg message callback. type=isTalking means the intercom is in progress, type=showDownLoadDialog means the pcm collection tool needs to be downloaded'
+    this.flashTip3 = 'Return 0 success, 1 means talking, 2 means no mic, 3 means mic is disabled';
+
+    this.vedioLiveTip1 = '1 means real-time video, 2 means monitoring'
+    this.vedioLiveTip2 = 'jsession'
+    this.vedioLiveTip3 = 'Indicates the device number'
+    this.vedioLiveTip4 = 'Indicates the channel number, starting from 0'
+    this.vedioLiveTip5 = '0 main stream, 1 sub stream'
+
+    this.talkRequestTip1 = 'Other devices are talking'
+
+    this.open_init_div_desc = "Usually cmsv6flash.";
+    this.open_init_width = "Video plug-width";
+    this.open_init_height = "Video plug-height";
+    this.open_init_version = "Video plug-in version";
+    this.open_init_param = "Video plug-in init param";
+    this.open_init_param_desc = "lang, and so on.";
+    this.open_init_playerType = "Video plugin type";
+    this.open_init_playerType_desc = "flash、h5、auto";
+    this.open_init_change_playerType = "Change the video plugin type method, it only takes effect when the initialization method 'playerType = auto', it will refresh the page";
+    this.open_init_setLang = "Setting the language video widget(effective when 'playerType = flash')";
+    this.open_init_playerType_flash = "('effective when ' effective )";
+    this.open_init_langDef = "Chinese language pack: cn.xml";
+    this.open_init_langPath = "language package path";
+    this.open_init_setWindow = "Set the video plug-in the number of windows";
+    this.open_init_windowNum = "The number of windows (not more than 36)";
+    this.open_init_setServer = "Set the video plug-in server";
+    this.open_init_serverIp = "Login server ip";
+    this.open_init_serverPort = "Login server port";
+    this.open_page_url_desc = "Url Param Desc";
+    this.open_page_url_account = "If it is empty, it is determined that the account and password.";
+    this.open_page_url_jsession = "If jsession is empty, it is determined that the account and password.";
+    this.open_page_url_vehiIdno = "If it is empty, it is determined that the vehiIdno.";
+    this.open_page_url_devIdno = "If the devIdno is empty, it is judged that the vehiIdno.";
+    this.open_page_url_chn = "The number of channels to preview the video.";
+    this.open_page_url_chn_desc = "Maximum support 9 window Play.";
+    this.open_page_url_time = "Video preview time, Units sec.";
+    this.open_page_url_lang = "Language Settings";
+    this.open_page_url_lang_desc = "en means English, otherwise Chinese.";
+    this.open_video_setTitle = "Set the video window title";
+    this.open_video_index = "Window Index";
+    this.open_video_title = "Window Title";
+    this.open_video_play = "Play Video";
+    this.open_video_stop = "Stop Video";
+    this.open_video_reset = "Reset Video";
+    this.open_video_stram = "Video Stream";
+    this.open_video_stram_desc = "1 represents sub-stream, 0 represents main stream.";
+    this.open_video_setMinBufferTime = "Set the minimum buffer time of video";
+    this.open_video_setMaxBufferTime = "Set the maximum buffer time of video";
+    this.open_video_minBufferTime_desc = "It's mainly used for the adjustment of video lazy load. When the video buffers the minimum buffer time of video, then it will play the video.";
+    this.open_video_maxBufferTime_desc = "It's mainly used for the adjustment of video lazy load. When the video buffers the maximum buffer time of video, then it will play the video fast-forward.";
+    this.open_monitor_strat = "Start Listening";
+    this.open_monitor_stop = "Stop Listening";
+    this.open_talkback_strat = "Start Talkback";
+    this.open_talkback_stop = "Stop Talkback";
+    this.open_playback_server = "Query remote playback server (from the logon server)";
+    this.open_playback_send = "Send Param:";
+    this.open_playback_location = "Recording Location";
+    this.open_playback_callback = "Return Param:";
+    this.open_playback_start = "Start Playback";
+    this.open_playback_stop = "Stop Playback";
+    this.open_playback_url = "Remote playback url";
+    this.open_playback_url_desc_1 = "According to the query Recording to get info assembled url,";
+    this.open_playback_url_desc_2 = "As http://127.0.0.1:6611/3/5?DownType=5&DevIDNO=10009&FILELOC=1 <br/> & FILESVR = 0 & FILECHN = 0 & FILEBEG = 1 <br/> & FILEEND = 100 & PLAYIFRM = 0 & <br/> PLAYFILE = / record /H20121123-112931P3A1P0.avi <br/> & PLAYBEG = 0 & PLAYEND = 0 & PLAYCHN = 0.";
+    this.open_playback_url_desc_3 = "Param Desc: FILELOC, FILESVR, FILECHN, PLAYFILE, FILEBEG <br/> and FILEEND respectively returns file search parameters <br/> loc, svr, chn, file, beg and end, direct access to the corresponding parameters.";
+    this.open_playback_url_desc_4 = "PLAYBEG means play start time offset, in milliseconds, relative to the start time of the file to calculate, 0 represents the start position for playback from a file.";
+    this.open_playback_url_desc_5 = "PLAYEND means play ending offset time, in milliseconds, relative to the file start time computation, may not be greater than the total length of the file.";
+    this.open_playback_url_desc_6 = "PLAYIFRM means play I-frame (please fill in as 0).";
+    this.open_playback_url_desc_7 = "PLAYCHN means indicates playback video channel, when there are multiple channels of Recording files using, if no more than one channel, the direct use of 0.";
+    this.open_playback_url_desc_8 = "DevIDNO means when playing files on the device, it is the device number; when playing files on the server, it is the vehicle number.";
+    this.open_init_video_finish = "Are video plug loading complete";
+    this.open_init_video_remind = "Old versions need to pay attention to the red part";
+    this.open_init_video_flash = "Init flash";
+    this.open_init_video_H5 = "Init H5 Video";
+    this.open_init_setWindow_1 = "First of all windows created";
+    this.open_init_setWindow_2 = "Re-configure the current number of windows";
+    this.open_init_video_call = "After the video plug-in Init is complete Calls it";
+    this.open_talkback_call = "Return 0 for success, 1 is intercom, 2 indicating no mic, 3 need to download talk tool.";
+    this.open_server_deviceIp = "Device Access IP";
+    this.open_server_devicePort = "Device Access Port";
+    this.open_server_clientIp = "Client Access IP";
+    this.open_server_clientPort = "Client Access Port";
+    this.open_server_clientOtherPort = "More ports for client access";
+    this.open_server_lanIp = "LAN IP";
+    this.open_device_status_desc = "Device Status Desc";
+    this.open_device_alarmType_desc = "Alarm Type Desc";
+    this.open_device_alarmParam_desc = "Alarm Param Desc";
+    this.open_device_alarmStatus_desc = "Alarm Status Desc";
+    this.open_video_exp_1 = "Incoming jsession and devIdno";
+    this.open_video_exp_2 = "Incoming jsession and vehiIdno";
+    this.open_video_exp_3 = "Incoming account, password and devIdno";
+    this.open_video_exp_4 = "Incoming account, password and vehiIdno";
+    this.open_video_exp_5 = "Incoming video auto-off time";
+    this.open_video_exp_6 = "Incoming the number of preview window";
+    this.open_video_exp_7 = "Incoming video device channel";
+    this.open_vehiIdno_moreTip = "It may be more than one, in order to ',' separation.";
+    this.open_query_pagin_null = "If empty, no paging.";
+    this.open_query_devIdno_null = "If you are using the devIdno query, it is null.";
+    this.open_map_example = "Map Example";
+    this.open_map_param_desc = "Param Desc";
+    this.open_vehicle_icon = "Vehicle Icon";
+    this.open_vehicle_company = "Vehicle Company Or Team";
+    this.open_vehicle_device_use_status = "Device usage status";
+    this.open_vehi_service_end = "Service expiration time (time stamp type)";
+    this.open_vehicle_protocol = "Device protocol";
+    this.open_vehicle_devices = "Device List";
+    this.open_vehicle_devices_desc = "The following are device info";
+    this.open_vehicle_devCompany = "Device Company";
+    this.open_vehicle_IO_num = "Number of IO";
+    this.open_vehicle_IO_name = "IO Name";
+    this.open_vehicle_chn_num = "Number of Channels";
+    this.open_vehicle_chn_name = "Channel Name";
+    this.open_vehicle_temp_num = "Number of Temperature Sensors";
+    this.open_vehicle_temp_name = "Temperature sensor Name";
+    this.open_vehicle_name_desc = "Separated by ','";
+    this.open_vehicle_module = "Module Param";
+    this.open_vehicle_module_desc = "Bitwise representation, each shows a module, The first is support for video, The second is control oil, The third is control circuit, The fourth is tts voice, The fifth is digital intercom, The sixth is capture support, The seventh is monitor support, The eighth is fuel sensor, The ninth is support intercom, The tenth is ODB peripherals.";
+    this.open_vehicle_SIM = "SIM Card";
+    this.open_vehicle_devStatus = "Device Status";
+    this.open_account_null_desc = "If user name and password is empty, it is judged background configuration username and password.";
+    this.open_LongitudeExample = "For example: 113231258, the true value is 113.231258";
+    this.open_LatitudeExample = "For example: 39231258, the true value is 39.231258";
+    this.open_companyName = "Company Name";
+    this.open_companyName_desc = "If it doesn't exsist,it will be added.";
+    this.open_account = "Main Account";
+
+    //mobile development
+    this.open_mobile_android = "Android Api";
+    this.open_mobile_ios = "IOS Api";
+    //windows development
+    this.open_windows_sdk = "SDK Library";
+    this.open_windows_ocx = "OCX Control";
+    this.open_wsdk_remotePlayback = "Remote playback";
+
+    //map section
+    this.mapBaidu = "Baidu Map";
+    this.mapGoogle = "Google Map";
+    this.mapMapInfo = "MapInfo";
+    this.mapArcGis = "ArcGis Map";
+    this.mapMapBar = "Mapbar";
+    this.loginError = "Login failed";
+    this.jsessionError = "Jsession error";
+    this.deviceNoExist = "Can't not find vehicles";
+    this.vehicleNotOperate = "No vehicle or device operating authority";
+    this.flashVehicleError = "Refresh vehicle failure!";
+    this.labelTime = "Time:";
+    this.labelSpeed = "Speed:";
+    this.monitor_labelLiCheng = "Mileage:";
+    this.labelFuel = "Fuel:";
+    this.monitor_labelDriver = "Driver:";
+    this.online = "Line";
+    this.offline = "Off";
+    this.alarm_oil_unit = "L";
+    this.km = "KM";
+    this.KmPerHour = "KM / H";
+    this.north = "North";
+    this.northEast = "Northeast";
+    this.east = "East";
+    this.southEast = "Southeast";
+    this.south = "South";
+    this.southWest = "Southwest";
+    this.west = "West";
+    this.northWest = "Northwest";
+
+    //error codes
+    this.errClientNotExist = "Username does not exist";  //1
+    this.errPassword = "wrong password";   //2
+    this.errAccoutOrPassword = "Username or password incorrect";
+    this.errUserDeactivated = "The user has disabled";  //3
+    this.errUserExpired = "The user has expired";  //4
+    this.errSessionNotExist = "Session does not exist";  //5
+    this.errException = "System exception";  //6
+    this.errRequireParam = "Request parameter is incorrect";  //7
+    this.errorNotOperate = "No authority to operate the vehicle or device";  //8
+    this.errQueryTimeRange = "Start time is not greater than the end time";  //9
+    this.errQueryTimeThanRange = "The time Longer than the range";  //10
+    this.errDownloadTaskExist = "Video download tasks already exist";  //11
+    this.errDeviceAmountReachCeiling = "The amount of device was limited(The amount of device reaches maximum).";  //14
+    this.errDeviceExsist = "The device is already exsist.";  //15
+    this.errVehicleExsist = "The vehicle is already exsist.";  //16
+    this.errDeviceUsed = "The device has been used.";  //17
+
+    this.errAccountExsist = "Account already exists";  //12
+    this.errAccountForb = "No operating authority";  //13
+    this.errVehicleNotExsist = "Vehicle does not exist";//18
+    this.errDeviceNotExsist = "Device does not exist";//19
+
+    this.factoryType = "Manufacturer type";
+    this.line1 = "0 unknown, 17 GM, 20 HD";
+    this.line2 = "21 FZE, 23 HB, 24 BSJ";
+    this.line3 = "26 HK ,28 YX,29 RM";
+
+    this.installDevIdno = "Installation equipment";
+    this.changeDevType = "Change device type";
+    this.devMp4Info = "Device video query";
+    this.storeMp4 = "Storage server video query";
+
+    this.picturePath = "picture path";
+    this.deviation = "deviation";
+    this.devBeyongCom = "Equipment is not current company";
+    this.errorValidServer = "The number of device registration does not match, please check the number of equipment exceeds the number of registration!";
+
+    this.requestType = "request type";
+    this.realTimeVideo_live_address = "Real Time Video (Mobile WEB HLS live address)";
+    this.realTimeVideo_web_integration = "Real Time Video (Mobile WEB HLS page)";
+    this.realTimeVideo = "request type(1 video)_equipment number_channel number_stream type (0 primary bit stream 1 bitstream)";
+    this.streamMediaPort = "streaming media client service port";
+    this.for_example_ex = "example:";
+    this.Send_request_to_streaming_server = "Send a request to the streaming server";
+    this.request_type = "requestType_deviceNumber_channelNumber_bitstreamType";
+    this.streamMediaIP = "stream media Ip";
+    this.video_live_explain = "video live explain";
+
+
+    this.open_area = "Area Information";
+    this.open_user_area = "User Area Information";
+    this.open_area_id = "Area ID";
+    this.open_area_markName = "Marker Name";
+    this.open_area_mapType = "Map Type 0:Google 3:Baidu 4:Gaode";
+    this.open_area_parentId = "Area Parent ID";
+    this.open_area_name = "Area Name";
+    this.open_area_type = "Area Type 0:General Area 1:Administrative Area";
+    this.open_area_markType = "Area Type 1:point 2:rectangle 3:polygon 4:Route 10:circle";
+    this.open_area_radius = "Radius";
+    this.open_area_color = "Color";
+    this.open_area_share = "Area Sharing 0:Do not share 1:packet sharing 2:all share";
+    this.open_area_userId = "Create Area User ID";
+    this.open_area_beyong = "Company ID";
+    this.open_area_locationType = "Geographic Type";
+    this.open_area_locationTypeTip = "2:Village 3:Factory 4:Construction Site 5:Warehouse 6:Pier 7:Logistics Park 8:Fee Station 9:Tracking Point 10:Work Area 11:Patrol Area 12:Other";
+    this.open_track_distance = "Distance";
+    this.open_track_distance_desc = "Unit: KM.";
+
+    this.open_gps_position = "Geographical Position";
+    this.open_gps_position_desc = "The geographical position after analysis (or converted longitude, converted latitude)";
+    this.open_geoaddress = "Analysis of geographical position ";
+    this.open_geoaddress_moreTip = "1 provides resolution geographic location services";
+    this.open_geoaddress_url_moreTip = "If you don't pass it, don't analysis the location";
+    this.open_gps_position_alarm_start = "Alarm start location";
+    this.open_gps_position_alarm_end = "Alarm end location";
+    this.open_gps_position_alarm_start_desc = "The geographic location after analysis or (alarm start map longitude, alarm start map latitude)";
+    this.open_gps_position_alarm_end_desc = "The geographic location after the analysis (or the end of the map, the longitude of the alarm, the latitude of the end of the map)";
+    this.open_gps_endTime = "Judgement end time";
+    this.open_gps_endTime_moreTip = "1 represents the data at the end of the query at this interval";
+    this.open_gps_endTime_url_moreTip = "If there is no pass, there is no end time judgment";
+    this.open_capture_get = "Get snap photos";
+    this.open_type_value = "Please fill in 3";
+    this.open_picturePath_desc = "Snapshot return path";
+    this.open_deviation_desc = "Snap back offset";
+    this.open_file_size_desc = "Snap back size";
+    this.open_gps_vehicle = "Vehicle Information";
+    this.open_gps_company = "Organization Information";
+    this.open_gps_company_id = "Organization ID";
+    this.open_gps_company_name = "Organization Name";
+    this.open_gps_company_parent = "Higher Party Organization ID";
+
+    this.open_control_type_desc = "1 means Disconnect oil;2 means oil recovery;3 means turn off power;4 means turn on power;5 means restart device;6 means restore factory settings;7 means sleep;8 means wake;9 means opening devices recording(High two bytes are recording channel, low two bytes are instruction, such as channel 1 to send command are Number(0<<16) + Number(9));10 means turn off the device video(High two bytes are recording channel, low two bytes are instruction);" +
+        "11 means client started to channel polling (two bytes to two bytes for the channel number, low order) 12 means said the client stops this channel polling (two bytes to two bytes for the channel number, low order). 13 indicates the logging function of boot record (two bytes higher than 0), and 0 means no log." +
+        "14 means formatting the hard disk（High means hard number, hard number start with 0, low means instruction, such as hard 1 to send command are  Number(0<<16) + Number(14));15 means mileage clear;" +
+        "16 indicates positive turn (high two bytes as channel number, low two byte as instruction). 17 represents reversal flip (high two bytes for channel number, low two bytes for instruction)." +
+        "18 means clear alarm.19 stands for switching cameras. 20 indicates the beginning of recording (high two bytes for the recording channel number, low two bytes for instructions)." +
+        "21 means stop recording (two bytes high for recording channel number, low two bytes for instruction). 22 indicates the end of WiFi download. 23 means equipment to take photos. 24 means device video";
+    this.open_getUserVehicleAlarm = "Acquiring device real time alarm";
+    this.open_status_alarmType = "Type of source alarm";
+    this.open_status_alarmStart = "Type of source alarm started";
+    this.open_status_alarmStart_desc = "The alarm is used when the start and end alarm types are used";
+    this.open_status_alarmTime = "Source alarm time";
+    this.open_status_alarm_time = " Alarm time";
+    this.open_status_up_down = "Bus use, 0 uplink, 1 down";
+    this.open_status_line_way = "Bus use, Line number";
+    this.open_status_line_point = "Bus use, Site sign 0- site 1- station yard";
+    this.open_status_line_point_index = "Bus use, Site index  ";
+    this.open_status_line_point_status = "Bus use, Site status 0- station 1- next stop";
+    this.open_gps_position_sd = "Speed of traveling data recorder";
+    this.open_login_client = "Login to the background interface";
+    this.open_login_client_param = "userSession represents the session number returned by the user login; clientLogin means whether it contains location, video, track playback and other functions (2 means  included),Higher priority than menuIds";
+    this.open_seven_char = "(7)";
+    this.open_video_event_callback = "Video callback event";
+    this.open_video_event_callback_caption = "In the current video JS corresponding file, add new function:  function onTtxVideoMsg(index, type){}"
+    this.open_video_event_type = "Event type";
+    this.open_video_event_type_one = "1. window event: select: select window, full: full screen, norm: exit full screen";
+    this.open_video_event_type_two = "2. Video play event: start: start play, paus: pause, stop: stop, play: pause or stop after the re-play, sound: open sound, silent: mute, PicSave: screenshots";
+    this.open_video_event_type_three = "3. Intercom event：startRecive,uploadRecive,loadRecive: Open intercom,upload:Talk to talk,uploadfull:Talk to talk is over,stopTalk:Turn off intercom,reciveStreamStop,reciveNetError,reciveStreamNotFound:Intercom exception (network anomaly, etc.),uploadNetClosed,uploadNetError:Connection exception";
+    this.open_video_event_type_four = "4. Listen to events：startListen:Start listening,stopListen:Stop listening,listenNetError:network anomaly,playListen:Listening,loadListen,listenStreamNotFound,listenStreamStop:Wait for request to listen";
+
+    this.realTimeVideo_web_rtsp = "RealTime Video RTSP";
+    this.realTimeVideo_web_rtmp = "RealTime Video RTMP(FLV)";
+    this.realTimeVideo_web_rtmp_ex = "RealTime Video RTMP";
+    this.URL_param_infos = "URL Request Parameter Explain";
+    this.base64_param = "p1,p2,p3,p4,p5,p6,p7 Composition string for Base64 encoding results";
+    this.service_ip = "The server ip";
+    this.service_port = "Server port (streaming media port defaults 6604)";
+    this.service_port = "Server port (streaming port number defaults to 6604)";
+    this.service_port1 = "Server port (streaming port number defaults to 6604, 6617, 6618, 6619, 6620, 6621, 6622)";
+    this.utcTime = "Take utc time, the purpose is to be different for each request";
+    this.URL_param3_detail = "URL Request param3 to compose parameters";
+    this.URL_param4_detail = "URL request param4 component parameters";
+    this.URL_param3_session = "Session number (session information for the client can temporarily be empty)";
+    this.URL_param3_type = "Request type (please fill in 3)";
+    this.URL_param3_devIdno = "Equipment number";
+    this.URL_param3_ChnIndex = "Channel numbering (starting from 0)";
+    this.URL_param3_byteType = "Bit stream type (1 means substreams)";
+    this.URL_param3_rec = "Video ID (temporarily invalid, please fill in 0)";
+    this.URL_param3_bl = "Reserved ID (temporarily invalid, please fill in 0)";
+    this.URL_param3_creat = "p1,p2,p3,p4,p5,p6,p7    Base64 is coded serially and param3 is obtained <br\> refer：http://tool.oschina.net/encrypt?type=3 Provides Base64 decoding and encoding";
+    this.URL_param4_creat = "p1,p2,p3,p4,p5,p6,p7    Base64 is coded serially and param4 is obtained <br\> refer：http://tool.oschina.net/encrypt?type=3 Provides Base64 decoding and encoding";
+    this.rtsp_param = "Request param3 parameter composition";
+    this.rtsp_param_info = "26E9FC9E88EA496E9FA8F56B40B84393,3,55018,0,1,0,0";
+    this.rtsp_param_info_detail = "Session number 26E9FC9E88EA496E9FA8F56B40B84393 (if the server does not check for conversation, can pass will be empty), the request type is 3, the device number is 55018, channel 0 (channel 1, 1 said Ma Liu (son of Ma Liu), video) marks 0, retained identification 0";
+    this.rtsp_param_base = "Base64 coding results";
+    this.rtsp_param_info_base64 = "MjZFOUZDOUU4OEVBNDk2RTlGQThGNTZCNDBCODQzOTMsMyw1NTAxOCwwLDEsMCww";
+    this.rtsp_param_url = "Final request example";
+    this.rtmp_param = "Request param4 parameter composition";
+
+    this.open_ptz = "PTZ control";
+    this.open_ptz_text_desc = "0 left; 1 right; 2 upper; 3 lower; 4 left upper; 5 right upper; 6 left lower; 7 right lower; 8 focal length smaller; 9 focal length larger;<br\>10 aperture becomes smaller; 11 aperture becomes larger; 12 focus after adjustment (multiples); 13 focus forward tune; 14 lights; 16 wipers; 18 automatic cruise; 19 stop; 21 call; 22 settings; 23 delete ";
+    this.open_ptz_speed_desc = "Speed, when moving in the direction, the speed is valid, range 0-255";
+    this.open_ptz_param_desc = "When the preset bit is operated, the Param is valid, indicating the ordinal number of the preset bits (21 calls; 22 settings; and 23 deletion)";
+    this.errorNetServer = "Network connection exception";
+    this.open_req_see_no = "Do not contain video interface";
+    this.open_req_see_yes = "Include video and other interfaces";
+
+
+    this.open_down_tast = "Subsection Download Task";
+    this.down_status = "Downloading Status";
+    this.down_status_tips = "1 undownloaded, 2 downloads, 3 downloads failed, 4 downloaded";
+    this.down_fail = "The cause of failure when downloading fails";
+    this.down_userId = "User ID, submitting and downloading the corresponding user ID, that is, the current jsession login user ID";
+    this.dowm_beginTime = "Download Start Time";
+    this.down_endTime = "Download End Time";
+    this.down_path = "Downloading Path";
+    this.down_serviceNumber = "Storage Server Number";
+    this.down_type = "Video type 0 represents a routine, and 1 is an alarm."
+    this.down_file_type = "File type 1 picture file, 2 for video";
+    this.down_start_time = "Task generation time";
+    this.monitorOpen = "Traffic statistics switch 0- closes and 1- opens";
+    this.settlementDay = "Monthly knot day";
+    this.monthLimit = "Monthly flow limit (MB)";
+    this.monthRemindOpen = "Monthly traffic reminder 0- does not remind 1- reminding";
+    this.monthRemind = "Monthly flow reminder (percentage), 20% or 20";
+    this.dayLimit = "Daily flow limit (MB)";
+    this.dayRemindOpen = "Daily traffic reminding 0- not to remind 1- reminding";
+    this.dayRemind = "A daily flow reminder (percentage), 20% or 20";
+    this.overLimitOpen = "Monthly flow exceeding limit: 0 overlooked after exceeding the limit, 1 disable media service after exceeding the limit";
+    this.userIds = "Query the user ID (multiple users ID use English, partition)";
+    this.type = "User operation types (1; video preview (channel) 2; audio monitoring (channel) 3; two-way dialogue 4; picture capture 5; video search 6; video download 12; remote playback)";
+    this.user_name = "User name";
+    this.totalTime = "Length of time (second)";
+    this.msec = "(millisecond)";
+    this.flowUsed = "Use traffic (unit M)";
+    this.vehicle_type = "Vehicle type: 1 Dangerous Goods Transporter, 2 Ordinary Passenger Transport Vehicle, 3 Rural Passenger Transport Vehicle, 4 Taxi, 5 Freight Vehicle, 6 Waste Truck, 7 Sanitation Vehicle, 8 Concrete Vehicle, 9 Excavator, 10 Engineering Vehicle";
+    this.alarmSourceType = "Alarm source 0 equipment 1 Platform";
+    this.mediatype = "Media type 0: audio and video, 1: audio, 2: video, 3: video or audio and video";
+    this.mediatype_chuan = "Media Types 0: Pictures, 1: Audio and Video, 2: Audio, 3: Video, 4: Text, 5: Other";
+
+    this.storetype = "The main storage type 0: or 1: backup memory, main memory, 2: memory backup";
+    this.bittype = "Stream type -1: master or sub stream, 0: master stream, 1: sub stream";
+    this.bitbackType = "Stream type -1: master or sub stream, 0: master stream, 1: sub stream";
+    this.arlamtype = "Alarm identification 1, binary corresponding decimal integer, binary digit alarm <br> 1 emergency alarm 2 overspeed alarm 3 fatigue driving 4 early warning 5GNSS module malfunction <br>" +
+        "The 6GNSS module is not connected to or is cut off by the 7GNSS antenna short circuit 8 terminal main power supply under voltage <br>" + "9 terminal main power supply power off 10 terminal LCD or display failure 11TTS module fault <br>" +
+        "12 camera failure 19, driving overtime on the same day, 20 overtime parking 21 in and out of the area <br>" + "22 out of route 23 of route of import and export line / over 24 route deviation from alarm 25 vehicle VSS fault <br>" +
+        "26 vehicles oil volume abnormal 27 vehicles stolen 28 vehicles illegal ignition 29 vehicles illegal displacement 30 collision rollover alarm";
+    this.arlamtype2 = "Alarm identification 2, binary corresponding decimal integer, binary digit alarm, <br> 1 video signal loss alarm, 2 video signal occlusion alarm, 3 memory unit failure alarm <br>." +
+        "4 other video equipment fault alarm 5 bus overcrowding alarm 6 alarm <br> abnormal driving behavior" + "7 special alarm video to store threshold alarm";
+    this.filetype = "0- common 1- alarm trigger";
+    this.vedioOrVoiceType = "1- audio and video 2- audio 3- video";
+    this.alarm_file_type = "File Type 0-ordinary 1-Alarm trigger";
+    this.ruleName = "Rule name";
+    this.linkage_Alarm = "Fixed transmission 13";
+    this.linkage_Alarm_param = "The parameter format is: \"P1, P2, P3, P4, P5, p6\" <br> P1 takes pictures 1, 0 is not; P2 allows photo taking to set up camera channel (support 16 channels), for example: 1010000000000000 indicates opening channel 1, 3; <br>." +
+        "P3 video is long (0-1800 seconds); P4 sets video channels (supporting 16 channels), for example, 1010000000000000 for opening channel 1, 3; <br>" +
+        "P5 phone number, P6 mailbox; <br> example: 1,1010000000000000,10,1010000000000000,0000000000,xxx";
+    this.linkage_Alarm_text = "Hint information";
+    this.ruleId = "Rule ID"
+    this.rule_authorize_device = "The device number does not allocate the rule (the Jian Yixian execution - query rule device Association - avoid the abnormality of the repeating distribution) multiple use, segmentation";
+    this.rule_device_id = "Regular device association ID (Jian Yixian execution - query rule and device Association - get corresponding ID), multiple comma segmentation";
+    this.protocol_type = "The 0:unknown 1: standard (2011) standard 2: (Compass) 3: standard 1078 (video)";
+    this.storage_location = "Storage location";
+    this.fileTime = "File Length";
+    this.fileSize = "File Size";
+    this.fileNumber = "Number Of Documents";
+    this.bit = "(bytes)";
+    this.service_number = "Server Number";
+    this.encode = "Encoding format 0-JPEG 1-TIF";
+    this.fileOffset = "File offset position";
+    this.file_date = "File Time";
+    this.gps_status = "GPS state information";
+    this.vedio_type = "Type 1- audio and video 2- audio 3- video";
+    this.src_status = "Video status 0- is videotaping 1- video to complete the abnormal end of 2-";
+    this.ruleType = "Rule type 13- alarm linkage rules";
+    this.flowInfo = "Traffic configuration information";
+    this.flowUsed = "Traffic use information";
+    this.dayFlowUse = "Day use flow";
+    this.dayFlowVedioUse = "Video usage traffic on the day";
+    this.dayFlowGPSUse = "GPS usage traffic on the day";
+    this.dayFlowOtherUse = "Other business usage traffic on the day";
+    this.monthFlowUse = "Traffic flow in the month";
+    this.monthFlowVedioUse = "Video usage traffic in the month";
+    this.monthFlowGPSUse = "GPS traffic in the month";
+    this.monthFlowOtherUse = "Other business use traffic in the month";
+    this.update_time = "Update time";
+    this.second = "second";
+    this.file_management = "File related business";
+    this.rule_management = "Rule related business";
+    this.encoding_format_tip = "Chinese reference, format reference";
+    this.open_down_tast_del = "Delete  Device Download the subsection task";
+    this.userMedia_query = "User media traffic query";
+    this.resource_catalog_summary = "Resource Catalog Summary";
+    this.resource_catalog_detail = "Resource Catalog Detail";
+    this.picture_query = "Picture Query";
+    this.voice_query = "Audio And Aideo Auery";
+    this.save_rule = "New Linkage Alarm";
+    this.query_rule = "Inquiry Linkage Alarm";
+    this.edit_rule = "Edit Linkage Alarm";
+    this.del_rule = "Delete Linkage Alarm";
+    this.save_rule_dev_rel = "Device Rule Equipment Association";
+    this.query_rule_dev_rel = "Query Rule Device Association";
+    this.del_rule_dev_rel = "Delete Regular Device Association";
+    this.query_ruleList = "Query Rules Based On Rule Type";
+    this.device_edit = "Modification of Equipment";
+    this.flow_management = "Flow Related Business";
+    this.get_flow_info = "Get Flow Information";
+    this.save_flow_config = "Save Flow Configuration";
+    this.server_error = "( Return parameter inclusion： \"cmsserver\":1 )";
+    this.userNOpermit = "No user permissions";
+    this.error_sql = "Operating database error";
+    this.info_not_exist = "Information does not exist";
+    this.unknow_error = "unknown error";
+    this.name_exist = "The name has been used";
+    this.no_response_dev = "No feedback information received from the device";
+    this.device_offline = "Equipment is not online";
+    this.device_connect_error = "Device connection interruption";
+    this.unknow_storage = "Undefined storage path";
+    this.rule_name_exist = "The name of the rule already exists";
+    this.rule_name_noexist = "Rules do not exist";
+    this.device_1078_info = "Non 1078 equipment fill 0";
+    this.device_1078_return = "1078 device return";
+    this.user_session_exist = "userSession already exists";
+    this.user_Id = "User ID";
+    this.uer_bind = "User binding";
+    this.uer_unbind = "User  unbind";
+    this.driver_info = "Whether to query driver information (name + work number)";
+    this.driver_info_tip = "1: query; other or not: not querying"
+    this.driver_name = "Driver Name";
+    this.driver_job = "Driver's Work Number";
+    this.mapRectMyIdno = "Looking For The Current Terminal";
+    this.mapRectHisIdno = "Looking For The History Of The Terminal";
+    this.mapAutonavi = "Autonavi";
+    this.monitor_labelPosition = "position:";
+    this.real_time_vedio = "RealTime Video";
+    this.real_time_record = "Video length (range from 0 to 1800, 0 to stop)";
+    this.real_time_vedio_chn_desc = "The channel begins with the maximum support of 15. from 0 (0 for channel 1 and 1 for channel 2).";
+    this.real_time_vedio_label = "Label";
+    this.open_getUserVehicleMile = "Vehicle Mileage";
+    this.open_table_example = "Vehicle Location List";
+    this.open_getUserVehiclePark = "Vehicle Parked";
+    this.open_getUserVehiclePosition = "Vehicle Latest Location";
+    this.language_type = "Analysis of geographical position, Chinese environment pass on:";
+
+    this.devMp4InfoReturn = ",Server Video Returns Empty";
+    this.Return1078Null = ",1078 Device Returns Empty";
+    this.urlParamRequied1 = ",User Required Parameters：";
+    this.requiedParam1 = "jsession(Required)sbtm(Default Start Time)setm(Default End Time)lab(Default Is Empty)";
+    this.requiedParam2 = "jsession(Required)SAVENAME(Required)";
+    this.requiedParam3 = "jsession(Required)PLAYBEG(Default Start Time)PLAYEND(Default End Time)";
+
+    this.iosExample = "IOS SDK And Examples:";
+    this.androidExample = "Android SDK And Examples:";
+    this.base_info = "Base Info";
+    this.evidence_query = "Evidence Query";
+    this.driver_lisence = "Driver Lisence";
+    this.vehicle_plate = "Vehicle_plate";
+    this.driver_phone = "Driver Phone";
+    this.driver_image = "Driver Image";
+    this.media_info = "Media Info";
+    this.file_stream_path = "File Stream Path";
+    this.open_file_type_tips = "0-image 1 Audio and video- 2-Audio 3-video 4-Text 5-other";
+    this.gps_info = "GPS Info";
+    this.evidence_download = "Evidence Download";
+    this.police_power = "V9:Electric Quantity";
+
+
+    this.safetyBusiness = "Active Safety Business";
+    this.querySafetyAlarm = "Security Alarm Inquiry";
+    this.querySafetyEvidence = "Security Evidence Inquiry";
+
+    this.media1078 = "Video 1078 Business";
+    this.referenceApi = "Interface Reference";
+    this.alarmTypeParams = "Alarm Type Parameter Uses The Alarm Type Of The Alarm Accessory";
+    this.open_media_type = "Multimedia Type";
+    this.media_type_Description = "0 Means Picture, 1 Means Video";
+    this.videoFileSTime = "Video File Start Time";
+    this.videoFileETime = "Video File End Time";
+    this.open_channel = "Channel";
+    this.alarm_position = "Position";
+
+    this.login_error = "Single sign-on user, already logged in";
+    this.company_not_exist = "Company does not exist";
+
+    this.encoding_format = "Chinese Example";
+    this.url_encode_format = "Url direct pass";
+    this.ajax_encode_format = "Ajax data transfer";
+    this.recommend = "Recommend";
+
+    this.role_company = "The organization to which the role belongs, parsing the reference company query";
+    this.jsession_company = "That is, the current jsession login user belongs to the organization, parsing the reference company query";
+    this.account_multiply_role = "Multiple corresponding to the role id order";
+    this.account_type = "Whether the main account is 0-no, 1- is";
+    this.user_return = "User Info";
+    this.police_file_count = "Count";
+    this.police_or_dispatcher_account = "Police officer number or dispatch user account";
+    this.police_back_result = "0 correct return";
+    this.coordination_group_devId = "Coordination group id, available when modifying team name and description, will not change department";
+    this.coordination_group_simNum = "Coordination group description";
+    this.coordination_group_name = "Coordination group name";
+    this.police_or_dispatcher = "Police officer number or schedule user account (when scheduling users, you can only query the terminal under the group, non-scheduled users can only query the authorized police officer number)";
+    this.police_delete = "Deleting a member triggers a delete group, and 1 means triggering a delete group,0 means the operation is not a temporary group. The rules are as follows:"
+        + '<br/>(1). Creator schedules user deletion'
+        + '<br/>(2). Only one person left in the group';
+    this.police_defaultType = "0 is not the default group 1 is set as the default group.";
+    this.police_leave = "Level: 0 Low 1 Medium 2 High";
+    this.police_idno = "Police officer number (multiple use English ', 'comma separated') Chinese need to be transcoded";
+    this.coordination_group_id = "Coordination group id";
+    this.organization_id_new = "Organization id";
+    this.organization_id_tips = "Organization id (can only modify the company name [recommended parameter transfer method and new agreement, if you can not query according to id, perform new operations]";
+    this.organization_group_defult = "If the organization type is department, 1- means that you need to create a team at the same time.";
+    this.organization_type = "Organization type: 1-Company, 12-Department, 15-Administrative Region";
+    this.organization_parent = "Superior organization id (default 0)";
+    this.organization_account = "Organization master account";
+    this.new_need = "New Required";
+    this.organization_name = "Organization Name";
+    this.user_role_id_new = "Role Id";
+    this.user_role_id = "Role id (can only modify the role permissions, can not change the company, if the id does not exist, then take the new operation. It is recommended to read the corresponding parameters in the transmission]";
+    this.user_role_permissions = "Role Permissions";
+    this.user_role_name = "Role Name";
+    this.user_id_new = "User Id";
+    this.user_account_id = "Used when modifying user information. If the id does not query the user, add a new operation. [Recommended to read first, then modify]";
+    this.user_account_validity = "Account validity period [Format: 2019-04-02]";
+    this.user_account_level = "User level: 0-4 [corresponding to I-V]; default 0";
+    this.user_account_singleLogin = "Single sign-on: 0-no 1-yes; default 0";
+    this.user_account_dispatcher = "User Type: 0-Normal User 1-Scheduled User; Default 0";
+    this.user_account_modifyPassword = "Whether to prohibit the modification of the password 0-No 1-Yes; Default 0";
+    this.user_account_useStatus == "User Usage Status 0-Deactivate, 1-Application Default 1";
+    this.user_account_name = "User name (default account name)";
+    this.account_password = "Clear text password [Priority use encryptPwd, if both encryptPwd and password are empty, default 000000]";
+    this.account_password_md5 = "Account password (MD5 encryption)";
+    this.organization_id = "Organization Id";
+    this.user_account_role = "Role permission Id (multiple use English, split)";
+    this.user_account = "User Account";
+    this.add_vehicle_name = " 11 PTT terminal is valid, the default value is vehiIdno field.";
+    this.delete_user = "Delete User";
+    this.find_user = "Find User";
+    this.new_user = "New User";
+    this.user_management = "User Management";
+    this.delete_role = "Delete Role";
+    this.find_role = "Find Role";
+    this.new_role = "New Role";
+    this.role_management = "Role Management";
+    this.delete_organization = "Delete Organization";
+    this.find_organization = "Find Organization";
+    this.new_organization = "New Organization";
+    this.organization_management = "Organization Management";
+    this.call_record_query = "Call Record Query";
+    this.coordination_group_removes_members = "Coordination Group Removes Members";
+    this.coordination_group_adds_members = "Coordination Group Adds Members";
+    this.delete_coordination_group = "Delete Coordination Group";
+    this.new_coordination_group = "New Coordination Group";
+    this.coordination_group = "Coordination Group";
+    this.perssionType = "Permission Type";
+
+
+    this.login_type = "Login type:0-linux, 1-windows, 2-web, 3-Android, 4-ios";
+    this.user_status = "Use status:0-normal, 1-maintenance, 2-deactivated, 3-arrears";
+    this.satellite_number = "Number of satellites";
+    this.line_id = "Line id";
+    this.driver_id = "Driver id";
+    this.line_direction = "Line direction 0 Up 1 Down";
+    this.site_identification = "Site identification 0 site 1 station";
+    this.site_index = "Site index";
+    this.site_status = "Site status 1 site 0 station";
+    this.obd_rotating_speed = "OBD collects engine speed";
+    this.obd_speed = "OBD capture engine speed";
+    this.obd_ov = "OBD collecting battery voltage";
+    this.obd_ojt = "OBD collecting battery voltage";
+    this.obd_ost = "OBD acquisition status";
+    this.obd_ojm = "OBD capture throttle position";
+    this.extra_bit = "Additional information flag 0-Bus OBD 1-Video Department 2-UAE School Bus";
+    this.extra_bit_p1 = "ef=1: video loss flag, ef=2: hard disk 3 status 0 is invalid, 1 exists, 2 does not exist";
+    this.extra_bit_p2 = "ef=1:Video occlusion flag, ef=2: Hard disk 3 type 1sd, 2hd, 3ssd";
+    this.extra_bit_p3 = "ef=1:Disk error flag, ef=2: Hard disk 4 status 0 is invalid, 1 exists, 2 does not exist";
+    this.extra_bit_p4 = "ef=1:Abnormal driving flag, ef=2: Hard disk 4 type 1sd, 2hd, 3ssd";
+    this.extra_bit_p5 = "ef=1:Fatigue degree, ef=2: humidity 1 sensor";
+    this.extra_bit_p6 = "ef=2:Humidity 2 sensor";
+    this.extra_bit_p7 = "ef=2:Humidity 3 sensor";
+    this.longGps_lg = "2 hours means long GPS";
+    this.longGps_808_2019 = "(Refer to the 808-2019 agreement)";
+    this.longGps_use = "Valid when lg=2";
+    this.longGps_rt = "Receive GPS server time";
+    this.longGps_ls = "Bit0: compartment temperature, bit1: IO status bit, bit2: extended vehicle signal status, bit3: analog quantity <br>bit4: tire pressure, bit5: active safety ADAS, bit6: active safety DSM, bit7: active safety BSD"
+    this.longGps_ct = "Compartment temperature (0x06)";
+    this.longGps_ios = "IO status bit (0x2A)";
+    this.longGps_es = "Extended vehicle signal status bit (0x25)";
+    this.longGps_aq = "Analog quantity (0x2B)";
+    this.longGps_adas1 = "Active safety adas alarm status bit Lv1";
+    this.longGps_adas2 = "Active safety adas alarm status bit Lv2";
+    this.longGps_adas_bit = "Bit0: forward collision alarm, bit1: lane departure alarm, bit2: vehicle distance over alarm, bit3: pedestrian collision alarm<br>bit4: frequent lane change alarm, bit5: road sign over limit alarm, bit6: obstacle alarm, Bit7: Curved speed warning";
+    this.longGps_dsm1 = "Active safety dsm alarm status bit Lv1";
+    this.longGps_dsm2 = "Active safety dsm alarm status bit Lv2";
+    this.longGps_dsm_bit = "Bit0: fatigue driving alarm, bit1: call alarm, bit2: smoking alarm 3: long time no visual alarm, bit4: system can not work normally alarm <br>bit5: driver does not wear seat belt alarm, bit6: driving The member is not in the driver's seat alarm, bit7: the driver's hands are off the steering wheel alarm, bit8: distracted driving alarm (Su), bit9: driver abnormal alarm (Su)";
+    this.longGps_bsd1 = "Active safety bsd alarm status bit bit0: left blind zone alarm, bit1: right blind zone alarm, bit2: rear approaching alarm";
+    this.longGps_adas_fvs = "Front vehicle speed (Km/h). The asas alarm status bit is valid when bit0 =1 and bit1=1";
+    this.longGps_adas_dst = "Front vehicle/pedestrian distance (100ms). The asas alarm status bits are valid for bit0 = 1, bit1=1 and bit3 = 1";
+    this.longGps_adas_rfd = "Road sign identification data. asas alarm type";
+    this.longGps_adas_dvt = "Deviation type (0: left 1: right).asas alarm status bit is valid for bit1=1";
+    this.longGps_adas_rft = "Road marker identification type (0: speed limit flag 1: limit height flag 2: weight limit flag) is valid when the asas alarm type is bit5 = 1.";
+    this.longGps_dsm_fl = "Fatigue degree. dsm alarm type";
+    this.longGps_dsm_yn = "Number of yawns. The dsm alarm status bit is valid when bit0 = 1.";
+    this.longGps_dsm_cet = "Closed eye duration (100ms). The dsm alarm status bit is valid when bit0 = 1.";
+    this.longGps_dsm_wc = "Number of consecutive blinks. The dsm alarm status bit is valid when bit0 = 1.";
+    this.longGps_dsm_tp = "Tire pressure data, formatted as hex. dsm alarm type";
+    this.getControllistInfo = "Get Face List List";
+    this.getCOntrollistDetail = "Obtain Details Of Control Personnel";
+    this.URL_param3_type_rtmp = "Request type (please fill in 1)";
+    this.rtmp_param_info = "26E9FC9E88EA496E9FA8F56B40B84393,1,55018,0,1,0,0";
+    this.rtmp_param_info_detail = "Session number 26E9FC9E88EA496E9FA8F56B40B84393 (if the server does not check for conversation, can pass will be empty), the request type is 1, the device number is 55018, channel 0 (channel 1, 1 said Ma Liu (son of Ma Liu), video) marks 0, retained identification 0";
+    this.rtmp_param_info_base64 = "MjZFOUZDOUU4OEVBNDk2RTlGQThGNTZCNDBCODQzOTMsMSw1NTAxOCwwLDEsMCww";
+    this.open_playback_url_tips = "<span style='color:red' >" + this.open_queryRecording + ' Return(PlaybackUrlWs is preferred, and PlaybackUrlWs does not support Flash)' + "</span>";
+    this.open_downUrl_url_tips = "<span style='color:red' >" + this.open_queryRecording + ' Return(DownUrl)' + "</span>";
+    this.devTaskId = "When valid for download from the device, it indicates the ID in the corresponding task table";
+    this.controllistName = "person name";
+    this.address = "address";
+    this.contact_details = "Contact";
+    this.sex = "gender";
+    this.eigenvalue = "face feature code";
+    this.ID_number = "ID number";
+    this.date_of_birth = "date of birth";
+    this.license_photo = "document photo";
+    this.downloadTaskTag = "tag";
+    this.faceLibrary = "face library";
+    this.rear_approach_alarm = "Rear approach alarm";
+    this.downloadTaskTag = "Label";
+    this.getChildCompany = "Whether to obtain sub-organization face";
+    this.controllistid = "Person ID";
+    this.controllistids = "Person id (multiple person id, split)";
+
+    this.insertMediaRecords = "Insert\\Video\\Audio\\Picture Record";
+    this.delMediaRecords = "Delete\\Video\\Audio\\Picture Record";
+
+    this.file_type = "0-Ordinary 1-Alarm Trigger";
+    this.status = "Video Status 0 - Uncompleted 1 - Completed"
+    this.fileLocation = "File Storage Location 1-Device 2-Storage Server 3-Local 4-Download Server";
+    this.source = "1 denotes data storage plan generation or user capture, and 2 denotes task-based downloads from devices.";
+    this.alarmFlag1 = "Alarm Sign 1";
+    this.alarmFlag2 = "Alarm Sign 2";
+    this.streamType = "0: Main stream, 1: Substream";
+    this.lwm_storeType = "Source files are stored in device locations 0: unknown, 1: main memory, 2: disaster preparedness memory,3:URL";
+    this.license_plate_type = "Plate Type";
+    this.ftpUpload = "FTP File Upload";
+    this.ftpStatus = "FTP Task Status Query";
+    this.ftpList = "FTP Task List Query";
+    this.beginYear = "Start Year";
+    this.endYear = "End Year";
+    this.beginMonth = "Start Month";
+    this.endMonth = "End Month";
+    this.beginDay = "Start Date";
+    this.endDay = "End Date";
+    this.beginSec = "Start Seconds(0-86339)";
+    this.endSec = "End Seconds(0-86339)";
+    this.netDownLoad = "1:WIFI,1 For WIFI Downloadable\n2:LAN,2 For LAN Downloadable\n4:3G/4G,4 For 3G/4G Downloadable\nMultiple Selection";
+    this.arlamtypeEx = "Alarm identification 1, binary corresponding decimal integer, binary digit alarm <br> 1: emergency alarm 2: overspeed alarm 4: fatigue driving 8: early warning 16:GNSS module malfunction <br>" +
+        "32:The GNSS module is not connected to or is cut off by the 64:GNSS antenna short circuit 128: terminal main power supply under voltage <br>" + "256: terminal main power supply power off 512: terminal LCD or display failure 1024:TTS module fault <br>" +
+        "2048: camera failure 262144: driving overtime on the same day, 524288: overtime parking 1048576: in and out of the area <br>" + "2097152: out of route 4194304: of route of import and export line / over 8388608: route deviation from alarm 16777216: vehicle VSS fault <br>" +
+        "33554432: vehicles oil volume abnormal 67108864: vehicles stolen 134217728: vehicles illegal ignition 268435456: vehicles illegal displacement 536870912: collision rollover alarm";
+    this.arlamtypeEx2 = "Alarm identification 2, binary corresponding decimal integer, binary digit alarm, <br> 1: video signal loss alarm, 2: video signal occlusion alarm, 4: memory unit failure alarm <br>." +
+        "8: other video equipment fault alarm 16: bus overcrowding alarm 32: alarm <br> abnormal driving behavior" + "64: special alarm video to store threshold alarm";
+    this.taskSeq = "Task Flow Number";
+    this.task_status = "Task Status<br/>0:Pause State <br/>1:Downloading <br/>2:Cancel <br/>3:Fail <br/>4:Success";
+    this.ftpUploadPath = "Upload Ftp Path";
+    this.alarmType1 = "Alarm Identification 1";
+    this.alarmType2 = "Alarm Identification 2";
+    this.taskCreated = "Task Generation Time";
+    this.taskOver = "Mission End Time";
+
+    this.intercom = "intercom(1:yes 0:no)";
+
+    this.uploadSpeed = "Upload Speed (BYTE/per second)";
+    this.uploadProgress = "Upload progress 0-100";
+    this.estimateFileSize = "Estimated File Size (BYTE)";
+
+    this.vehicle_control_device = "Get Device Info";
+    this.vehicle_device_version = "Version Number"
+    this.vehicle_device_wlanActive = "Wireless Module (1: active)";
+    this.vehicle_device_wlanType = "Wireless Module Type";
+    this.vehicle_device_wlanAddr = "Wireless Network Address";
+    this.vehicle_device_wifiActive = "wifi Module (1: active)";
+    this.vehicle_device_wifiAddr = "Wifi Network Address";
+    this.vehicle_device_wifiName = "Wifi Name（cVersion > 0）";
+    this.vehicle_device_chnNum = "Number of channels (channel index 0, corresponding to CH1)";
+    this.vehicle_device_record = "Recording status (bit corresponding to channel index, 1 means valid)";
+    this.vehicle_device_videoLost = "Video loss status (bit corresponding to channel index, 1 means lost)";
+    this.vehicle_device_diskNum = "Number of hard drives";
+    this.vehicle_device_diskInfo = "Hard drive information";
+    this.vehicle_device_allVolume = "All capacity <br> Unit: G, please divide by 100 before use.";
+    this.vehicle_device_leftVolume = "Remaining capacity <br> Unit: G, divide by 100 before use.";
+    this.taskType = "0: Pause 1: Continue 2: Cancel";
+    this.ftpControl = "FTP Upload Control";
+    this.downloadUrl = "Download Link";
+    this.playUrl = "Play Link";
+    this.queryDriverPunchDetail = "Query Details Of Driver's Punch Card Record";
+    this.queryIdentifyAlarm = "Query Identify Alarm";
+    this.qureyDriverList = "Query Driver List";
+    this.driverName = "Driver name, Fuzzy search";
+    this.punchInfo = "Punch information, use';' to split. Driver name|Issuing authority|ID number|Qualification code";
+    this.punchDName = "Punch driver name";
+    this.punchIssue = "Card issuing authority";
+    this.punchIdCard = "Punch driver ID number";
+    this.punchCert = "Code for the driver's qualification card";
+    this.recognResult = "Recognition result, 0: recognition failure 1: recognition success";
+    this.recognP1 = "Recognition success means contrast, zoom in 100";
+    this.recognP2 = "The lower 16 bits indicate failure similarity, and the higher 16 bits indicate passing similarity";
+    this.recognP3 = "Recognition failure means failure type 0: invalid 1: recognition failure 2: unrecognizable 3: comparison failure";
+    this.sexLabel = "Gender 1 male 2 female";
+    this.dliceNumber = "Driver's license number";
+    this.rdParam = "Driver's license date";
+    this.vdParam = "Driver's License Expiration Date";
+    this.reminderDays = "Days Ahead Of Schedule";
+    this.licenseType = "Type Of Driver's License";
+    this.birthplace = "Birthplace";
+    this.area = "Area";
+    this.nuclearAuthority = "NuclearAuthority";
+    this.md5Param = "File md5, 0 does not return 1 returns";
+    this.driver_image_md5 = "Driver Image Md5";
+    this.fileMd5 = "File md5";
+    this.pst = "Job ID 1 driver 2 flight attendant";
+    this.crd = "IC card ID";
+    this.remark = "Remark";
+
+    this.qualificationPhoto = "Qualification photo";
+    this.driverLicensePhoto = "Driver license photo";
+    this.transportStatus = "Transport status 0 not transported 1 transported";
+    this.totalDrivingTime = "Total Driving Time(h)";
+    this.subiao_grade = "Grade";
+    this.driver_run_licheng = "Cumulative Driving Mileage(Km)";
+    
+    this.transportCertificate = "Transport certificate";
+    this.transportCertificatePhoto = "Transport certificate Photo";
+    this.ali_pay_qrcode = "Ali Pay QR Code";
+    this.wechat_pay_qrcode = "Wechat Pay QR Code";
+    this.perfectStatus = "Information complete status 0 not complete 1 complete";
+    this.filter_data_whose_update_time_is_after_the_incoming_time = "Filter data whose update time is after the incoming time";
+    this.ptt_err_no_pcm_tool = "No PCM tool installed";
+    this.ptt_err_no_mic = "No MIC";
+    this.ptt_err_password = "Wrong password";
+    this.ptt_err_already_login = "Already logged in";
+    this.ptt_err_network = "Network Error";
+    this.ptt_err_no_talk_right = "No right to speak";
+    this.ptt_err_other_talking = "Other users are talking";
+    this.ptt_err_group_idle = "Not in a group (idle state)";
+    this.ptt_err_group_no_exist = "Group does not exist";
+    this.ptt_err_no_group_member = "Non-group member";
+    this.ptt_err_temp_group_exist = "A temporary group already exists (users can only create one temporary group at the same time)";
+    this.ptt_err_no_temp_group = "Non-temporary groups (currently only temporary groups can add members)";
+    this.ptt_err_no_right = "No permission";
+    this.ptt_err_database = "Operating database";
+    this.ptt_err_unkown = "Unknown mistake";
+    this.ptt_err_offline = "Offline status";
+    this.ptt_err_terminal_no_exist = "Terminal does not exist";
+    this.ptt_err_terminal_offline = "Terminal is not online";
+    this.ptt_err_terminal_talking = "The terminal is talking, and the forced pull or demolish will fail";
+    this.ptt_err_in_temp_group = "The terminal is in a temporary group";
+    this.ptt_talk_max_min_second = "Speak up to 30 seconds each time";
+    this.audio_ptt = "Cluster Intercom";
+    this.wasmTip = "libcmsv6decode.wasm needs to be placed in the web root directory";
+    this.pttTip1 = "Required files: cmsv6player.min.js and libcmsv6decode.wasm files, libcmsv6decode.wasm needs to be placed in the web root directory";
+    this.pttTip2 = "Import file";
+    this.pttTip3 = "Set the log level Static function, use the class name to call, the default level is 1:info ";
+    this.ptt_level_tip = "0:debug, 1:info, 2:error";
+    this.pttTip4 = "Set event response function";
+    this.pttTip4_tip1 = "'login':Login event, returned content {ret:PttUtils.PTT_SUC, groupId:groupId, terId:terId}. ";
+    this.pttTip4_tip2 = "'talk':Speech event, returned content {groupId:groupId, terId:terId, start:start}. ";
+    this.pttTip4_tip3 = "'switch':Switch group event, return content {groupId:groupId, terId:terId, enter:enter, force:force}. ";
+    this.pttTip4_tip4 = "'group':Group change event, returned content<br/>Remove group:{type:'remove',groupId:groupId, temp:tempGroup}  temp:Is it a temporary group<br/>Add group:{type:'append',groupId:groupId, temp:tempGroup}<br/>Update group members:{type:'updateMember',groupId:groupId}<br/>Update group information:{type:'updateInfo',groupId:groupId}. ";
+    this.pttTip4_tip5 = "'tts':Text-to-speech event received   {groupId:groupId, terId:terId, type:type, sendId:sendId, text:text}. ";
+    this.pttTip4_tip6 = "'file':Audio file upload event received  {time:time, groupId:groupId, terId:terId, type: type, url:url}. ";
+    this.pttTip5 = "Callback";
+    this.pttTip6 = "Start up";
+    this.pttTip7 = "Device number or dispatch user account";
+    this.pttTip8 = "Login password";
+    this.pttTip9 = "Server ip";
+    this.pttTip10 = "Port";
+    this.pttTip11 = "Stop";
+    this.pttTip12 = "Get group list";
+    this.pttTip13 = "Message callback: function msg(data) { data.ret：0 means success, others fail\n" +
+        "\tdata.groups:[{\"CompanyID\":1,\"Creater\":1,\"ID\":2,\"Name\":\"test2\",\"Remarks\":\"13241234\",\"Type\":2}] }\n" +
+        "\tCompanyID is the corresponding organization ID, ID is the group ID, Name is the group name, remarks are remarks, Type: 1 means normal group, 2 is temporary group";
+    this.pttTip14 = "Get member list";
+    this.pttTip15 = "Callback function, Message callback: function msg(data) { data.ret：0 means success, others fail\n" +
+        "\tdata.members[{\"DevIDNO\":\"10000\",\"DispID\":1,\"Level\":5,\"Name\":\"10000\",\"Status\":0,\"TerminalID\":\"1\",\"VehiID\":\"1\"}] }\n" +
+        "\tDevIDNO is the terminal number, DispID is the group ID, Level is the level, Name is the terminal name, Status: 1 current group, 0 non-current group, TerminalID: terminal ID";
+    this.pttTip16 = "You can pass multiple IDs, use | interval eg: 11|13|15";
+    this.pttTip17 = "Request to speak";
+    this.pttTip18 = "Message callback: function msg(data) {data.ret: 0 means success, others are failures}";
+    this.pttTip19 = "1 Request to speak, 0 Stop speaking";
+    this.pttTip20 = "Switch group";
+    this.pttTip22 = "Group id";
+    this.pttTip23 = "Terminal id, terId is passed as 0 when entering and leaving, terId is the corresponding terminal id when operating other terminals";
+    this.pttTip24 = "1 Enters, 0 Leaves";
+    this.pttTip25 = "Create a temporary group";
+    this.pttTip26 = "Message callback: function msg(data) {data.ret: 0 means success, others are failures, data.groupId is the group ID of the temporary group }";
+    this.pttTip27 = "Corresponding terminal ID";
+    this.pttTip28 = "Delete temporary group";
+    this.pttTip30 = "The group ID of the temporary group";
+    this.pttTip31 = "Add temporary group members";
+    this.pttTip33 = "Delete temporary group members";
+    this.pttTip34 = "Send text message";
+    this.pttTip35 = "Group ID (when 0, it means sending text to a terminal)";
+    this.pttTip36 = "Terminal ID, valid when the group is 0, means sending text to a terminal";
+    this.pttTip37 = "Type (temporarily invalid)";
+    this.pttTip38 = "Text message, the length does not exceed 512";
+    this.onlineStatus = "Online status, 0 not online 1 online, empty query all";
+    this.find_Driver = "find Driver";
+    this.Is_it_used = "Is it used";
+    this.Driver_license_photo_address = "Driver's license photo address";
+    this.qualificatio__certificate_Photo_address = "Photo address of qualification certificate";
+    this.Photo_address_of_escort_qualification_certificate = "Photo address of escort qualification certificate";
+    this.Driver_qualification_certificate_number = "Driver's license number";
+    this.Certificate_valid_date_start_time = "Start time of the valid date of the certificate";
+    this.Cumulative_driving_hours = "Cumulative driving time";
+    this.Accumulated_driving_mileage = "Accumulated driving mileage";
+    this.Photo_address_of_ID_card = "ID photo address";
+    this.Road_transportation_qualification_certificate = "Road transportation qualification certificate";
+    this.Picture_address_of_road_transport_qualification_certificate = "Photo address of road transportation qualification certificate";
+    this.Number_of_complaints = "Number of complaints";
+    this.Processed_times = "Processed times";
+    this.Whether_to_check_in_the_driver = "Whether to check in the driver";
+    this.Delete_driver = "Delete driver";
+    this.New_drivers = "Add / modify driver";
+    this.mergeDriver = "It is used when modifying the driver information. If the ID cannot find the driver, the driver will be added. [it is recommended to read before modifying]";
+    this.Upload_picture_interface = "Call the upload image interface to get the return value";
+    this.upload_image
+    this.Upload_image_file = "File required for uploading picture method";
+    this.open_upload_image_js = "The introduction of jquery.min.js and webuploader2.js and webuploader.css";
+
+    // ~ api documentation
+
+    this.supervisionCardNum = "Supervision Card Number"
+    this.supervisionCardReviewTime = "Supervision Card Validity Period"
+    this.supervisionCardStatus = "Supervision Card Status"
+    this.supervisionCardStatusAll = "Supervision Card Status (0: Assessment and Issuance; 1: Cancellation; 2: Cancellation)"
+    this.supervisionCardStatus0 = "Assessment and Issuance"
+    this.supervisionCardStatus1 = "Logout"
+    
+
+    this.initVideoDesc1 = 'Initialize video plugin'
+    this.initVideoDesc2 = 'Assignment is initialized as incomplete'
+    this.initVideoDesc3 = 'Video plugin width'
+    this.initVideoDesc4 = 'Video plugin height'
+    this.initVideoDesc5 = 'Execute after plugin initialization is complete'
+    this.initVideoDesc6 = 'Initialize plugin language'
+    this.initVideoDesc7 = 'First create all windows'
+    this.initVideoDesc8 = 'Reconfigure the current number of windows'
+    this.initVideoDesc9 = 'Set server information'
+
+    this.videoSearchDesc1 = 'With PlaybackUrlWs, PlaybackUrlWs is preferred. PlaybackUrlWs does not support flash'
+    this.videoSearchDesc2 = 'When mulPlay>0, multi-channel video playback can be performed'
+    this.videoSearchDesc3 = 'If mulChn is not 0, display the channel information obtained by mulChn bitwise value, if mulChn is 0, it is necessary to determine which channels have recording information in the current time period.'
+
+    this.remotePlaybackH5 = 'MULTIPLEX PLAYBACK（PC/mobile）'
+
+    this.remotePlaybackH5Desc1 = 'Single-channel playback: url is PlaybackUrlWS'
+    this.remotePlaybackH5Desc2 = 'Multi-channel synchronous playback: url is PlaybackUrlWS'
+    this.remotePlaybackH5Desc3 = 'Multi-channel simultaneous playback: url is an array url.push(file1.PlaybackUrlWS); url.push(file2.PlaybackUrlWS); '
+
+    this.remotePlaybackH5Desc4 = 'Single-channel playback: channel is ""'
+    this.remotePlaybackH5Desc5 = 'Multi-channel synchronous playback: channel, "0,1,2,3"'
+    this.remotePlaybackH5Desc6 = 'Multi-channel simultaneous playback: channel is ""'
+
+    this.videoLiveDesc1 = '1. When returning to PlaybackUrlWs, the playback link will take priority to PlaybackUrlWs. '
+    this.videoLiveDesc2 = '2. Single channel playback, playUrl is the playback link. '
+    this.videoLiveDesc3 = this.open_playback_url_tips = "<span style='color:red' >" + this.open_queryRecording + 'When returning (PlaybackUrlWs is preferred)' + "</span>";
+    this.videoLiveDesc4 = '3. Multi-channel simultaneous playback'
+    this.videoLiveDesc5 = 'a. The returned mulPlay> 0 means that multi-channel synchronous playback is supported. '
+    this.videoLiveDesc6 = 'b. mulChn represents the channel that can be played back in multiple channels, expressed in bits. mulChn has two situations:'
+    this.videoLiveDesc7 = '-1 type is 0 (808 protocol) If mulChn is 0, it is necessary to determine which channels have recording information according to the time period (customization is required), and select these channels. '
+    this.videoLiveDesc8 = '-1 type is not 0 (ttx protocol). '
+    this.videoLiveDesc9 = 'c. Play call:'
+
+    this.videoLiveDesc10 = '4. Multi-channel non-synchronous playback, after getting the returned videoFileList, form an array and call the startVodM method to play'
+    this.videoLiveDesc11 = 'a. Take beginDate, endDate, and convert them to Date objects. '
+    this.videoLiveDesc12 = 'b. According to beginDate, endDate, determine whether there are other video playback links at the same time point in videoFileList'
+    this.videoLiveDesc121 = 'Reference method'
+    this.videoLiveDesc122 = 'Time to milliseconds'
+    this.videoLiveDesc123 = 'Judge whether a is within the range'
+    this.videoLiveDesc13 = 'a. How to determine the channel numbers supported by each link'
+    this.videoLiveDesc131 = 'd. Or call the videoFileTimeTally() method directly'
+
+    this.videoLiveDesc14 = 'Acquire channel data by chnMask, expressed in bits'
+    this.videoLiveDesc15 = 'On behalf of the device all channels support playback'
+    this.videoLiveDesc16 = 'All channels of the device'
+    this.videoLiveDesc17 = 'Single channel, channel number = chn this represents the channel number, 0 = channel 1, 1 = channel 2'
+
+    this.vehicleList = 'Vehicle list'
+
+    this.videoLiveDesc18 = '5. When a video file has multiple channels, replace the channel number of the playback link'
+    this.videoLiveDesc19 = 'How to replace the playback channel number with the playback link'
+    this.videoLiveDesc20 = '6. Play call'
+    this.videoLiveDesc21 = 'Filter out eligible playback links'
+
+
+    this.sim_management = "SIM Management";
+    this.sim_add = "Add SIM";
+    this.sim_find = "Find SIM";
+    this.sim_delete = "Delete SIM";
+    this.sim_load = "Query SIM (paged)";
+    this.vehicle_update = 'Perform the modification operation if it exists';
+    this.vehicle_team = 'Fleet';
+    this.vehicle_team_move = 'If it exists, the team is not supported to change its company!';
+    this.sim_id = 'SIM ID';
+    this.sim_update = 'When modifying the SIM, the parameters must be passed!';
+    this.sim_time = 'Registration time (default current time, old time will not be transmitted when modified)';
+    this.sim_status = "Use status 0 is not enabled, 1 is enabled, default 1";
+    this.sim_city = "Issuing City";
+    this.sim_operator = "Operator";
+    this.sim_devidno = "Bind the device number (the company of the device and the company of the sim are the same to bind successfully)";
+    this.sim_time_tuc = "Registration (milliseconds)";
+    this.sim_devidno_status = "Bound device 0 means unbound, 1 means bound";
+    this.sim_devid = "Device ID";
+    this.findVehicleInfoByDeviceJn = "Query driver information based on qualification certificate code/driver's license number";
+    this.jn_Type = "1 Query according to the license code 2 Query according to the driver's license number";
+    this.menuIds = "menuIds represents the menu ID (use, separate) 25 real-time video 26 historical playback";
+    this.specific_page = "Specify Page";
+
+    this.specific_menu = "Specify menu, page";
+    this.handleWay1 = "Way 1:";
+    this.handleWay2 = "Method 2:";
+    this.open_login_client_param_menu_key1 = "userSession represents the session number returned by the user logging in; menuKey represents the group key of the custom group, with the highest priority.";
+    this.open_login_client_param_menu_key2 = "MenuKey setting method: add in operation management-custom menu management, menuKey is the group key.";
+
+    this.ruleTypeDetail = "Rule Type";
+    this.expandParam = "Extended parameter, when the rule type is 7, the parameter is the offset width";
+    this.Uninstall_device = "Uninstall device";
+    this.enableValidity = "Whether to enable the validity period 0 not enabled 1 enabled";
+    this.validity = "Validity period yyyy-MM-dd HH:mm:ss";
+    this.organizationCode = "Road transport permit";
+    this.errCheckTheDay="Check the start time of the day and set the end time to be the same";
+
+    this.addArea = "Add Area";
+    this.editArea = "Modify Area";
+    this.findArea = "View Area";
+    this.deleteArea = "Delete Area";
+    this.open_area_radius_tips = "Radius(m), Area Type( 10; circle), pass parameter, other pass 0";
+    this.select_online_devices = "Only online devices can be checked";
+
+    this.statistical_reports = "Reports";
+    this.report_people_summary = "Passenger Summary";
+    this.report_people_detail = "Passenger Detail";
+    this.vehiIds = "Vehicle ID (multiple use, number division)";
+    this.number_increments = "Incremental Staff";
+    this.total_number_up = "Total Boarding";
+    this.total_number_down = "Total Getting Off";
+    this.number_passengers = "Number Of Passengers";
+    this.front_door_number_up = "Front Boarding";
+    this.front_door_number_down = "Front Getting Off";
+    this.back_door_number_up = "Back Boarding";
+    this.back_door_number_down = "Back Getting Off";
+    this.middle_door_number_up = "Middle Boarding";
+    this.middle_door_number_down = "Middle Getting Off";
+
+    this.resolution = "resolution";
+    this.resolution_data = "1 means 320*240, 2 means 640*480, 3 means 800*600, 4 means 1024*768, 5 means 176*144, 6 means 352*288, 7 means 704*288, 8 means 704*576";
+    this.down_url = "URL address for image download";
+    this.electronic_fence_parameters = "Electronic Fence";
+    this.electronic_fence_set_circle_area = "Set Circular Area";
+    this.electronic_fence_set_rect_area = "Set Rectangular Area";
+    this.electronic_fence_set_poligon_area = "Set Polygon Area";
+    this.electronic_fence_set_line_area = "Set Line Area";
+    this.electronic_fence_delete_area = "Delete Area";
+    this.electronicFenceUrl = "User server ip: user server port";
+    this.electronicFenceUrlParam800001 = "Write: 34304";
+    this.electronicFenceUrlParam800002 = "Write: 34306";
+    this.electronicFenceUrlParam800003 = "Write: 34308";
+    this.electronicFenceUrlParam800004 = "Write: 34310";
+    this.electronicFenceUrlParam800005 = "Delete Area Type:<br>34305=Circular <br>34307=Rectangular<br>34309=Polygon<br>34311=Line";
+    this.electronic_fence_setup_tip = "0: Update; 1: Append; 2: Modify";
+    this.electronic_fence_count_tip = "Indicates the number of areas in an item, which cannot exceed 10";
+    this.electronic_fence_item_tip = "Represents a region item";
+    this.electronic_fence_item_id_tip = "Area ID";
+    this.electronic_fence_item_attr_tip = "Area attribute: <br>Circular/Rectangular/Polygon: <br>bit0:According to time<br>bit1:Speed limit <br>bit2:Alarm to the driver when entering the area" +
+        "<br>bit3:Entering the area to the platform<br>bit4:Exit the area to the driver <br>bit5:Out of the area to the platform" +
+        "<br>bit6:0 north latitude, 1 south latitude<br>bit7:0 east longitude, 1 west longitude <br>bit8:0 operation door opening, 1 prohibition door opening" +
+        "<br>bit14:The communication module is enabled in the 0 entry area and closed in the 1 entry area<br>bit15:No GNSS is collected in the 0 input area, and GNSS is collected in the 1 input area " +
+        "<br>Agreement on muck truck(bit11-bit13): 1: Construction site; 2: Forbidden area; 3: Absorption field; 4: Speed limiter; 5: Parking lot " +
+        "<br><br>Line:<br>bit0:According to time <br>bit2:Alarm to the driver when entering the area" +
+        "<br>bit3:Entering the area to the platform<br>bit4:Exit the area to the driver <br>bit5:Out of the area to the platform";
+    this.electronic_fence_circle_item_wd_tip = "Latitude of center point (WGS8), integer: 47.157184 ->47157184";
+    this.electronic_fence_circle_item_jd_tip = "Longitude of center point (WGS8), integer: 106.781011 ->106781011";
+    this.electronic_fence_circle_item_radius_tip = "Area radius (unit: m)";
+    this.electronic_fence_circle_item_btm_tip = "Region attribute (bit0: according to time): if the month, month and day are all 0, it means that every day is 000000000 10101=01:01:01 every day";
+    this.electronic_fence_circle_item_etm_tip = "Region attribute (bit 0: according to time): if the month, month and day are all 0, it means every day 20200902010101=2020-09-02 01:01:01";
+    this.electronic_fence_item_mspd_tip = "Area attribute (bit1: speed limit): maximum speed (km/h), positive integer, not greater than 999";
+    this.electronic_fence_item_nmspd_tip = "Area attribute (bit1: speed limit): maximum speed at night (km/h), positive integer, not greater than 999. (JT808-2019 is filled in)";
+    this.electronic_fence_item_ostm_tip = "Area attribute (bit1: speed limit): duration of overspeed, positive integer, not greater than 255";
+    this.electronic_fence_aname_tip = "Area name (only filled in JT808-2019)";
+    this.electronic_fence_rect_item_lwd_tip = "Latitude of upper left point (WGS8), integer: 47.157184 ->47157184";
+    this.electronic_fence_rect_item_ljd_tip = "Longitude of upper left point (WGS8), integer: 106.781,011 ->106,781,011";
+    this.electronic_fence_rect_item_rwd_tip = "Latitude of lower right point (WGS8), integer: 47.157184 ->47157184";
+    this.electronic_fence_rect_item_rjd_tip = "Longitude of lower right point (WGS8), integer: 106.781011 ->106781011";
+    this.electronic_fence_poligon_pct_tip = "Area vertex number";
+    this.electronic_fence_poligon_pra_tip = "Vertex term";
+    this.electronic_fence_line_item_pid_tip = "Inflection point ID (the serial number of the direct line point is enough, starting from 1) ";
+    this.electronic_fence_line_item_lid_tip = "Section ID (the serial number of the direct route point is enough, starting from 1)";
+    this.electronic_fence_line_item_lw_tip = "Road section width (unit: m), positive integer, not greater than 255";
+    this.electronic_fence_line_item_lda_tip = "Section attributes (bit0: travel time bit1: speed limit bit2:0 north latitude, 1 south latitude bit3:0 east longitude, 1 west longitude)";
+    this.electronic_fence_line_item_dor_tip = "Section attribute (bit0: travel time): maximum travel time (seconds), positive integer, no greater than 999";
+    this.electronic_fence_line_item_dls_tip = "Road segment attribute (bit0: travel time): minimum travel time (seconds), positive integer, no greater than 999";
+    this.electronic_fence_line_item_mspd_tip = "Section attribute (bit1: speed limit): maximum speed (km/h), positive integer, not greater than 999";
+    this.electronic_fence_line_item_nmspd_tip = "Section attribute (bit1: speed limit): maximum speed at night (km/h), positive integer, not greater than 999. (JT808-2019 is filled in)";
+    this.electronic_fence_line_item_lst_tip = "Road section attribute (bit1: speed limit): overspeed duration (seconds), positive integer, not greater than 255";
+    this.electronic_fence_delete_count_tip  = "Number of Area IDs <br> Delete all areas:{\"Count\":0} ";
+    this.electronic_fence_item_jd_tip = "Longitude (WGS8), integer: 106.781011 ->106781011";
+    this.electronic_fence_item_wd_tip = "Latitude (WGS8), integer: 47.157,184 ->47157184";
+
+    this.vehicle_mileage_detail = "Mileage Details Report";
+    this.vehicle_mileage_total = "Total mileage, unit: m";
+    this.vehicle_oil_total = "Total fuel consumption, 100=1 litre";
+    this.start_position = "Start position";
+    this.end_position = "End position";
+    this.reportMileDetail_oilParam = "Query Type, 1-Fuel Volume Details Report Others - Mileage Details Report";
+    this.only_the_next_day_mileage_can_be_queried ="Only on alternate days mileage can be queried";
+    this.open_account_ex = "Master account: the existence of the company does not need an account, the company does not exist must account";
+    this.open_device_type_desc1_ex = "7 for video device, 5 for GPS device, -7 for Main defense terminal";
+    this.detailed_information_of_access_area = "Detailed information of access area";
+    this.positioning_time="Positioning time";
+    this.access_status="In and out status (in: 1, out: 2)"
+    this.Unbind_sim="Unbind sim";
+    this.Unbind_Flag_desc="Flag, if the parameter is empty, the default value is 0."
+    this.Unbind_Flag_desc1="0: Unbind through SIM ID, 1: Unbind through device number"
+    this.open_by_fuel ="By fuel";
+    this.report_plate_color = "Plate Color";
+    this.open_driver_swiping_time="Driver swiping time";
+    this.open_driver_swipe_card_timestamp="Driver swipe card timestamp";
+    this.open_driver_qualification_certificate_number="Driver Qualification Certificate Number";
+    this.open_driver_information="Driver Information";
+    this.traffic_card_management = "Traffic Card Management";
+    this.upload_image = "upload image";
+    this.blank_check_all_devices="If blank, check all devices";
+    this.plateType_ex = "License plate color: 1 blue, 2 yellow, 3 black, 4 white, 5 green, 93 yellow green, 6 yellow green JX, 223 yellow green FJ, 224 white green FJ, 91 yellow, 92 green, 94 gradient green, 96 gradient green GZ, 97 yellow green GZ, 0 for none, 9 for others";
+    this.Organization_does_not_exist="Organization does not exist";
+    this.The_device_does_not_belong_to_the_current_organization="The device does not belong to the current organization";
+    this.open_device_type_desc2 = "11 PTT terminals";
+    this.open_old = "used";
+    this.open_name = "name";
+    this.open_update_vehicle = "Modify vehicle";
+    this.cross_day = "（Cross Day）";
+    this.open_query_yeare = "Search End Year";
+    this.open_query_monthe = "Search End Month";
+    this.open_query_daye = "Search End Day";
+    this.open_query_date_desc = "Yeare, mone, and daye are not empty, and the query is made across the day";
+    this.open_query_device_type = "Only 1078 device support cross-day queries";
+    this.device_serial = "Equipment serial number";
+    this.product_model = "Product model";
+    this.products_businesses = "Product manufacturer";
+    this.obtain_user_device_authorization ="Obtain user device authorization";
+    this.increase_user_device_authorization="Increase user device authorization";
+    this.delete_user_device_authorization="Delete user device authorization";
+    this.authorization_information="Authorization information";
+    this.police_officer_number="Police Officer Number";
+    this.line4 = "44 DW-N";
+    this.time_online = "Time Online";
+    this.offline_time = "Offline Time";
+    this.online_time = "Online Time(Sec)";
+    this.data_downlink_transparent_transmission = "Data Downlink Transparent Transmission";
+    this.passenger_detail_1078 = "Passenger Details(1078)";
+    this.passenger_summary_1078 = "Passenger Sum Table(1078)";
+    this.data_downlink_transparent_type = "Transparent Message Type(0~255)";
+    this.data_downlink_transparent_content_type = "The data type for sending text messages (1: string, 2: hexadecimal string)";
+    this.channelOriginal = "Whether the original channel number is true";
+    this.channelOriginalMsg2 = "When 1 is passed, the returned data channel is the original channel number, and vice versa, the channel number is +1";
+
+}

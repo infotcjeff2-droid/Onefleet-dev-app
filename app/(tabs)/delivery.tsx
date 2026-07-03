@@ -9,14 +9,16 @@ import {
   Alert,
   Dimensions,
   TextInput as RNTextInput,
+  Image,
 } from 'react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import Svg, { Line } from 'react-native-svg';
 import { useRouter } from 'expo-router';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { useAuthStore } from '@/store/authStore';
 import { getEffectiveDeliveryStatus, useDeliveryStore } from '@/store/deliveryStore';
-import { DeliveryOrder, DeliveryStatus } from '@/constants/mockData';
+import { DeliveryOrder, DeliveryStatus } from '@/types';
 import { useDriverStore, Driver } from '@/store/driverStore';
 import { useUserManagementStore } from '@/store/userManagementStore';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
@@ -36,6 +38,7 @@ import {
   AlertTriangle,
 } from 'lucide-react-native';
 import { useTranslation } from '@/i18n';
+import { router } from 'expo-router';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -284,23 +287,20 @@ function SignatureModal({
 }: {
   visible: boolean;
   onClose: () => void;
-  onConfirm: (signatureData: string) => void;
+  onConfirm: (signatureData: string, strokes: { x: number; y: number; id: number }[][]) => void;
   t: (key: string) => string;
 }) {
-  const [lines, setLines] = useState<{ x: number; y: number; id: number }[]>([]);
-  const [currentLine, setCurrentLine] = useState<{ x: number; y: number }[]>([]);
+  const [lines, setLines] = useState<{ x: number; y: number; id: number }[][]>([]);
+  const [currentLine, setCurrentLine] = useState<{ x: number; y: number; id: number }[]>([]);
   const lineIdRef = useRef(0);
 
   const handleTouch = (x: number, y: number) => {
-    setCurrentLine((prev) => [...prev, { x, y }]);
+    setCurrentLine((prev) => [...prev, { x, y, id: lineIdRef.current++ }]);
   };
 
   const handleEndLine = () => {
     if (currentLine.length > 0) {
-      setLines((prev) => [
-        ...prev,
-        ...currentLine.map((point) => ({ ...point, id: lineIdRef.current++ })),
-      ]);
+      setLines((prev) => [...prev, currentLine]);
       setCurrentLine([]);
     }
   };
@@ -311,7 +311,7 @@ function SignatureModal({
   };
 
   const handleConfirm = () => {
-    onConfirm(`signed-${Date.now()}`);
+    onConfirm(`signed-${Date.now()}`, lines);
     handleClear();
     onClose();
   };
@@ -340,12 +340,39 @@ function SignatureModal({
             onPressOut={handleEndLine}
           >
             <View style={styles.signaturePadInner}>
-              {lines.map((point) => (
-                <View key={point.id} style={[styles.signatureDot, { left: point.x - 1, top: point.y - 1 }]} />
-              ))}
-              {currentLine.map((point, index) => (
-                <View key={`current-${index}`} style={[styles.signatureDot, { left: point.x - 1, top: point.y - 1 }]} />
-              ))}
+              <Svg style={StyleSheet.absoluteFill}>
+                {lines.map((stroke) =>
+                  stroke.length > 1
+                    ? stroke.slice(1).map((pt, i) => (
+                        <Line
+                          key={`l-${stroke[0].id}-${i}`}
+                          x1={stroke[i].x}
+                          y1={stroke[i].y}
+                          x2={pt.x}
+                          y2={pt.y}
+                          stroke={colors.textPrimary}
+                          strokeWidth={2.5}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      ))
+                    : null
+                )}
+                {currentLine.length > 1 &&
+                  currentLine.slice(1).map((pt, i) => (
+                    <Line
+                      key={`c-${i}`}
+                      x1={currentLine[i].x}
+                      y1={currentLine[i].y}
+                      x2={pt.x}
+                      y2={pt.y}
+                      stroke={colors.textPrimary}
+                      strokeWidth={2.5}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  ))}
+              </Svg>
               {!hasSignature && (
                 <Text style={styles.signaturePlaceholder}>{t('delivery.drawSignatureHere')}</Text>
               )}
@@ -419,7 +446,7 @@ function NewOrderModal({
       customerName: customerName.trim(),
       customerPhone: customerPhone.trim(),
       pickupAddress: pickupAddress.trim(),
-      pickupTime: now.toISOString().slice(0, 16).replace('T', ' '),
+      pickupTime: now.toISOString().slice(0, 19).replace('T', ' '),
       dropoffAddress: dropoffAddress.trim(),
       cargoDescription: cargoDescription.trim(),
       cargoWeight: cargoWeight.trim() ? Number(cargoWeight) : 0,
@@ -484,15 +511,14 @@ export default function DeliveryScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const { role, user } = useAuthStore();
-  const { deliveries, assignDriver, updateStatus, addSignature, addOrder, syncExpiredDeliveries } = useDeliveryStore();
+  const { deliveries, assignDriver, updateStatus, addSignature, addOrder } = useDeliveryStore();
   const { loadDrivers } = useDriverStore();
   const loadUsers = useUserManagementStore((state) => state.loadUsers);
 
   useEffect(() => {
     loadDrivers();
     loadUsers();
-    syncExpiredDeliveries();
-  }, [loadDrivers, loadUsers, syncExpiredDeliveries]);
+  }, [loadDrivers, loadUsers]);
 
   const isAdmin = role === 'admin' || role === 'company';
   const isDriver = role === 'driver';
@@ -509,8 +535,9 @@ export default function DeliveryScreen() {
     ? normalizedDeliveries.filter((delivery) => delivery.assignedDriverId === user.id)
     : normalizedDeliveries;
 
-  const todayDeliveries = displayDeliveries.filter((delivery) => delivery.pickupTime.slice(0, 10) === today);
-  const pastDeliveries = displayDeliveries.filter((delivery) => delivery.pickupTime.slice(0, 10) !== today);
+  const activeStatuses: DeliveryStatus[] = ['pending', 'assigned', 'in_transit'];
+  const todayDeliveries = displayDeliveries.filter((delivery) => delivery.pickupTime.slice(0, 10) === today && activeStatuses.includes(delivery.status));
+  const pastDeliveries = displayDeliveries.filter((delivery) => delivery.pickupTime.slice(0, 10) !== today || !activeStatuses.includes(delivery.status));
 
   const tabs = [t('delivery.today'), t('delivery.past')];
   const counts = [todayDeliveries.length, pastDeliveries.length];
@@ -541,7 +568,9 @@ export default function DeliveryScreen() {
   const handleMarkDelivered = (deliveryId: string) => {
     Alert.alert(t('delivery.markDelivered'), t('delivery.confirmDeliveryComplete'), [
       { text: t('common.cancel'), style: 'cancel' },
-      { text: t('common.confirm'), onPress: () => updateStatus(deliveryId, 'delivered') },
+      { text: t('common.confirm'), onPress: async () => {
+        await updateStatus(deliveryId, 'delivered');
+      }},
     ]);
   };
 
@@ -550,9 +579,9 @@ export default function DeliveryScreen() {
     setSignatureModalVisible(true);
   };
 
-  const handleSignatureConfirm = (signatureData: string) => {
+  const handleSignatureConfirm = (signatureData: string, strokes: { x: number; y: number; id: number }[][]) => {
     if (signingDeliveryId) {
-      addSignature(signingDeliveryId, signatureData);
+      addSignature(signingDeliveryId, signatureData, strokes);
       router.replace('/(tabs)/delivery');
     }
   };
@@ -573,7 +602,16 @@ export default function DeliveryScreen() {
 
   return (
     <View style={styles.container}>
-      <Header title={pageTitle} />
+      <Header
+        title={pageTitle}
+        leftElement={
+          <Image
+            source={require('@/assets/onefleet_2560.png')}
+            style={{ width: 90, height: 30 }}
+            resizeMode="contain"
+          />
+        }
+      />
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.statsRow}>
@@ -644,7 +682,7 @@ export default function DeliveryScreen() {
         t={t}
       />
 
-      <Pressable style={styles.fab} onPress={() => setNewOrderModalVisible(true)}>
+      <Pressable style={styles.fab} onPress={() => router.push('/delivery/add')}>
         <Plus size={28} color="#fff" />
       </Pressable>
     </View>

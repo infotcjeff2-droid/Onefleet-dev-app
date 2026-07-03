@@ -8,15 +8,18 @@ import {
   Modal,
   Alert,
   Dimensions,
+  Image,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import Svg, { Line } from 'react-native-svg';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { useAuthStore } from '@/store/authStore';
 import { getEffectiveDeliveryStatus, useDeliveryStore } from '@/store/deliveryStore';
-import { DeliveryOrder, DeliveryStatus } from '@/constants/mockData';
+import { DeliveryOrder, DeliveryStatus } from '@/types';
 import { useDriverStore } from '@/store/driverStore';
 import { useUserManagementStore } from '@/store/userManagementStore';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
@@ -33,6 +36,7 @@ import {
   Scale,
   StickyNote,
   AlertTriangle,
+  Camera,
 } from 'lucide-react-native';
 import { useTranslation } from '@/i18n';
 
@@ -160,23 +164,20 @@ function SignatureModal({
 }: {
   visible: boolean;
   onClose: () => void;
-  onConfirm: (signatureData: string) => void;
+  onConfirm: (signatureData: string, strokes: { x: number; y: number; id: number }[][]) => void;
 }) {
   const { t } = useTranslation();
-  const [lines, setLines] = useState<{ x: number; y: number; id: number }[]>([]);
-  const [currentLine, setCurrentLine] = useState<{ x: number; y: number }[]>([]);
+  const [lines, setLines] = useState<{ x: number; y: number; id: number }[][]>([]);
+  const [currentLine, setCurrentLine] = useState<{ x: number; y: number; id: number }[]>([]);
   const lineIdRef = useRef(0);
 
   const handleTouch = (x: number, y: number) => {
-    setCurrentLine((prev) => [...prev, { x, y }]);
+    setCurrentLine((prev) => [...prev, { x, y, id: lineIdRef.current++ }]);
   };
 
   const handleEndLine = () => {
     if (currentLine.length > 0) {
-      setLines((prev) => [
-        ...prev,
-        ...currentLine.map((point) => ({ ...point, id: lineIdRef.current++ })),
-      ]);
+      setLines((prev) => [...prev, currentLine]);
       setCurrentLine([]);
     }
   };
@@ -187,7 +188,7 @@ function SignatureModal({
   };
 
   const handleConfirm = () => {
-    onConfirm(`signed-${Date.now()}`);
+    onConfirm(`signed-${Date.now()}`, lines);
     handleClear();
     onClose();
   };
@@ -203,33 +204,76 @@ function SignatureModal({
             <Pressable onPress={onClose} hitSlop={12}><X size={20} color={colors.textSecondary} /></Pressable>
           </View>
           <Text style={styles.signatureHint}>{t('delivery.signBelowConfirm')}</Text>
-          <Pressable
-            style={styles.signaturePad}
-            onPressIn={(e) => {
-              const { locationX, locationY } = e.nativeEvent;
-              handleTouch(locationX, locationY);
-            }}
-            onTouchMove={(e) => {
-              const { locationX, locationY } = e.nativeEvent;
-              handleTouch(locationX, locationY);
-            }}
-            onPressOut={handleEndLine}
-          >
-            <View style={styles.signaturePadInner}>
-              {lines.map((point) => (
-                <View key={point.id} style={[styles.signatureDot, { left: point.x - 1, top: point.y - 1 }]} />
-              ))}
-              {currentLine.map((point, index) => (
-                <View key={`current-${index}`} style={[styles.signatureDot, { left: point.x - 1, top: point.y - 1 }]} />
-              ))}
-              {!hasSignature && (
-                <Text style={styles.signaturePlaceholder}>{t('delivery.drawSignatureHere')}</Text>
-              )}
-            </View>
-          </Pressable>
+            <Pressable
+              style={styles.signaturePad}
+              onPressIn={(e) => {
+                const { locationX, locationY } = e.nativeEvent;
+                handleTouch(locationX, locationY);
+              }}
+              onTouchMove={(e) => {
+                const { locationX, locationY } = e.nativeEvent;
+                handleTouch(locationX, locationY);
+              }}
+              onPressOut={handleEndLine}
+            >
+              <View style={styles.signaturePadInner}>
+                <Svg style={StyleSheet.absoluteFill}>
+                  {lines.map((stroke) =>
+                    stroke.length > 1
+                      ? stroke.slice(1).map((pt, i) => (
+                          <Line
+                            key={`l-${stroke[0].id}-${i}`}
+                            x1={stroke[i].x}
+                            y1={stroke[i].y}
+                            x2={pt.x}
+                            y2={pt.y}
+                            stroke={colors.textPrimary}
+                            strokeWidth={2.5}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        ))
+                      : null
+                  )}
+                  {currentLine.length > 1 &&
+                    currentLine.slice(1).map((pt, i) => (
+                      <Line
+                        key={`c-${i}`}
+                        x1={currentLine[i].x}
+                        y1={currentLine[i].y}
+                        x2={pt.x}
+                        y2={pt.y}
+                        stroke={colors.textPrimary}
+                        strokeWidth={2.5}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    ))}
+                </Svg>
+                {!hasSignature && (
+                  <Text style={styles.signaturePlaceholder}>{t('delivery.drawSignatureHere')}</Text>
+                )}
+              </View>
+            </Pressable>
+            <Pressable style={styles.clearSignatureBtn} onPress={handleClear}>
+              <Text style={styles.clearSignatureBtnText}>{t('delivery.clearSignature')}</Text>
+            </Pressable>
           <View style={styles.modalActions}>
-            <Button title={t('delivery.clear')} variant="ghost" onPress={handleClear} style={{ flex: 1 }} />
-            <Button title={t('delivery.confirmSignature')} onPress={handleConfirm} style={{ flex: 2 }} disabled={!hasSignature} />
+            <Button
+              title={t('common.cancel')}
+              variant="ghost"
+              onPress={() => {
+                handleClear();
+                onClose();
+              }}
+              style={{ flex: 1 }}
+            />
+            <Button
+              title={t('delivery.confirmSignature')}
+              onPress={handleConfirm}
+              style={{ flex: 2 }}
+              disabled={!hasSignature}
+            />
           </View>
         </Animated.View>
       </View>
@@ -243,7 +287,7 @@ export default function DeliveryDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { role } = useAuthStore();
-  const { deliveries, assignDriver, updateStatus, addSignature, removeDriver, syncExpiredDeliveries } = useDeliveryStore();
+  const { deliveries, assignDriver, updateStatus, addSignature, addPhoto, removePhoto, removeDriver } = useDeliveryStore();
   const { drivers, loadDrivers } = useDriverStore();
   const { users: managedUsers, loadUsers } = useUserManagementStore();
   const isAdmin = role === 'admin' || role === 'company';
@@ -251,12 +295,13 @@ export default function DeliveryDetailScreen() {
   const [order, setOrder] = useState<DeliveryOrder | null>(null);
   const [assignModalVisible, setAssignModalVisible] = useState(false);
   const [signatureModalVisible, setSignatureModalVisible] = useState(false);
+  const [lightboxVisible, setLightboxVisible] = useState(false);
+  const [lightboxUri, setLightboxUri] = useState('');
 
   useEffect(() => {
-    syncExpiredDeliveries();
     const found = deliveries.find((delivery) => delivery.id === id);
-    setOrder(found ? { ...found, status: getEffectiveDeliveryStatus(found) } : null);
-  }, [id, deliveries, syncExpiredDeliveries]);
+    setOrder(found || null);
+  }, [id, deliveries]);
 
   useEffect(() => {
     loadDrivers();
@@ -290,7 +335,7 @@ export default function DeliveryDetailScreen() {
 
   const statusConfig = buildStatusConfig(t);
   const statusCfg = statusConfig[order.status];
-  const isExpired = order.status === 'expired';
+  const isExpired = order.status !== 'signed' && order.status !== 'expired' && getEffectiveDeliveryStatus(order) === 'expired';
 
   const mergedDrivers = [
     ...drivers,
@@ -327,30 +372,62 @@ export default function DeliveryDetailScreen() {
   const handleMarkDelivered = () => {
     Alert.alert(t('delivery.markDelivered'), t('delivery.confirmDeliveryComplete'), [
       { text: t('common.cancel'), style: 'cancel' },
-      { text: t('common.confirm'), onPress: () => updateStatus(order.id, 'delivered') },
+      {
+        text: t('common.confirm'),
+        onPress: async () => {
+          await updateStatus(order.id, 'delivered');
+          router.replace({ pathname: '/delivery/[id]', params: { id: order.id } });
+        },
+      },
     ]);
   };
 
   const handleSign = () => setSignatureModalVisible(true);
 
-  const handleSignatureConfirm = (signatureData: string) => {
-    addSignature(order.id, signatureData);
-    router.replace('/(tabs)/delivery');
+  const handleAddPhoto = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert(t('common.permissionDenied'), t('delivery.photoPermissionRequired'));
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      quality: 0.8,
+      selectionLimit: 5,
+    });
+    if (!result.canceled && result.assets.length > 0) {
+      for (const asset of result.assets) {
+        await addPhoto(order.id, asset.uri);
+      }
+    }
+  };
+
+  const handleSignatureConfirm = (
+    signatureData: string,
+    strokes: { x: number; y: number; id: number }[][]
+  ) => {
+    addSignature(order.id, signatureData, strokes);
+    setSignatureModalVisible(false);
+    router.replace({ pathname: '/delivery/[id]', params: { id: order.id } });
   };
 
   const actionButtons: { label: string; onPress: () => void; variant?: 'primary' | 'secondary'; icon?: React.ReactNode }[] = [];
 
+  const rawOrder = deliveries.find((d) => d.id === id);
+  const rawStatus = rawOrder?.status ?? order.status;
+
   if (!isExpired) {
-    if (isAdmin && order.status === 'pending') {
+    if (isAdmin && rawStatus === 'pending') {
       actionButtons.push({ label: t('delivery.assignDriver'), onPress: handleAssign, variant: 'primary', icon: <Truck size={16} color="#fff" /> });
     }
-    if (!isAdmin && order.status === 'assigned') {
+    if (!isAdmin && rawStatus === 'assigned') {
       actionButtons.push({ label: t('delivery.startTransit'), onPress: handleStartTransit, variant: 'primary', icon: <Truck size={16} color="#fff" /> });
     }
-    if (!isAdmin && order.status === 'in_transit') {
+    if (!isAdmin && rawStatus === 'in_transit') {
       actionButtons.push({ label: t('delivery.markDelivered'), onPress: handleMarkDelivered, variant: 'secondary', icon: <CheckCircle size={16} color={colors.primary} /> });
     }
-    if (!isAdmin && order.status === 'delivered') {
+    if (!isAdmin && rawStatus === 'delivered') {
       actionButtons.push({ label: t('delivery.signDelivery'), onPress: handleSign, variant: 'secondary', icon: <CheckCircle size={16} color={colors.primary} /> });
     }
   }
@@ -497,6 +574,120 @@ export default function DeliveryDetailScreen() {
           </Animated.View>
         )}
 
+        {((!isAdmin && (rawStatus === 'in_transit' || rawStatus === 'delivered' || rawStatus === 'signed')) || (order.photos && order.photos.length > 0)) && (
+          <Animated.View entering={FadeInDown.delay(220).springify()}>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>{t('delivery.photos')}</Text>
+              <View style={styles.photosGallery}>
+                {order.photos && order.photos.map((photo) => (
+                  <Pressable
+                    key={photo.id}
+                    style={styles.photoItem}
+                    onPress={() => {
+                      setLightboxUri(photo.uri);
+                      setLightboxVisible(true);
+                    }}
+                  >
+                    <View style={styles.photoImageWrapper}>
+                      <Image source={{ uri: photo.uri }} style={styles.photoImage} resizeMode="cover" />
+                      <Pressable
+                        style={styles.photoDeleteBtn}
+                        onPress={() => {
+                          Alert.alert(
+                            t('delivery.deletePhotoTitle'),
+                            t('delivery.deletePhotoMessage'),
+                            [
+                              { text: t('common.cancel'), style: 'cancel' },
+                              {
+                                text: t('common.delete'),
+                                style: 'destructive',
+                                onPress: () => removePhoto(order.id, photo.id),
+                              },
+                            ]
+                          );
+                        }}
+                        hitSlop={8}
+                      >
+                        <Text style={styles.photoDeleteIcon}>X</Text>
+                      </Pressable>
+                    </View>
+                    <Text style={styles.photoMeta}>{new Date(photo.takenAt).toLocaleString()}</Text>
+                  </Pressable>
+                ))}
+                {(!order.photos || order.photos.length < 5) && (
+                  <Pressable style={styles.photoItem} onPress={handleAddPhoto}>
+                    <View style={[styles.photoImage, styles.addPhotoPlaceholder]}>
+                      <Text style={styles.addPhotoIcon}>+</Text>
+                    </View>
+                    <Text style={styles.photoMeta}>{t('delivery.addPhoto')}</Text>
+                  </Pressable>
+                )}
+              </View>
+            </View>
+          </Animated.View>
+        )}
+
+        {order.signatureData && order.signatureStrokes && order.signatureStrokes.length > 0 && (() => {
+          const allPoints = order.signatureStrokes.flat();
+          const xs = allPoints.map((p) => p.x);
+          const ys = allPoints.map((p) => p.y);
+          const minX = Math.min(...xs);
+          const maxX = Math.max(...xs);
+          const minY = Math.min(...ys);
+          const maxY = Math.max(...ys);
+          const sigW = maxX - minX || 1;
+          const sigH = maxY - minY || 1;
+          const pad = 20;
+          const svgW = 300;
+          const svgH = 120;
+          const scaleX = (svgW - pad * 2) / sigW;
+          const scaleY = (svgH - pad * 2) / sigH;
+          const scale = Math.min(scaleX, scaleY);
+          const offsetX = (svgW - sigW * scale) / 2 - minX * scale;
+          const offsetY = (svgH - sigH * scale) / 2 - minY * scale;
+          const sx = (v: number) => v * scale + offsetX;
+          const sy = (v: number) => v * scale + offsetY;
+          return (
+            <Animated.View entering={FadeInDown.delay(220).springify()}>
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>{t('delivery.electronicSignature')}</Text>
+                <Card style={styles.signatureDisplayCard}>
+                  <Svg width={svgW} height={svgH}>
+                    {order.signatureStrokes!.map((stroke, si) =>
+                      stroke.length > 1
+                        ? stroke.slice(1).map((pt, i) => (
+                            <Line
+                              key={`s-${si}-${i}`}
+                              x1={sx(stroke[i].x)}
+                              y1={sy(stroke[i].y)}
+                              x2={sx(pt.x)}
+                              y2={sy(pt.y)}
+                              stroke={colors.textPrimary}
+                              strokeWidth={2.5}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          ))
+                        : null
+                    )}
+                  </Svg>
+                  <Text style={styles.signatureMeta}>{t('delivery.signedAt')} {new Date(order.signedAt!).toLocaleString()}</Text>
+                </Card>
+              </View>
+            </Animated.View>
+          );
+        })()}
+
+        <Modal visible={lightboxVisible} transparent animationType="fade" onRequestClose={() => setLightboxVisible(false)}>
+          <View style={styles.lightboxOverlay}>
+            <Pressable style={styles.lightboxCloseArea} onPress={() => setLightboxVisible(false)} />
+            <Image source={{ uri: lightboxUri }} style={styles.lightboxImage} resizeMode="contain" />
+            <Pressable style={styles.lightboxCloseBtn} onPress={() => setLightboxVisible(false)}>
+              <Text style={styles.lightboxCloseText}>✕</Text>
+            </Pressable>
+          </View>
+        </Modal>
+
         {actionButtons.length > 0 && (
           <Animated.View entering={FadeInDown.delay(240).springify()} style={styles.actionSection}>
             {actionButtons.map((button, index) => (
@@ -604,6 +795,32 @@ const styles = StyleSheet.create({
   routeConnectorLine: { width: 2, flex: 1 },
   signedRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   signedText: { fontSize: typography.fontSize.sm, color: colors.success, fontWeight: '600' },
+  signatureDisplayCard: { padding: spacing.md, alignItems: 'center', backgroundColor: colors.card, borderRadius: borderRadius.lg },
+  signatureMeta: { fontSize: typography.fontSize.xs, color: colors.textTertiary, marginTop: spacing.sm },
+  photosGallery: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  photoItem: {
+    width: '31%',
+    borderRadius: borderRadius.lg,
+    overflow: 'hidden',
+    backgroundColor: colors.card,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  photoImage: { width: '100%', aspectRatio: 1 },
+  photoMeta: { fontSize: typography.fontSize.xs, color: colors.textTertiary, padding: spacing.sm, textAlign: 'center' },
+  photoImageWrapper: { width: '100%', aspectRatio: 1, position: 'relative' },
+  photoDeleteBtn: { position: 'absolute', top: 6, right: 6, width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' },
+  photoDeleteIcon: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  addPhotoPlaceholder: { backgroundColor: colors.card, borderWidth: 2, borderColor: colors.border, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' },
+  addPhotoIcon: { fontSize: 32, color: colors.textTertiary, fontWeight: '300' },
+  lightboxOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', alignItems: 'center' },
+  lightboxCloseArea: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  lightboxImage: { width: '100%', height: '80%' },
+  lightboxCloseBtn: { position: 'absolute', top: 60, right: 20, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)', justifyContent: 'center', alignItems: 'center' },
+  lightboxCloseText: { color: '#fff', fontSize: 20, fontWeight: '600' },
   actionSection: { marginTop: spacing.xl, paddingHorizontal: spacing.lg, gap: spacing.md },
   modalOverlay: {
     flex: 1,
@@ -666,7 +883,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
+    paddingVertical: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
   signatureHint: {
     paddingHorizontal: spacing.lg,
@@ -675,9 +894,8 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
   },
   signaturePad: {
-    marginHorizontal: spacing.lg,
     marginTop: spacing.md,
-    height: 220,
+    height: 180,
     borderRadius: borderRadius.lg,
     borderWidth: 1,
     borderColor: colors.border,
@@ -691,6 +909,17 @@ const styles = StyleSheet.create({
     top: '45%',
     color: colors.textTertiary,
     fontSize: typography.fontSize.sm,
+  },
+  clearSignatureBtn: {
+    alignSelf: 'center',
+    marginTop: spacing.sm,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+  },
+  clearSignatureBtnText: {
+    fontSize: typography.fontSize.sm,
+    color: colors.danger,
+    fontWeight: '600',
   },
   signatureDot: {
     position: 'absolute',

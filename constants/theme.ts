@@ -116,3 +116,25 @@ export const statusColors = {
   inactive: { bg: 'rgba(90, 97, 120, 0.12)', text: '#5A6178', dot: '#5A6178' },
   danger: { bg: 'rgba(217, 63, 74, 0.12)', text: '#D93F4A', dot: '#D93F4A' },
 } as const;
+
+export const fuelTypeLabels: Record<string, string> = {
+  gasoline: 'Gasoline',
+  diesel: 'Diesel',
+  electric: 'Electric',
+  hybrid: 'Hybrid',
+};
+
+export const transmissionLabels: Record<string, string> = {
+  automatic: 'Automatic',
+  manual: 'Manual',
+};
+
+export const fontScaleValues = {
+  normal: 1,
+  large: 1.15,
+  larger: 1.3,
+} as const;
+
+export function getScaledFontSize(size: number): number {
+  return Math.round(size * fontScaleValues.larger); // 預設使用最大值
+}

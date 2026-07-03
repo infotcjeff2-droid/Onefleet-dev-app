@@ -1,7 +1,7 @@
 import { Tabs } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 import { colors } from '@/constants/theme';
-import { Car, LayoutDashboard, User, ClipboardList } from 'lucide-react-native';
+import { LayoutDashboard, User, ClipboardList, Car } from 'lucide-react-native';
 import { Text } from 'react-native';
 import { useDeliveryStore } from '@/store/deliveryStore';
 import { useTranslation } from '@/i18n';
@@ -17,10 +17,10 @@ function Badge({ count }: { count: number }) {
 
 function TabBarIcon({ name, color, focused }: { name: string; color: string; focused: boolean }) {
   const icons: Record<string, React.ReactNode> = {
-    car: <Car size={22} color={color} />,
     dashboard: <LayoutDashboard size={22} color={color} />,
-    profile: <User size={22} color={color} />,
+    vehicle: <Car size={22} color={color} />,
     delivery: <ClipboardList size={22} color={color} />,
+    profile: <User size={22} color={color} />,
   };
 
   if (name === 'delivery') {
@@ -58,7 +58,7 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen
-        name="dashboard"
+        name="index"
         options={{
           title: t('nav.dashboard'),
           tabBarIcon: ({ color, focused }) => (
@@ -67,11 +67,11 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="index"
+        name="vehicle"
         options={{
           title: t('nav.vehicles'),
           tabBarIcon: ({ color, focused }) => (
-            <TabBarIcon name="car" color={color} focused={focused} />
+            <TabBarIcon name="vehicle" color={color} focused={focused} />
           ),
         }}
       />
@@ -86,6 +86,12 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="profile"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="onefleet-system-admin"
         options={{
           title: t('nav.profile'),
           tabBarIcon: ({ color, focused }) => (
