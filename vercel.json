@@ -1,5 +1,4 @@
 {
-  "framework": "expo",
   "buildCommand": "npx expo export --platform web",
   "outputDirectory": "dist",
   "rewrites": [
