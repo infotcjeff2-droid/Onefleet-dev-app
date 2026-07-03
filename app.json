@@ -37,7 +37,7 @@
     ],
     "experiments": {
       "typedRoutes": true,
-      "baseUrl": "/onefleet-app-v1"
+      "baseUrl": "/"
     },
     "extra": {
       "eas": {
