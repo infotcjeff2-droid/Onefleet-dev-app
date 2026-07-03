@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Pressable } from 'react-native';
+import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Pressable, Image } from 'react-native';
 import { Link, useRouter, Redirect } from 'expo-router';
 import { Mail, Lock, Shield, Truck } from 'lucide-react-native';
 import { useAuthStore } from '@/store/authStore';
@@ -30,7 +30,11 @@ export default function LoginScreen() {
     return (
       <View style={styles.loadingContainer}>
         <View style={styles.logoContainer}>
-          <Text style={styles.logoText}>FleetPro</Text>
+          <Image
+            source={require('@/assets/onefleet_2560.png')}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
         </View>
       </View>
     );
@@ -117,12 +121,12 @@ export default function LoginScreen() {
       >
         <View style={styles.header}>
           <View style={styles.logoContainer}>
-            <Text style={styles.logoText}>FleetPro</Text>
-            <View style={styles.logoBadge}>
-              <Shield size={12} color={colors.primary} />
-            </View>
+            <Image
+              source={require('@/assets/onefleet_2560.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
           </View>
-          <Text style={styles.tagline}>{t('auth.tagline')}</Text>
         </View>
 
         <View style={styles.form}>
@@ -253,32 +257,25 @@ const styles = StyleSheet.create({
     marginBottom: spacing['3xl'],
   },
   logoContainer: {
-    flexDirection: 'row',
     alignItems: 'center',
     marginBottom: spacing.sm,
   },
-  logoText: {
-    fontSize: typography.fontSize['3xl'],
-    fontWeight: '800',
-    color: colors.textPrimary,
-    letterSpacing: -0.5,
-  },
-  logoBadge: {
-    marginLeft: spacing.sm,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.primaryGlow,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tagline: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-    fontWeight: '500',
+  logoImage: {
+    width: 180,
+    height: 60,
   },
   form: {
     marginBottom: spacing['2xl'],
+    padding: spacing['2xl'],
+    borderRadius: borderRadius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   welcomeTitle: {
     fontSize: typography.fontSize['2xl'],

@@ -834,12 +834,7 @@ export default function ProfileScreen() {
                 </Text>
               </View>
             )}
-          </Card>
-        </Animated.View>
 
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>{t('profile.account')}</Text>
-          <Card style={styles.settingsCard}>
             <SettingItem
               icon={<User size={18} color={colors.textSecondary} />}
               label={t('profile.displayName')}
@@ -864,7 +859,7 @@ export default function ProfileScreen() {
               </>
             )}
           </Card>
-        </View>
+        </Animated.View>
 
         {canManageUsers && (
           <View style={styles.section}>
