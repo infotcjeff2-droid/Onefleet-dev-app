@@ -1,6 +1,7 @@
-import { View, Text, StyleSheet, ScrollView, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Image, Pressable } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import { useRouter } from 'expo-router';
 import {
   Car,
   Activity,
@@ -329,11 +330,13 @@ function DriverDashboard({
       <Header
         title={t('dashboard.title')}
         leftElement={
-          <Image
-            source={require('@/assets/onefleet_2560.png')}
-            style={styles.headerLogo}
-            resizeMode="contain"
-          />
+          <Pressable onPress={() => router.push('/(tabs)')} hitSlop={8}>
+            <Image
+              source={require('@/assets/onefleet_2560.png')}
+              style={styles.headerLogo}
+              resizeMode="contain"
+            />
+          </Pressable>
         }
       />
       <ScrollView
@@ -589,11 +592,13 @@ function CompanyAdminDashboard({
       <Header
         title={t('dashboard.title')}
         leftElement={
-          <Image
-            source={require('@/assets/onefleet_2560.png')}
-            style={styles.headerLogo}
-            resizeMode="contain"
-          />
+          <Pressable onPress={() => router.push('/(tabs)')} hitSlop={8}>
+            <Image
+              source={require('@/assets/onefleet_2560.png')}
+              style={styles.headerLogo}
+              resizeMode="contain"
+            />
+          </Pressable>
         }
       />
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.adminScrollContent} showsVerticalScrollIndicator={false}>
@@ -735,6 +740,7 @@ function CompanyAdminDashboard({
 
 export default function DashboardScreen() {
   const { t } = useTranslation();
+  const router = useRouter();
   const { vehicles } = useVehicleStore();
   const { deliveries } = useDeliveryStore();
   const { role, user } = useAuthStore();
@@ -793,11 +799,13 @@ export default function DashboardScreen() {
       <Header
         title={t('dashboard.title')}
         leftElement={
-          <Image
-            source={require('@/assets/onefleet_2560.png')}
-            style={styles.headerLogo}
-            resizeMode="contain"
-          />
+          <Pressable onPress={() => router.push('/(tabs)')} hitSlop={8}>
+            <Image
+              source={require('@/assets/onefleet_2560.png')}
+              style={styles.headerLogo}
+              resizeMode="contain"
+            />
+          </Pressable>
         }
       />
 
