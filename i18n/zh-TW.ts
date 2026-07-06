@@ -380,6 +380,7 @@ export const zhTW = {
     apiIntegrations: 'API 整合',
     gps808Settings: '808GPS 設定',
     gps808ServerUrl: 'API 伺服器 URL',
+    gps808ServerUrlWeb: '使用內建 CORS proxy（/api/gps）',
     gps808Account: '帳號',
     gps808AccountPlaceholder: '輸入 808GPS 帳號',
     gps808Password: '密碼',

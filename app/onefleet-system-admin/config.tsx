@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, ScrollView, Alert, Pressable, TextInput, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert, Pressable, TextInput, Image, Platform } from 'react-native';
 import { Header } from '@/components/ui/Header';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -54,9 +54,11 @@ function ConfigItem({
 function Gps808Panel() {
   const { t } = useTranslation();
   const colors = useThemeStore((s) => s.colors);
-  const { config, isConnected, isSaving, isLoading, error, loadConfig, testConnection, disconnect, clearError } = useGps808Store();
+  const IS_WEB = Platform.OS === 'web';
+  const { config, isConnected, isSaving, isLoading, error, loadConfig, testConnection, saveConfig, disconnect, clearError } = useGps808Store();
   const [localConfig, setLocalConfig] = useState(config);
   const [testing, setTesting] = useState(false);
+  const [status, setStatus] = useState<{ kind: 'idle' | 'success' | 'error'; message: string }>({ kind: 'idle', message: '' });
 
   useEffect(() => {
     loadConfig();
@@ -66,38 +68,70 @@ function Gps808Panel() {
     setLocalConfig(config);
   }, [config]);
 
+  useEffect(() => {
+    if (!status.message) return;
+    const timer = setTimeout(() => setStatus({ kind: 'idle', message: '' }), 4000);
+    return () => clearTimeout(timer);
+  }, [status]);
+
   const handleSave = async () => {
     if (!localConfig.account || !localConfig.password) {
-      Alert.alert(t('common.error'), t('config.gps808FillAll'));
+      setStatus({ kind: 'error', message: t('config.gps808FillAll') });
+      return;
+    }
+    try {
+      // Always persist first so values survive a refresh, even if the
+      // network round-trip fails. Users shouldn't lose entered
+      // credentials because the API is temporarily unreachable.
+      await saveConfig(localConfig);
+    } catch (e) {
+      setStatus({ kind: 'error', message: e instanceof Error ? e.message : String(e) });
       return;
     }
     setTesting(true);
     const ok = await testConnection(localConfig);
     setTesting(false);
-    if (ok) {
-      Alert.alert(t('common.success'), t('config.gps808Connected'));
-    } else {
-      Alert.alert(t('common.error'), error || t('config.gps808TestFailed'));
-    }
+    setStatus({
+      kind: ok ? 'success' : 'error',
+      message: ok
+        ? t('config.gps808Connected')
+        : (error || t('config.gps808TestFailed')),
+    });
   };
 
   const handleTest = async () => {
     if (!localConfig.account || !localConfig.password) {
-      Alert.alert(t('common.error'), t('config.gps808FillAll'));
+      setStatus({ kind: 'error', message: t('config.gps808FillAll') });
       return;
     }
     clearError();
     setTesting(true);
     const ok = await testConnection(localConfig);
     setTesting(false);
-    if (ok) {
-      Alert.alert(t('common.success'), t('config.gps808Connected'));
-    } else {
-      Alert.alert(t('common.error'), error || t('config.gps808TestFailed'));
-    }
+    setStatus({
+      kind: ok ? 'success' : 'error',
+      message: ok
+        ? t('config.gps808Connected')
+        : (error || t('config.gps808TestFailed')),
+    });
   };
 
   const handleDisconnect = () => {
+    // RN Web: use window.confirm as a fallback because Alert.alert is a no-op.
+    if (typeof window !== 'undefined') {
+      const ok = window.confirm(`${t('config.gps808Disconnect')}\n\n${t('config.gps808DisconnectConfirm')}`);
+      if (!ok) return;
+      (async () => {
+        await disconnect();
+        setLocalConfig({
+          serverUrl: 'https://console.onefleet.hk',
+          account: '',
+          password: '',
+        });
+        setStatus({ kind: 'idle', message: '' });
+      })();
+      return;
+    }
     Alert.alert(
       t('config.gps808Disconnect'),
       t('config.gps808DisconnectConfirm'),
@@ -113,6 +147,7 @@ function Gps808Panel() {
               account: '',
               password: '',
             });
+            setStatus({ kind: 'idle', message: '' });
           },
         },
       ],
@@ -125,24 +160,38 @@ function Gps808Panel() {
         {t('config.gps808Settings')}
       </Text>
 
-      <View style={styles.fieldWrap}>
-        <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
-          {t('config.gps808ServerUrl')}
-        </Text>
-        <View style={[styles.fieldInput, { backgroundColor: colors.background, borderColor: colors.border }]}>
-          <Globe size={14} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
-          <TextInput
-            style={[styles.fieldInputText, { color: colors.textPrimary }]}
-            value={localConfig.serverUrl}
-            onChangeText={(text) => setLocalConfig({ ...localConfig, serverUrl: text })}
-            placeholder="https://console.onefleet.hk"
-            placeholderTextColor={colors.textTertiary}
-            keyboardType="url"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
+      {IS_WEB ? (
+        <View style={styles.fieldWrap}>
+          <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+            {t('config.gps808ServerUrl')}
+          </Text>
+          <View style={[styles.fieldInput, { backgroundColor: `${colors.background}99`, borderColor: colors.border }]}>
+            <Globe size={14} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
+            <Text style={[styles.fieldInputText, { color: colors.textTertiary }]}>
+              {t('config.gps808ServerUrlWeb')}
+            </Text>
+          </View>
         </View>
-      </View>
+      ) : (
+        <View style={styles.fieldWrap}>
+          <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+            {t('config.gps808ServerUrl')}
+          </Text>
+          <View style={[styles.fieldInput, { backgroundColor: colors.background, borderColor: colors.border }]}>
+            <Globe size={14} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
+            <TextInput
+              style={[styles.fieldInputText, { color: colors.textPrimary }]}
+              value={localConfig.serverUrl}
+              onChangeText={(text) => setLocalConfig({ ...localConfig, serverUrl: text })}
+              placeholder="https://console.onefleet.hk"
+              placeholderTextColor={colors.textTertiary}
+              keyboardType="url"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
+        </View>
+      )}
 
       <View style={styles.fieldWrap}>
         <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
@@ -194,6 +243,26 @@ function Gps808Panel() {
           style={{ flex: 1 }}
         />
       </View>
+
+      {status.kind !== 'idle' && (
+        <View
+          accessibilityLiveRegion="polite"
+          style={[
+            styles.statusBanner,
+            {
+              backgroundColor: status.kind === 'success' ? `${colors.success}1A` : `${colors.danger}1A`,
+              borderColor: status.kind === 'success' ? colors.success : colors.danger,
+            },
+          ]}
+        >
+          {status.kind === 'success'
+            ? <CheckCircle size={14} color={colors.success} />
+            : <XCircle size={14} color={colors.danger} />}
+          <Text style={[styles.statusBannerText, { color: status.kind === 'success' ? colors.success : colors.danger }]}>
+            {status.message}
+          </Text>
+        </View>
+      )}
 
       {isConnected && (
         <Button
@@ -604,6 +673,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.md,
     marginTop: spacing.sm,
+  },
+  statusBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  statusBannerText: {
+    flex: 1,
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
   },
   apiInfoCard: {
     marginTop: spacing.lg,

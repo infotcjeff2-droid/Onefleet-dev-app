@@ -4,9 +4,11 @@
  *
  * Routing strategy:
  * - Mobile (iOS/Android): direct API calls, no CORS issue
- * - Web + proxy running:  BASE_URL=http://localhost:3001/api/gps
- * - Web + env var:        BASE_URL=EXPO_PUBLIC_GPS_PROXY_URL
- * - Web + no proxy:       BASE_URL=/api/gps (relative, won't work from GH Pages)
+ * - Web (local dev):     EXPO_PUBLIC_GPS_PROXY_URL=http://localhost:3001/api/gps
+ *                        → fleet-pro-proxy/server.js must be running on :3001
+ * - Web (Vercel/prod):   EXPO_PUBLIC_GPS_PROXY_URL=/api/gps (relative)
+ *                        → /api/gps/* handled by api/gps/[...path].ts serverless function
+ * - Fallback:            `/api/gps` (relative) when no env var is set
  */
 
 import { Platform } from 'react-native';
@@ -14,6 +16,7 @@ import { storage } from './storage';
 
 const IS_WEB = Platform.OS === 'web';
 
+/** Returns the default base URL — resolved at runtime so it adapts per environment. */
 function resolveDefaultBaseUrl(): string {
   if (!IS_WEB) {
     return 'https://console.onefleet.hk';
@@ -21,7 +24,11 @@ function resolveDefaultBaseUrl(): string {
   if (process.env.EXPO_PUBLIC_GPS_PROXY_URL) {
     return process.env.EXPO_PUBLIC_GPS_PROXY_URL;
   }
-  return 'http://localhost:3001/api/gps';
+  // Browser default: relative path. Works on Vercel (rewrites) and on
+  // local dev if a Vite/Metro dev proxy forwards /api/gps to :3001.
+  // (We do not ship a dev proxy, so locally you must either run
+  // fleet-pro-proxy on :3001 or override EXPO_PUBLIC_GPS_PROXY_URL.)
+  return '/api/gps';
 }
 
 const DEFAULT_BASE_URL = resolveDefaultBaseUrl();
@@ -29,8 +36,12 @@ const DEFAULT_BASE_URL = resolveDefaultBaseUrl();
 const JSESSION_KEY = 'gps808_jsession';
 export const SERVER_URL_KEY = 'gps808_server_url';
 
-/** Returns the effective base URL: stored server URL > env var > default. */
+/** Returns the effective base URL: proxy on web, stored > default on native. */
 async function getEffectiveBaseUrl(): Promise<string> {
+  // On web the browser cannot call the upstream 808 GPS server directly
+  // (CORS).  Always route through the configured proxy URL (DEFAULT_BASE_URL
+  // which is /api/gps on Vercel or http://localhost:3001/api/gps locally).
+  if (IS_WEB) return DEFAULT_BASE_URL;
   const stored = await storage.getItem(SERVER_URL_KEY);
   if (stored) return stored;
   return DEFAULT_BASE_URL;

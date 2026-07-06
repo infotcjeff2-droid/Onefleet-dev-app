@@ -386,6 +386,7 @@ export const en = {
     apiIntegrations: 'API Integrations',
     gps808Settings: '808GPS Settings',
     gps808ServerUrl: 'API Server URL',
+    gps808ServerUrlWeb: 'Uses built-in CORS proxy (/api/gps)',
     gps808Account: 'Account',
     gps808AccountPlaceholder: 'Enter 808GPS account',
     gps808Password: 'Password',
