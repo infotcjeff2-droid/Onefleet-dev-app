@@ -16,6 +16,7 @@
 
 import { Platform } from 'react-native';
 import { storage } from './storage';
+import { md5 } from 'js-md5';
 
 const IS_WEB = Platform.OS === 'web';
 
@@ -273,12 +274,14 @@ export const gps808Api = {
         'Content-Type': 'application/x-www-form-urlencoded',
       };
 
-      // Use plain password (not base64 encoded)
-      const url = `${base}/Login/login.action`;
+      // 808GPS API requires MD5 encrypted password via password parameter
+      const encryptedPassword = md5(password);
+
+      const url = `${base}/StandardApiAction_login.action`;
       const res = await fetch(url, {
         method: 'POST',
         headers,
-        body: new URLSearchParams({ account, password }).toString(),
+        body: new URLSearchParams({ account, password: encryptedPassword }).toString(),
         ...(IS_WEB ? {} : { credentials: 'include' }),
       });
 
@@ -357,11 +360,11 @@ export const gps808Api = {
   },
 
   /**
-   * Logout - POST /Login/logout.action
+   * Logout - POST /StandardApiAction_logout.action
    */
   async logout(): Promise<void> {
     try {
-      await httpRequest('/Login/logout.action', {}, 'POST');
+      await httpRequest('/StandardApiAction_logout.action', {}, 'POST');
     } finally {
       await storage.removeItem(JSESSION_KEY);
     }

@@ -16,10 +16,10 @@ const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const cryptoUtil = require('./sessionCrypto');
 
 const GPS_SERVER = 'console.onefleet.hk';
 const PORT = 3001;
-const SESSION_FILE = path.join(__dirname, 'session.json');
 
 // 持久化存儲 JSESSION
 let sessionData = {
@@ -27,24 +27,26 @@ let sessionData = {
   lastLogin: null,
 };
 
-// 載入保存的 session
+// 載入保存的 session（加密版優先，向下相容明文）
 function loadSession() {
-  try {
-    if (fs.existsSync(SESSION_FILE)) {
-      const data = fs.readFileSync(SESSION_FILE, 'utf-8');
-      sessionData = JSON.parse(data);
-      console.log(`[Proxy] 載入保存的 session: ${sessionData.jsessionCookie?.substring(0, 16) ?? 'none'}...`);
-    }
-  } catch (err) {
-    console.log('[Proxy] 無法載入 session 文件:', err.message);
+  const loaded = cryptoUtil.decryptSession();
+  if (loaded) {
+    sessionData = loaded;
+    console.log(`[Proxy] 載入保存的 session (${cryptoUtil.getMode()}): ${sessionData.jsessionCookie?.substring(0, 16) ?? 'none'}...`);
+  } else if (cryptoUtil.getMode() === 'encrypted') {
+    console.log('[Proxy] 加密 session 未載入（檢查 GPS_SESSION_KEY 是否設定）');
   }
 }
 
-// 保存 session
+// 保存 session：若有 master key 走加密路徑，否則明文（開發模式）
 function saveSession() {
   try {
-    fs.writeFileSync(SESSION_FILE, JSON.stringify(sessionData, null, 2));
-    console.log(`[Proxy] Session 已保存`);
+    const result = cryptoUtil.encryptSession(sessionData);
+    if (result.mode === 'encrypted') {
+      console.log(`[Proxy] Session 已加密保存（session.json.enc）`);
+    } else {
+      console.log(`[Proxy] Session 已保存（明文 session.json — 無 GPS_SESSION_KEY）`);
+    }
   } catch (err) {
     console.log('[Proxy] 無法保存 session:', err.message);
   }
@@ -110,13 +112,17 @@ function proxyRequest(req, res, path, method, body, extraHeaders = {}) {
         res.setHeader('x-session-status', 'active');
       }
 
-      // 調試：記錄關鍵 API 的原始響應
-      const isDebugPath = path.includes('getDeviceStatus') || 
+      // 記錄所有 API 響應的關鍵資訊
+      const isDebugPath = path.includes('getDeviceStatus') ||
                           path.includes('queryVehicleList') ||
-                          path.includes('findVehicleInfoByDeviceId');
+                          path.includes('findVehicleInfoByDeviceId') ||
+                          path.includes('login.action');
       if (isDebugPath) {
         console.log(`[Proxy Debug] ${method} ${path}`);
       }
+
+      // 完整響應日誌開關
+      const FULL_DEBUG = false;
 
       // 處理 OPTIONS 預檢請求
       if (req.method === 'OPTIONS') {
@@ -139,21 +145,53 @@ function proxyRequest(req, res, path, method, body, extraHeaders = {}) {
         if (isDebugPath) {
           try {
             const jsonData = JSON.parse(data);
-            console.log(`[Proxy Raw] ${path}:`, JSON.stringify(jsonData).substring(0, 500));
+            // 完整輸出（包含所有欄位），方便調試 GPS 座標問題
+            console.log(`[Proxy Raw] ${path}:`, JSON.stringify(jsonData, null, 2).substring(0, 2000));
           } catch {
             console.log(`[Proxy Raw] ${path}:`, data.substring(0, 500));
           }
         }
+
+        // 完整調試模式：輸出所有響應
+        if (FULL_DEBUG && isDebugPath) {
+          console.log(`[Proxy Full Debug] Session used: ${sessionData.jsessionCookie?.substring(0, 16) ?? 'none'}`);
+          try {
+            const parsed = JSON.parse(data);
+            // 檢查關鍵欄位
+            if (parsed.status && Array.isArray(parsed.status) && parsed.status[0]) {
+              const s = parsed.status[0];
+              console.log(`[Proxy GPS Status] lat=${s.lat}, lng=${s.lng}, mlat=${s.mlat}, mlng=${s.mlng}, ol=${s.ol}`);
+            }
+            if (parsed.infos && parsed.infos.length > 0) {
+              console.log(`[Proxy Vehicle Info] Count: ${parsed.infos.length}`);
+              // 只打印第一輛車的座標欄位
+              const first = parsed.infos[0];
+              console.log(`[Proxy First Vehicle] weidu=${first.weidu}, jindu=${first.jindu}, lat=${first.lat}, lng=${first.lng}`);
+            }
+          } catch (e) {
+            console.log(`[Proxy Full Debug] Parse error: ${e.message}`);
+          }
+        }
         
-        // 如果是登入請求且成功，返回 session info
-        if (path.includes('Login/login.action') && proxyRes.statusCode === 200 && sessionData.jsessionCookie) {
+        // 如果是登入請求且成功（result === 0），返回 session info
+        if (path.includes('login.action') && proxyRes.statusCode === 200) {
           try {
             const json = JSON.parse(data);
-            json._proxySession = sessionData.jsessionCookie;
-            json._sessionInfo = {
-              lastLogin: sessionData.lastLogin,
-              server: GPS_SERVER
-            };
+            // 只有登入成功（result === 0）才返回 session
+            if (json.result === 0 && sessionData.jsessionCookie) {
+              json._proxySession = sessionData.jsessionCookie;
+              json._sessionInfo = {
+                lastLogin: sessionData.lastLogin,
+                server: GPS_SERVER
+              };
+              console.log(`[Proxy] 登入成功，返回 session: ${sessionData.jsessionCookie.substring(0, 16)}...`);
+            } else {
+              // 登入失敗，清除舊的 session
+              console.log(`[Proxy] 登入失敗 (result=${json.result})，清除舊 session`);
+              sessionData.jsessionCookie = null;
+              sessionData.lastLogin = null;
+              saveSession();
+            }
             res.end(JSON.stringify(json));
             return;
           } catch (e) {
@@ -193,8 +231,10 @@ async function handleRequest(req, res) {
     return;
   }
 
-  // 移除 /api/gps 前綴，獲取實際的 API 路徑
-  const apiPath = pathname.replace('/api/gps', '');
+  // 移除 /api/gps 前綴，獲取實際的 API 路徑（包含 query string）
+  const apiPath = searchParams
+    ? `${pathname.replace('/api/gps', '')}?${searchParams}`
+    : pathname.replace('/api/gps', '');
   if (!apiPath) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: '請指定 API 路徑，例如 /api/gps/Login/login.action' }));
@@ -243,6 +283,7 @@ server.listen(PORT, () => {
 ║   ✓ 自動保存 JSESSION 到 session.json                   ║
 ║   ✓ 後續請求自動附加 session cookie                      ║
 ║   ✓ 支持 x-gps-jsession header                          ║
+║   ✓ 可選 AES-256-GCM session 加密（GPS_SESSION_KEY）     ║
 ║                                                          ║
 ║   使用方式:                                              ║
 ║   將請求發送到 http://localhost:${PORT}/api/gps/...        ║

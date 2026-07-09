@@ -33,6 +33,13 @@ yarn-error.*
 # local env files
 .env*.local
 
+# 加密金鑰實際值（含 GPS_SESSION_KEY 的 .env 不入版本控制）
+.env
+
+# GPS 代理 session（含 JSESSION）一律不入版本控制
+server/session.json
+server/session.json.enc
+
 # typescript
 *.tsbuildinfo
 
