@@ -4,11 +4,14 @@
  *
  * Routing strategy:
  * - Mobile (iOS/Android): direct API calls, no CORS issue
- * - Web (local dev):     EXPO_PUBLIC_GPS_PROXY_URL=http://localhost:3001/api/gps
- *                        → fleet-pro-proxy/server.js must be running on :3001
- * - Web (Vercel/prod):   EXPO_PUBLIC_GPS_PROXY_URL=/api/gps (relative)
- *                        → /api/gps/* handled by api/gps/[...path].ts serverless function
- * - Fallback:            `/api/gps` (relative) when no env var is set
+ *   → BASE_URL=https://console.onefleet.hk
+ *
+ * - Web: MUST use proxy to avoid CORS
+ *   → If EXPO_PUBLIC_GPS_PROXY_URL is set to a proxy URL (e.g. http://localhost:3001/api/gps),
+ *     use that proxy.
+ *   → If EXPO_PUBLIC_GPS_PROXY_URL is set to the raw server (e.g. https://console.onefleet.hk),
+ *     which is NOT proxy, fall back to localhost:3001 proxy.
+ *   → If no EXPO_PUBLIC_GPS_PROXY_URL, default to http://localhost:3001/api/gps
  */
 
 import { Platform } from 'react-native';
@@ -16,19 +19,24 @@ import { storage } from './storage';
 
 const IS_WEB = Platform.OS === 'web';
 
-/** Returns the default base URL — resolved at runtime so it adapts per environment. */
 function resolveDefaultBaseUrl(): string {
   if (!IS_WEB) {
     return 'https://console.onefleet.hk';
   }
-  if (process.env.EXPO_PUBLIC_GPS_PROXY_URL) {
-    return process.env.EXPO_PUBLIC_GPS_PROXY_URL;
+  // For Web, determine if EXPO_PUBLIC_GPS_PROXY_URL is a proxy or the raw server
+  const envUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL;
+  if (envUrl) {
+    // If it contains '/api/gps' or 'localhost', it's likely a proxy URL
+    if (envUrl.includes('/api/gps') || envUrl.includes('localhost')) {
+      // Ensure it ends with /api/gps
+      return envUrl.endsWith('/api/gps') ? envUrl : `${envUrl.replace(/\/$/, '')}/api/gps`;
+    }
+    // Otherwise it's pointing to the raw server (e.g. https://console.onefleet.hk)
+    // This causes CORS on Web, so we MUST use the local proxy instead
+    console.warn('[GPS808] EXPO_PUBLIC_GPS_PROXY_URL points to raw server, which causes CORS on Web. Using localhost proxy instead.');
   }
-  // Browser default: relative path. Works on Vercel (rewrites) and on
-  // local dev if a Vite/Metro dev proxy forwards /api/gps to :3001.
-  // (We do not ship a dev proxy, so locally you must either run
-  // fleet-pro-proxy on :3001 or override EXPO_PUBLIC_GPS_PROXY_URL.)
-  return '/api/gps';
+  // Default proxy for Web - use localhost:3001 for local dev
+  return 'http://localhost:3001/api/gps';
 }
 
 const DEFAULT_BASE_URL = resolveDefaultBaseUrl();
@@ -36,14 +44,8 @@ const DEFAULT_BASE_URL = resolveDefaultBaseUrl();
 const JSESSION_KEY = 'gps808_jsession';
 export const SERVER_URL_KEY = 'gps808_server_url';
 
-/** Returns the effective base URL: proxy on web, stored > default on native. */
+/** Returns the effective base URL: env server URL > proxy URL. */
 async function getEffectiveBaseUrl(): Promise<string> {
-  // On web the browser cannot call the upstream 808 GPS server directly
-  // (CORS).  Always route through the configured proxy URL (DEFAULT_BASE_URL
-  // which is /api/gps on Vercel or http://localhost:3001/api/gps locally).
-  if (IS_WEB) return DEFAULT_BASE_URL;
-  const stored = await storage.getItem(SERVER_URL_KEY);
-  if (stored) return stored;
   return DEFAULT_BASE_URL;
 }
 
@@ -182,8 +184,17 @@ export interface Gps808ApiResponse<T> {
 }
 
 function extractJsession(headers: Headers): string | undefined {
-  const raw = headers.get('set-cookie') || headers.get('Set-Cookie') || '';
-  const match = raw.match(/JSESSIONID=([^;]+)/);
+  // Headers may be a Headers object or a plain object on web.
+  let raw = '';
+  if (typeof (headers as any).getSetCookie === 'function') {
+    raw = (headers as any).getSetCookie().join('; ');
+  } else if (typeof (headers as any).raw === 'function') {
+    raw = (headers as any).raw()['set-cookie']?.join('; ') ?? '';
+  } else {
+    raw = headers.get('set-cookie') || headers.get('Set-Cookie') || '';
+  }
+  // 808GPS server uses both `JSESSIONID` and `jsessionId` cookie names
+  const match = raw.match(/(?:JSESSIONID|jsessionId)=([^;]+)/i);
   return match ? match[1] : undefined;
 }
 
@@ -250,8 +261,10 @@ export const gps808Api = {
   /**
    * Login - POST /Login/login.action
    * Param: account, password
-   * Returns jsession cookie on success (result === 0)
-   * @param baseUrl - optional server URL override (e.g. from user config)
+   * Returns JSESSIONID cookie on success (result === 0)
+   * Note: /Login/login.action is the correct endpoint for the web API
+   * 
+   * Web 端特別處理：從 proxy 返回的 JSON 中提取 _proxySession
    */
   async login(account: string, password: string): Promise<Gps808LoginResult> {
     const base = await getEffectiveBaseUrl();
@@ -260,6 +273,7 @@ export const gps808Api = {
         'Content-Type': 'application/x-www-form-urlencoded',
       };
 
+      // Use plain password (not base64 encoded)
       const url = `${base}/Login/login.action`;
       const res = await fetch(url, {
         method: 'POST',
@@ -268,7 +282,31 @@ export const gps808Api = {
         ...(IS_WEB ? {} : { credentials: 'include' }),
       });
 
-      const jsession = extractJsession(res.headers);
+      // 首先獲取響應文本
+      const text = await res.text();
+
+      // 嘗試從 JSON 響應中提取 session（proxy 會在 JSON 中返回 _proxySession）
+      let jsession: string | undefined;
+      let jsonResponse: Record<string, unknown> | null = null;
+
+      try {
+        jsonResponse = JSON.parse(text);
+        // 從 proxy 返回的 JSON 中提取 session
+        if (jsonResponse && typeof jsonResponse === 'object') {
+          if ((jsonResponse as Record<string, unknown>)._proxySession) {
+            jsession = (jsonResponse as Record<string, unknown>)._proxySession as string;
+            console.log('[GPS808] 從 proxy 響應中獲取 session:', jsession?.substring(0, 16) + '...');
+          }
+        }
+      } catch {
+        // 不是 JSON，嘗試從 header 提取
+      }
+
+      // 如果沒有從 JSON 獲取到，嘗試從 headers 提取（原生環境）
+      if (!jsession && IS_WEB) {
+        // Web 端無法通過 headers.get('set-cookie') 獲取（瀏覽器安全限制）
+        // 但 proxy 會在 JSON 中返回，所以上面已經處理了
+      }
 
       if (jsession) {
         await storage.setItem(JSESSION_KEY, jsession);
@@ -276,19 +314,38 @@ export const gps808Api = {
         let userInfo: Gps808LoginResult['userInfo'] = {
           account, userId: 0, companyId: 0, companyName: '',
         };
-        try {
-          const json = await res.json() as Record<string, unknown>;
+        if (jsonResponse) {
           userInfo = {
             account,
-            userId: (json.userId as number) ?? 0,
-            companyId: (json.companyId as number) ?? 0,
-            companyName: (json.companyName as string) ?? '',
+            userId: (jsonResponse.userId as number) ?? 0,
+            companyId: (jsonResponse.companyId as number) ?? 0,
+            companyName: (jsonResponse.companyName as string) ?? '',
           };
-        } catch { /* non-JSON — session cookie is sufficient */ }
+        }
         return { success: true, jsession, userInfo };
       }
 
-      const text = await res.text();
+      // 嘗試從 header 提取（原生環境）
+      const headerJsession = extractJsession(res.headers);
+      if (headerJsession) {
+        await storage.setItem(JSESSION_KEY, headerJsession);
+        await storage.setItem(SERVER_URL_KEY, base);
+        let userInfo: Gps808LoginResult['userInfo'] = {
+          account, userId: 0, companyId: 0, companyName: '',
+        };
+        try {
+          if (jsonResponse) {
+            userInfo = {
+              account,
+              userId: (jsonResponse.userId as number) ?? 0,
+              companyId: (jsonResponse.companyId as number) ?? 0,
+              companyName: (jsonResponse.companyName as string) ?? '',
+            };
+          }
+        } catch { /* non-JSON */ }
+        return { success: true, jsession: headerJsession, userInfo };
+      }
+
       if (text.includes('result":0') || text.includes('"result": 0')) {
         return { success: true, error: 'Login OK but no session received' };
       }

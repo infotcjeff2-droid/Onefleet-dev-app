@@ -1,13 +1,10 @@
 import { Tabs } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
-import { Platform } from 'react-native';
 import { colors } from '@/constants/theme';
 import { LayoutDashboard, User, ClipboardList, Car } from 'lucide-react-native';
 import { Text } from 'react-native';
 import { useDeliveryStore } from '@/store/deliveryStore';
 import { useTranslation } from '@/i18n';
-import { useLayout } from '@/hooks/useLayout';
-import { Sidebar, SIDEBAR_WIDTH_PX } from '@/components/shell/Sidebar';
 
 function Badge({ count }: { count: number }) {
   if (count === 0) return null;
@@ -48,9 +45,8 @@ function TabBarIcon({ name, color, focused }: { name: string; color: string; foc
 
 export default function TabLayout() {
   const { t } = useTranslation();
-  const { isDesktop } = useLayout();
 
-  const tabContent = (
+  return (
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -90,7 +86,9 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="profile"
-        options={{ href: null }}
+        options={{
+          href: null,
+        }}
       />
       <Tabs.Screen
         name="onefleet-system-admin"
@@ -103,34 +101,9 @@ export default function TabLayout() {
       />
     </Tabs>
   );
-
-  // Desktop/tablet (≥ 768px): show Sidebar on the left + content fills remaining space.
-  // Mobile (< 768px): show bottom tab bar (the default Tabs behaviour).
-  if (isDesktop) {
-    return (
-      <View style={styles.desktopShell}>
-        <Sidebar />
-        <View style={[styles.desktopContent, { width: `calc(100% - ${SIDEBAR_WIDTH_PX}px)` }]}>
-          {tabContent}
-        </View>
-      </View>
-    );
-  }
-
-  return tabContent;
 }
 
 const styles = StyleSheet.create({
-  desktopShell: {
-    flex: 1,
-    flexDirection: 'row',
-  },
-  desktopContent: {
-    flex: 1,
-    // On web, fill remaining viewport height to make content area scrollable.
-    ...(Platform.OS === 'web' ? { height: '100vh' } : {}),
-    overflow: 'hidden',
-  },
   tabBar: {
     backgroundColor: colors.surface,
     borderTopWidth: 1,

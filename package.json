@@ -7,15 +7,15 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "web:dev": "expo start --web --port 8081",
-    "web:build": "expo export --platform web",
-    "web:serve": "npx --yes serve dist -l 4173"
+    "proxy": "node server/gpsProxy.js",
+    "dev": "npm run proxy & npx expo start --web"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "2.1.0",
     "@react-navigation/native": "^7.1.8",
     "@supabase/supabase-js": "^2.108.1",
+    "crypto-js": "^4.2.0",
     "expo": "~54.0.33",
     "expo-clipboard": "~8.0.8",
     "expo-constants": "~18.0.13",
@@ -28,6 +28,7 @@
     "expo-status-bar": "~3.0.9",
     "expo-web-browser": "~15.0.10",
     "is-arrayish": "^0.3.4",
+    "js-md5": "^0.8.3",
     "js-sha256": "^0.11.1",
     "lucide-react-native": "^1.14.0",
     "nativewind": "^4.2.3",
@@ -45,8 +46,10 @@
     "zustand": "^5.0.13"
   },
   "devDependencies": {
+    "@types/crypto-js": "^4.2.2",
     "@types/react": "~19.1.0",
     "babel-preset-expo": "~54.0.10",
+    "eas-cli": "^20.5.1",
     "react-test-renderer": "19.1.0",
     "typescript": "~5.9.2"
   },

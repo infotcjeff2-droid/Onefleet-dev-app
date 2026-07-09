@@ -605,11 +605,13 @@ export default function DeliveryScreen() {
       <Header
         title={pageTitle}
         leftElement={
-          <Image
-            source={require('@/assets/onefleet_2560.png')}
-            style={{ width: 90, height: 30 }}
-            resizeMode="contain"
-          />
+          <Pressable onPress={() => router.push('/(tabs)')} hitSlop={8}>
+            <Image
+              source={require('@/assets/onefleet_2560.png')}
+              style={{ width: 90, height: 30 }}
+              resizeMode="contain"
+            />
+          </Pressable>
         }
       />
 

@@ -143,11 +143,13 @@ export default function PairDeviceScreen() {
           title={t('pair.title')}
           showBack
           leftElement={
-            <Image
-              source={require('@/assets/onefleet_2560.png')}
-              style={{ width: 90, height: 30 }}
-              resizeMode="contain"
-            />
+            <Pressable onPress={() => router.push('/(tabs)')} hitSlop={8}>
+              <Image
+                source={require('@/assets/onefleet_2560.png')}
+                style={{ width: 90, height: 30 }}
+                resizeMode="contain"
+              />
+            </Pressable>
           }
         />
         <View style={styles.notConnected}>
@@ -174,11 +176,13 @@ export default function PairDeviceScreen() {
         title={t('pair.title')}
         showBack
         leftElement={
-          <Image
-            source={require('@/assets/onefleet_2560.png')}
-            style={{ width: 90, height: 30 }}
-            resizeMode="contain"
-          />
+          <Pressable onPress={() => router.push('/(tabs)')} hitSlop={8}>
+            <Image
+              source={require('@/assets/onefleet_2560.png')}
+              style={{ width: 90, height: 30 }}
+              resizeMode="contain"
+            />
+          </Pressable>
         }
       />
 

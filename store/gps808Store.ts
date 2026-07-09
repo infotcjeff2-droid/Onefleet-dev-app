@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import { storage } from '@/utils/storage';
 import { gps808Api, setServerUrl } from '@/utils/gps808Api';
+import { Platform } from 'react-native';
+
+const IS_WEB = Platform.OS === 'web';
 
 interface Gps808Config {
   serverUrl: string;
@@ -28,8 +31,23 @@ const DEFAULT_CONFIG: Gps808Config = {
   password: '',
 };
 
+// Web env-based defaults (dev/demo only)
+const WEB_ENV_CONFIG: Gps808Config = {
+  serverUrl: process.env.EXPO_PUBLIC_GPS808_SERVER_URL ?? DEFAULT_CONFIG.serverUrl,
+  account: process.env.EXPO_PUBLIC_GPS808_ACCOUNT ?? '',
+  password: process.env.EXPO_PUBLIC_GPS808_PASSWORD ?? '',
+};
+const WEB_AUTO_CONNECT = process.env.EXPO_PUBLIC_GPS808_AUTO_CONNECT === 'true';
+
+function getInitialConfig(): Gps808Config {
+  if (Platform.OS === 'web' && WEB_AUTO_CONNECT && WEB_ENV_CONFIG.account) {
+    return WEB_ENV_CONFIG;
+  }
+  return DEFAULT_CONFIG;
+}
+
 export const useGps808Store = create<Gps808State>((set, get) => ({
-  config: DEFAULT_CONFIG,
+  config: getInitialConfig(),
   isConnected: false,
   isLoading: true,
   isSaving: false,
@@ -39,12 +57,38 @@ export const useGps808Store = create<Gps808State>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const stored = await storage.getItem(STORAGE_KEY);
+      console.log('[GPS808] loadConfig: stored =', stored);
+      console.log('[GPS808] loadConfig: Platform.OS =', Platform.OS);
+      console.log('[GPS808] loadConfig: WEB_AUTO_CONNECT =', WEB_AUTO_CONNECT);
+      console.log('[GPS808] loadConfig: WEB_ENV_CONFIG =', WEB_ENV_CONFIG);
       if (!stored) {
-        set({ isLoading: false });
+        // No stored config — try env-based auto-connect on web
+        if (Platform.OS === 'web' && WEB_AUTO_CONNECT && WEB_ENV_CONFIG.account) {
+          console.log('[GPS808] loadConfig: attempting env-based auto-connect...');
+          // Web 端：使用 proxy URL 避免 CORS 問題
+          const proxyUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL || 'http://localhost:3001/api/gps';
+          await setServerUrl(proxyUrl);
+          const result = await gps808Api.login(WEB_ENV_CONFIG.account, WEB_ENV_CONFIG.password);
+          console.log('[GPS808] loadConfig: login result =', result);
+          if (result.success) {
+            set({ config: WEB_ENV_CONFIG, isConnected: true, isLoading: false });
+          } else {
+            set({ config: WEB_ENV_CONFIG, isLoading: false, error: result.error || null });
+          }
+        } else {
+          console.log('[GPS808] loadConfig: skipping auto-connect');
+          set({ isLoading: false });
+        }
         return;
       }
       const parsed = JSON.parse(stored) as Gps808Config;
-      await setServerUrl(parsed.serverUrl);
+      // Web 端：使用 proxy URL 避免 CORS 問題
+      if (IS_WEB) {
+        const proxyUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL || 'http://localhost:3001/api/gps';
+        await setServerUrl(proxyUrl);
+      } else {
+        await setServerUrl(parsed.serverUrl);
+      }
       set({ config: parsed });
 
       // Try restoring session with stored jsession first
@@ -57,7 +101,16 @@ export const useGps808Store = create<Gps808State>((set, get) => ({
       // No valid jsession — auto-relogin with stored credentials.
       // Web loses cookies on reload; APK loses in-memory cookies on cold start.
       if (parsed.account && parsed.password) {
+        console.log('[GPS808] loadConfig: stored config found, attempting relogin with parsed.account =', parsed.account);
+        // Web 端：使用 proxy URL 避免 CORS 問題
+        if (IS_WEB) {
+          const proxyUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL || 'http://localhost:3001/api/gps';
+          await setServerUrl(proxyUrl);
+        } else {
+          await setServerUrl(parsed.serverUrl);
+        }
         const result = await gps808Api.login(parsed.account, parsed.password);
+        console.log('[GPS808] loadConfig: relogin result =', result);
         if (result.success) {
           set({ isConnected: true, isLoading: false });
         } else {
@@ -85,7 +138,13 @@ export const useGps808Store = create<Gps808State>((set, get) => ({
   testConnection: async (config: Gps808Config) => {
     set({ isSaving: true, error: null });
     try {
-      await setServerUrl(config.serverUrl);
+      // Web 端：使用 proxy URL 避免 CORS 問題
+      // 只有移動端可以直接請求 console.onefleet.hk
+      const effectiveServerUrl = IS_WEB
+        ? (process.env.EXPO_PUBLIC_GPS_PROXY_URL || 'http://localhost:3001/api/gps')
+        : config.serverUrl;
+
+      await setServerUrl(effectiveServerUrl);
       const result = await gps808Api.login(config.account, config.password);
       if (result.success) {
         await storage.setItem(STORAGE_KEY, JSON.stringify({ ...config }));

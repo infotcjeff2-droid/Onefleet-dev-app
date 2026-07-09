@@ -32,10 +32,6 @@ yarn-error.*
 
 # local env files
 .env*.local
-# General .env (Expo public vars) — must NEVER be committed.
-# Historical commits already contain a populated .env; rotate Supabase keys
-# and the GPS proxy creds, then consider rewriting history (git filter-repo).
-.env
 
 # typescript
 *.tsbuildinfo
@@ -43,3 +39,5 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+.vercel

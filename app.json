@@ -40,9 +40,11 @@
       "baseUrl": "/"
     },
     "extra": {
+      "router": {},
       "eas": {
-        "projectId": "fleet-pro"
+        "projectId": "0dbaaaa0-32bc-49c0-b276-832071768b15"
       }
-    }
+    },
+    "owner": "jeffchans-organization"
   }
 }

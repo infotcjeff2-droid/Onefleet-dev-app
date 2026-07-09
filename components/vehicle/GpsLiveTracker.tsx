@@ -724,7 +724,12 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate }: GpsLive
                     const stored = await storage.getItem('gps808_server_url');
                     if (stored) return stored;
                     if (!IS_WEB) return 'https://console.onefleet.hk';
-                    return process.env.EXPO_PUBLIC_GPS_PROXY_URL || '/api/gps';
+                    // For Web debugging, check if proxy is running
+                    const proxyUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL;
+                    if (proxyUrl && (proxyUrl.includes('/api/gps') || proxyUrl.includes('localhost'))) {
+                      return proxyUrl;
+                    }
+                    return 'http://localhost:3001/api/gps';
                   })();
                   const jsession = await storage.getItem('gps808_jsession');
                   const url = `${baseUrl}/StandardApiAction_getDeviceStatus.action?devIdno=${devIdno}&toMap=1`;

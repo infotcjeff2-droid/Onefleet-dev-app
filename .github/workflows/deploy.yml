@@ -34,10 +34,6 @@ jobs:
         run: npm ci
 
       - name: Build web
-        env:
-          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
-          EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
-          EXPO_PUBLIC_GPS_PROXY_URL: ${{ secrets.EXPO_PUBLIC_GPS_PROXY_URL }}
         run: npx expo export --platform web
 
       - name: Setup Pages

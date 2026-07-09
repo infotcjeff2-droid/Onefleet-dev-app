@@ -776,11 +776,13 @@ export default function ProfileScreen() {
       <Header
         title={isNonAdmin ? t('nav.profile') : t('nav.onefleetSystemAdmin')}
         leftElement={
-          <Image
-            source={isNonAdmin ? require('@/assets/onefleet_logo_small.png') : require('@/assets/onefleet_2560.png')}
-            style={{ width: isNonAdmin ? 70 : 90, height: isNonAdmin ? 26 : 30 }}
-            resizeMode="contain"
-          />
+          <Pressable onPress={() => router.push('/(tabs)')} hitSlop={8}>
+            <Image
+              source={isNonAdmin ? require('@/assets/onefleet_logo_small.png') : require('@/assets/onefleet_2560.png')}
+              style={{ width: isNonAdmin ? 70 : 90, height: isNonAdmin ? 26 : 30 }}
+              resizeMode="contain"
+            />
+          </Pressable>
         }
       />
 

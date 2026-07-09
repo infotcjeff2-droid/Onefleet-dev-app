@@ -568,11 +568,13 @@ export default function VehicleManagementScreen() {
         title={t('nav.vehicleManagement')}
         showBack
         leftElement={
-          <Image
-            source={require('@/assets/onefleet_2560.png')}
-            style={{ width: 90, height: 30 }}
-            resizeMode="contain"
-          />
+          <Pressable onPress={() => router.push('/(tabs)')} hitSlop={8}>
+            <Image
+              source={require('@/assets/onefleet_2560.png')}
+              style={{ width: 90, height: 30 }}
+              resizeMode="contain"
+            />
+          </Pressable>
         }
         rightAction={
           <Pressable onPress={handleAdd} style={[styles.addBtn, { backgroundColor: `${colors.primary}20` }]}>

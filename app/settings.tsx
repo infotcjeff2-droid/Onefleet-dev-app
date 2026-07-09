@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Image } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import { useRouter } from 'expo-router';
 import { ChevronRight, Globe, Check, Database, Type } from 'lucide-react-native';
 import { Card } from '@/components/ui/Card';
 import { Header } from '@/components/ui/Header';
@@ -19,6 +20,7 @@ const LANGUAGES: { locale: Locale; label: string; native: string }[] = [
 ];
 
 export default function SettingsScreen() {
+  const router = useRouter();
   const colors = useThemeStore((s) => s.colors);
   const { locale, setLocale } = useTranslation();
   const { fontScale, setFontScale } = useFontScale();
@@ -63,11 +65,13 @@ export default function SettingsScreen() {
         title={locale === 'zh-TW' ? '設定' : 'Settings'}
         showBack
         leftElement={
-          <Image
-            source={require('@/assets/onefleet_2560.png')}
-            style={{ width: 90, height: 30 }}
-            resizeMode="contain"
-          />
+          <Pressable onPress={() => router.push('/(tabs)')} hitSlop={8}>
+            <Image
+              source={require('@/assets/onefleet_2560.png')}
+              style={{ width: 90, height: 30 }}
+              resizeMode="contain"
+            />
+          </Pressable>
         }
       />
 
