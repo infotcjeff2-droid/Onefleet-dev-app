@@ -11,9 +11,18 @@ interface TextInputProps {
   error?: string;
   description?: string;
   secureTextEntry?: boolean;
-  keyboardType?: 'default' | 'email-address' | 'numeric' | 'phone-pad';
+  keyboardType?: 'default' | 'email-address' | 'numeric' | 'phone-pad' | 'url';
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
-  autoComplete?: 'email' | 'password' | 'off' | 'name';
+  /**
+   * HTML `autocomplete` token.
+   * - `username` / `current-password` / `new-password` → 讓瀏覽器（手機 Chrome/Safari）的密碼管理員能正確辨識
+   * - `email` / `name` / `off` 等亦可
+   */
+  autoComplete?: 'email' | 'password' | 'username' | 'current-password' | 'new-password' | 'name' | 'url' | 'off';
+  /** Web 專用：HTML `name` 屬性，與 autoComplete 配合後，瀏覽器才會把這組輸入視為可記憶的登入欄位 */
+  name?: string;
+  /** iOS / Android 原生專用：用 Strongbox / Keychain 提示用 */
+  textContentType?: 'none' | 'URL' | 'emailAddress' | 'username' | 'password' | 'newPassword' | 'name';
   editable?: boolean;
   multiline?: boolean;
   numberOfLines?: number;
@@ -34,6 +43,8 @@ export function TextInput({
   keyboardType = 'default',
   autoCapitalize = 'none',
   autoComplete = 'off',
+  name,
+  textContentType,
   editable = true,
   multiline = false,
   numberOfLines = 1,
@@ -49,6 +60,14 @@ export function TextInput({
     : isFocused
     ? colors.primary
     : colors.border;
+
+  // 密碼欄位尚未顯示時，告訴瀏覽器目前是當前密碼而不是新密碼
+  const resolvedAutoComplete =
+    autoComplete === 'password'
+      ? secureTextEntry && !showPassword
+        ? 'current-password'
+        : 'off'
+      : autoComplete;
 
   return (
     <View style={styles.container}>
@@ -71,7 +90,10 @@ export function TextInput({
           secureTextEntry={secureTextEntry && !showPassword}
           keyboardType={keyboardType}
           autoCapitalize={autoCapitalize}
-          autoComplete={autoComplete}
+          autoComplete={resolvedAutoComplete as any}
+          textContentType={textContentType as any}
+          // @ts-expect-error - Web 專用屬性（react-native-web 會轉成 name="..."）
+          name={name}
           editable={editable}
           multiline={multiline}
           numberOfLines={numberOfLines}

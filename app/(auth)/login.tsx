@@ -140,7 +140,9 @@ export default function LoginScreen() {
             onChangeText={(v) => { setEmail(v); setError(''); }}
             keyboardType="email-address"
             autoCapitalize="none"
-            autoComplete="email"
+            autoComplete="username"
+            textContentType="username"
+            name="email"
             icon={<Mail size={18} color={colors.textSecondary} />}
             error={error && !error.includes(t('auth.password')) ? error : undefined}
           />
@@ -152,6 +154,8 @@ export default function LoginScreen() {
             onChangeText={(v) => { setPassword(v); setError(''); }}
             secureTextEntry
             autoComplete="password"
+            textContentType="password"
+            name="password"
             icon={<Lock size={18} color={colors.textSecondary} />}
             error={error && error.includes(t('auth.password')) ? error : undefined}
           />

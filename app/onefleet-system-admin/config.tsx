@@ -179,6 +179,8 @@ function Gps808Panel() {
                 keyboardType="url"
                 autoCapitalize="none"
                 autoCorrect={false}
+                autoComplete="url"
+                name="url"
               />
             </View>
           </View>
@@ -196,6 +198,9 @@ function Gps808Panel() {
                 placeholderTextColor={colors.textTertiary}
                 autoCapitalize="none"
                 autoCorrect={false}
+                autoComplete="username"
+                textContentType="username"
+                name="username"
               />
             </View>
           </View>
@@ -214,6 +219,9 @@ function Gps808Panel() {
                 secureTextEntry
                 autoCapitalize="none"
                 autoCorrect={false}
+                autoComplete="password"
+                textContentType="password"
+                name="password"
               />
             </View>
           </View>
