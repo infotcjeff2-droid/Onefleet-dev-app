@@ -1,8 +1,9 @@
 import { useEffect } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
 import { colors } from '@/constants/theme';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 
 export default function RootIndex() {
   const { isAuthenticated, isLoading, checkAuth } = useAuthStore();
@@ -12,11 +13,7 @@ export default function RootIndex() {
   }, []);
 
   if (isLoading) {
-    return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
+    return <View style={styles.loading}><LoadingSpinner size={48} /></View>;
   }
 
   if (isAuthenticated) {

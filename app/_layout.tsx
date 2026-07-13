@@ -3,7 +3,6 @@ import 'react-native-gesture-handler';
 import '@/global.css';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { colors } from '@/constants/theme';
@@ -15,6 +14,7 @@ import { useGps808Store } from '@/store/gps808Store';
 import { useGoogleMapsStore } from '@/store/googleMapsStore';
 import { I18nProvider, useTranslation } from '@/i18n';
 import { FontScaleProvider } from '@/contexts/FontScaleContext';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useEffect } from 'react';
 
 function AppContent() {
@@ -40,9 +40,7 @@ function AppContent() {
   }, []);
 
   if (!isInitialized || authLoading) {
-    return (
-      <View style={{ flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' }} />
-    );
+    return <LoadingSpinner size={96} fullScreen />;
   }
 
   return (

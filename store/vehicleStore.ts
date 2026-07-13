@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { Vehicle } from '@/types';
 import { storage } from '@/utils/storage';
 import { fetchFleetSnapshot, hasSupabaseEnv, pushFleetSnapshot } from '@/utils/fleetSync';
+import { mockVehicles } from '@/constants/mockData';
 
 const STORAGE_KEY = 'vehicles';
 
@@ -54,9 +55,18 @@ export const useVehicleStore = create<VehicleState>((set, get) => ({
     try {
       const stored = await storage.getItem(STORAGE_KEY);
       if (stored) {
-        set({ vehicles: JSON.parse(stored), isLoading: false });
+        const parsed = JSON.parse(stored);
+        // 如果存儲的數據為空或車輛數為0，使用 mockVehicles
+        if (parsed.length === 0) {
+          set({ vehicles: mockVehicles, isLoading: false });
+          await persistVehicles(mockVehicles);
+        } else {
+          set({ vehicles: parsed, isLoading: false });
+        }
       } else {
-        set({ vehicles: [], isLoading: false });
+        // 首次載入，使用 mockVehicles
+        set({ vehicles: mockVehicles, isLoading: false });
+        await persistVehicles(mockVehicles);
       }
     } catch {
       set({ vehicles: [], isLoading: false });

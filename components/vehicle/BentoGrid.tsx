@@ -1,11 +1,10 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Image, Pressable } from 'react-native';
 import { useState } from 'react';
-import { Shield, FileText, Wrench, MapPin, Fuel, Settings2, Gauge, User, Wifi, WifiOff, Navigation } from 'lucide-react-native';
+import { Shield, FileText, Wrench, MapPin, Fuel, Settings2, Gauge, User, Wifi, WifiOff, Navigation, Activity } from 'lucide-react-native';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Vehicle } from '@/types';
-import { GpsLiveTracker } from './GpsLiveTracker';
-import { GpsTrackHistory } from './GpsTrackHistory';
+import { VehicleTrackingSection } from './VehicleTrackingSection';
 import { useThemeStore } from '@/store/themeStore';
 import { useDriverStore } from '@/store/driverStore';
 import { useGps808Store } from '@/store/gps808Store';
@@ -90,6 +89,7 @@ export function BentoGrid({ vehicle }: BentoGridProps) {
     speed: 0,
     address: undefined,
   });
+  const [activeInfoTab, setActiveInfoTab] = useState<'basic' | 'compliance'>('basic');
   const statusColor = statusColors[vehicle.status];
   const insuranceInfo = daysUntilLocalized(vehicle.insuranceExpiry, t);
   const regInfo = daysUntilLocalized(vehicle.registrationExpiry, t);
@@ -124,57 +124,32 @@ export function BentoGrid({ vehicle }: BentoGridProps) {
 
   return (
     <View style={{ padding: spacing.lg, gap: spacing.md }}>
-      {/* Real-time Tracking Section - Moved to top */}
-      <GpsLiveTracker
-        devIdno={vehicle.devIdno}
-        plateNumber={vehicle.plateNumber}
-        onStatusUpdate={handleGpsStatusUpdate}
-      />
-
-      {/* Track History */}
-      <GpsTrackHistory devIdno={vehicle.devIdno} plateNumber={vehicle.plateNumber} />
-
       {/* Dynamic Status Card based on GPS */}
       <Card style={{ padding: spacing.lg }}>
+        <View style={styles.sectionTitle}>
+          <Activity size={22} color={defaultColors.primary} />
+          <Text style={styles.sectionTitleText}>{t('vehicles.currentStatus')}</Text>
+        </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: typography.fontSize.xs, fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 }}>{t('vehicles.currentStatus')}</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm, gap: spacing.sm }}>
-              <Badge
-                label={getGpsStatusLabel()}
-                variant={getGpsStatusVariant()}
-                size="md"
-                dot
-              />
-              {gpsStatus.address && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', maxWidth: 180 }}>
-                  <MapPin size={10} color={colors.textTertiary} />
-                  <Text style={{ fontSize: 10, color: colors.textTertiary, marginLeft: 2 }} numberOfLines={1}>
-                    {extractChineseAddress(gpsStatus.address)}
-                  </Text>
-                </View>
-              )}
-            </View>
-            {assignedDriver && (
-              <View style={{ marginTop: spacing.md }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderRadius: borderRadius.sm, alignSelf: 'flex-start' }}>
-                  <User size={14} color={defaultColors.primary} />
-                  <Text style={{ fontSize: typography.fontSize.sm, fontWeight: '600', color: colors.textPrimary, marginLeft: spacing.xs }}>{t('vehicles.driver')}: {assignedDriver.name}</Text>
-                </View>
-              </View>
-            )}
+            <Badge
+              label={getGpsStatusLabel()}
+              variant={getGpsStatusVariant()}
+              size="md"
+              dot
+            />
             {gpsStatus.hasGps && (
               <View style={{ marginTop: spacing.md }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
-                    <Gauge size={12} color={colors.primary} />
+                    <Gauge size={14} color={colors.primary} />
                     <Text style={{ fontSize: typography.fontSize.xs, color: colors.textSecondary }}>
                       {Math.round(gpsStatus.speed)} km/h
                     </Text>
                   </View>
                   {gpsStatus.speed > 5 && (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
-                      <Navigation size={12} color={colors.primary} style={{ transform: [{ rotate: '45deg' }] }} />
+                      <Navigation size={14} color={colors.primary} style={{ transform: [{ rotate: '45deg' }] }} />
                       <Text style={{ fontSize: typography.fontSize.xs, color: colors.textSecondary }}>
                         {t('vehicles.inMotion')}
                       </Text>
@@ -200,87 +175,294 @@ export function BentoGrid({ vehicle }: BentoGridProps) {
             )}
           </View>
         </View>
-      </Card>
 
-      <View style={{ flexDirection: 'row', gap: spacing.md }}>
-        <Card style={{ flex: 1, padding: spacing.lg, minHeight: 160 }}>
-          <View style={{ marginBottom: spacing.md }}>
-            <Gauge size={20} color={defaultColors.primary} />
-          </View>
-          <Text style={{ fontSize: typography.fontSize['4xl'], fontWeight: '700', color: colors.textPrimary, lineHeight: 44 }}>{vehicle.mileage.toLocaleString()}</Text>
-          <Text style={{ fontSize: typography.fontSize.sm, color: colors.textTertiary, fontWeight: '500', marginTop: -spacing.xs, marginBottom: spacing.sm }}>{t('vehicles.miles')}</Text>
-          <Text style={{ fontSize: typography.fontSize.xs, fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 }}>{t('vehicles.mileage')}</Text>
-        </Card>
-        <View style={{ flex: 1, gap: spacing.md }}>
-          <Card style={{ flex: 1, padding: spacing.md }}>
-            <View style={{ marginBottom: spacing.md }}>
-              <Fuel size={18} color={defaultColors.secondary} />
+        {/* Driver Section */}
+        {assignedDriver && (
+          <View style={[styles.driverSection, { marginTop: spacing.lg }]}>
+            <Text style={styles.driverLabel}>{t('vehicles.driver')}</Text>
+            <View style={styles.driverInfo}>
+              <View style={[styles.driverAvatar, { backgroundColor: defaultColors.primary, zIndex: 0 }]}>
+                {assignedDriver.avatar ? (
+                  <Image source={{ uri: assignedDriver.avatar }} style={{ width: '100%', height: '100%', borderRadius: 30, zIndex: 0 }} />
+                ) : (
+                  <Text style={styles.driverAvatarText}>{assignedDriver.name.charAt(0).toUpperCase()}</Text>
+                )}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.driverName}>{assignedDriver.name}</Text>
+                <Text style={styles.driverPhone}>{assignedDriver.phone}</Text>
+              </View>
             </View>
-            <Text style={{ fontSize: typography.fontSize.xl, fontWeight: '700', color: colors.textPrimary }}>{fuelTypeLabels[vehicle.fuelType]}</Text>
-            <Text style={{ fontSize: typography.fontSize.xs, fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 }}>{t('vehicles.fuel')}</Text>
-          </Card>
-          <Card style={{ flex: 1, padding: spacing.md }}>
-            <View style={{ marginBottom: spacing.md }}>
-              <Settings2 size={18} color={defaultColors.secondary} />
+          </View>
+        )}
+
+        {/* Notes - at the bottom of Current Status card */}
+        {vehicle.notes && (
+          <View style={[styles.notesSection, { marginTop: spacing.lg }]}>
+            <Text style={styles.notesLabel}>{t('vehicles.notes')}</Text>
+            <Text style={styles.notesContent}>{decodeHtmlEntities(vehicle.notes)}</Text>
+          </View>
+        )}
+      </Card>
+
+      {/* Real-time Tracking Section with tabs (Live / History) */}
+      <VehicleTrackingSection
+        devIdno={vehicle.devIdno ?? ''}
+        plateNumber={vehicle.plateNumber}
+        onStatusUpdate={handleGpsStatusUpdate}
+      />
+
+      {/* Unified Vehicle Info Section */}
+      <Card style={{ padding: 0, overflow: 'hidden' }}>
+        {/* Header */}
+        <View style={styles.infoSectionHeader}>
+          <View style={styles.infoSectionHeaderLeft}>
+            <Gauge size={22} color={defaultColors.primary} />
+            <Text style={styles.infoSectionTitle}>{t('vehicles.vehicleInfo')}</Text>
+          </View>
+        </View>
+
+        {/* Tab Bar */}
+        <View style={styles.infoTabBar}>
+          <Pressable
+            style={[styles.infoTab, activeInfoTab === 'basic' && styles.infoTabActive]}
+            onPress={() => setActiveInfoTab('basic')}
+          >
+            <Text style={[styles.infoTabText, activeInfoTab === 'basic' && styles.infoTabTextActive]}>
+              {t('vehicles.basicInfo')}
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.infoTab, activeInfoTab === 'compliance' && styles.infoTabActive]}
+            onPress={() => setActiveInfoTab('compliance')}
+          >
+            <Text style={[styles.infoTabText, activeInfoTab === 'compliance' && styles.infoTabTextActive]}>
+              {t('vehicles.compliance')}
+            </Text>
+          </Pressable>
+          <View style={styles.infoTabBarUnderline} />
+        </View>
+
+        {/* Tab Content */}
+        <View style={styles.infoTabContent}>
+          {activeInfoTab === 'basic' ? (
+            <View style={styles.infoGrid}>
+              <View style={styles.infoItem}>
+                <Text style={styles.infoItemLabel}>{t('vehicles.mileage')}</Text>
+                <Text style={styles.infoItemValue}>{vehicle.mileage.toLocaleString()} {t('vehicles.miles')}</Text>
+              </View>
+              <View style={styles.infoItem}>
+                <Text style={styles.infoItemLabel}>{t('vehicles.fuel')}</Text>
+                <Text style={styles.infoItemValue}>{fuelTypeLabels[vehicle.fuelType]}</Text>
+              </View>
+              <View style={styles.infoItem}>
+                <Text style={styles.infoItemLabel}>{t('vehicles.transmission')}</Text>
+                <Text style={styles.infoItemValue}>{transmissionLabels[vehicle.transmission]}</Text>
+              </View>
+              <View style={styles.infoItem}>
+                <Text style={styles.infoItemLabel}>{t('vehicles.maintenance')}</Text>
+                <View style={styles.infoItemBadge}>
+                  <Text style={styles.infoItemBadgeText}>{t('vehicles.comingSoon')}</Text>
+                </View>
+              </View>
             </View>
-            <Text style={{ fontSize: typography.fontSize.xl, fontWeight: '700', color: colors.textPrimary }}>{transmissionLabels[vehicle.transmission]}</Text>
-            <Text style={{ fontSize: typography.fontSize.xs, fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 }}>{t('vehicles.transmission')}</Text>
-          </Card>
+          ) : (
+            <View style={styles.infoGrid}>
+              <View style={styles.infoItem}>
+                <Text style={styles.infoItemLabel}>{t('vehicles.insurance')}</Text>
+                <Text style={[styles.infoItemValue, insuranceInfo.urgent || insuranceInfo.expired ? { color: defaultColors.danger } : {}]}>
+                  {insuranceInfo.text}
+                </Text>
+                <Text style={styles.infoItemSub}>{vehicle.insuranceExpiry || t('vehicles.notAvailable')}</Text>
+              </View>
+              <View style={styles.infoItem}>
+                <Text style={styles.infoItemLabel}>{t('vehicles.registration')}</Text>
+                <Text style={[styles.infoItemValue, regInfo.urgent || regInfo.expired ? { color: defaultColors.danger } : {}]}>
+                  {regInfo.text}
+                </Text>
+                <Text style={styles.infoItemSub}>{vehicle.registrationExpiry || t('vehicles.notAvailable')}</Text>
+              </View>
+            </View>
+          )}
         </View>
-      </View>
-
-      <View style={{ flexDirection: 'row', gap: spacing.md }}>
-        <Card style={{ flex: 1, padding: spacing.lg }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm }}>
-            <Shield size={16} color={insuranceInfo.urgent || insuranceInfo.expired ? defaultColors.danger : defaultColors.success} />
-            <Text style={{ fontSize: typography.fontSize.xs, fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5, marginLeft: spacing.xs }}>{t('vehicles.insurance')}</Text>
-          </View>
-          <Text style={{ fontSize: typography.fontSize.xl, fontWeight: '700', color: insuranceInfo.urgent || insuranceInfo.expired ? defaultColors.danger : colors.textPrimary }}>{insuranceInfo.text}</Text>
-          <Text style={{ fontSize: typography.fontSize.xs, color: colors.textTertiary, marginTop: spacing.xs }}>{vehicle.insuranceExpiry || t('vehicles.notAvailable')}</Text>
-        </Card>
-        <Card style={{ flex: 1, padding: spacing.lg }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm }}>
-            <FileText size={16} color={regInfo.urgent || regInfo.expired ? defaultColors.danger : defaultColors.secondary} />
-            <Text style={{ fontSize: typography.fontSize.xs, fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5, marginLeft: spacing.xs }}>{t('vehicles.registration')}</Text>
-          </View>
-          <Text style={{ fontSize: typography.fontSize.xl, fontWeight: '700', color: regInfo.urgent || regInfo.expired ? defaultColors.danger : colors.textPrimary }}>{regInfo.text}</Text>
-          <Text style={{ fontSize: typography.fontSize.xs, color: colors.textTertiary, marginTop: spacing.xs }}>{vehicle.registrationExpiry || t('vehicles.notAvailable')}</Text>
-        </Card>
-      </View>
-
-      <Card style={{ padding: spacing.lg }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm }}>
-          <Wrench size={16} color={defaultColors.accentSecondary} />
-          <Text style={{ fontSize: typography.fontSize.xs, fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5, marginLeft: spacing.xs }}>{t('vehicles.maintenance')}</Text>
-          <View style={{ marginLeft: 'auto', paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderRadius: borderRadius.sm, backgroundColor: colors.surface }}>
-            <Text style={{ fontSize: typography.fontSize.xs, fontWeight: '600', color: colors.textTertiary }}>{t('vehicles.comingSoon')}</Text>
-          </View>
-        </View>
-        <Text style={{ fontSize: typography.fontSize.xs, color: colors.textTertiary, lineHeight: 16 }}>{t('vehicles.maintenanceRecords')}</Text>
       </Card>
 
-      {vehicle.notes && (
-        <Card style={{ padding: spacing.lg }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm }}>
-            <FileText size={16} color={colors.textSecondary} />
-            <Text style={{ fontSize: typography.fontSize.xs, fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5, marginLeft: spacing.xs }}>{t('vehicles.notes')}</Text>
-          </View>
-          <Text style={{ fontSize: typography.fontSize.sm, color: colors.textSecondary, lineHeight: 22 }}>{decodeHtmlEntities(vehicle.notes)}</Text>
-        </Card>
-      )}
-
-      <Card style={{ padding: spacing.lg }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm }}>
-          <Gauge size={16} color={colors.textTertiary} />
-          <Text style={{ fontSize: typography.fontSize.xs, fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5, marginLeft: spacing.xs }}>{t('vehicles.purchaseDate')}</Text>
-        </View>
-        <Text style={{ fontSize: typography.fontSize.xl, fontWeight: '700', color: colors.textPrimary }}>{vehicle.purchaseDate || t('vehicles.notAvailable')}</Text>
-        <Text style={{ fontSize: typography.fontSize.xs, color: colors.textTertiary, marginTop: spacing.xs }}>
-          {vehicle.purchaseDate ? `${Math.floor((Date.now() - new Date(vehicle.purchaseDate).getTime()) / (1000 * 60 * 60 * 24 * 365))} ${t('vehicles.yearsOwned')}` : ''}
-        </Text>
-      </Card>
     </View>
   );
 }
 
-const styles = StyleSheet.create({});
+const styles = StyleSheet.create({
+  sectionTitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  sectionTitleText: {
+    fontSize: typography.fontSize.lg,
+    fontWeight: '700',
+    color: defaultColors.textPrimary,
+    letterSpacing: 0.3,
+  },
+  sectionValue: {
+    fontSize: 12,
+    color: defaultColors.textTertiary,
+    marginTop: spacing.xs,
+  },
+  driverSection: {
+    borderTopWidth: 1,
+    borderTopColor: defaultColors.border,
+    paddingTop: spacing.md,
+  },
+  driverLabel: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: '600',
+    color: defaultColors.textTertiary,
+    marginBottom: spacing.sm,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  driverInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  driverAvatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  driverAvatarText: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  driverName: {
+    fontSize: typography.fontSize.base,
+    fontWeight: '700',
+    color: defaultColors.textPrimary,
+    marginBottom: 2,
+  },
+  driverPhone: {
+    fontSize: typography.fontSize.xs,
+    color: defaultColors.textTertiary,
+  },
+  notesSection: {
+    borderTopWidth: 1,
+    borderTopColor: defaultColors.border,
+    paddingTop: spacing.md,
+  },
+  notesLabel: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: '600',
+    color: defaultColors.textTertiary,
+    marginBottom: spacing.xs,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  notesContent: {
+    fontSize: typography.fontSize.sm,
+    color: defaultColors.textSecondary,
+    lineHeight: 20,
+    backgroundColor: defaultColors.surface,
+    padding: spacing.sm,
+    borderRadius: borderRadius.sm,
+  },
+  infoSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xs,
+  },
+  infoSectionHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  infoSectionTitle: {
+    fontSize: typography.fontSize.lg,
+    fontWeight: '700',
+    color: defaultColors.textPrimary,
+    letterSpacing: 0.3,
+  },
+  infoTabBar: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: defaultColors.border,
+    position: 'relative',
+  },
+  infoTab: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  infoTabActive: {
+    borderBottomColor: defaultColors.primary,
+  },
+  infoTabText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    color: defaultColors.textTertiary,
+  },
+  infoTabTextActive: {
+    color: defaultColors.primary,
+    fontWeight: '700',
+  },
+  infoTabBarUnderline: {
+    position: 'absolute',
+    bottom: -1,
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: defaultColors.border,
+  },
+  infoTabContent: {
+    padding: spacing.lg,
+  },
+  infoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  infoItem: {
+    width: '50%',
+    marginBottom: spacing.lg,
+  },
+  infoItemLabel: {
+    fontSize: typography.fontSize.base,
+    fontWeight: '700',
+    color: defaultColors.textPrimary,
+    marginBottom: spacing.xs,
+    letterSpacing: 0,
+  },
+  infoItemValue: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: '600',
+    color: defaultColors.textTertiary,
+  },
+  infoItemSub: {
+    fontSize: 11,
+    color: defaultColors.textTertiary,
+    marginTop: 4,
+    opacity: 0.75,
+  },
+  infoItemBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.sm,
+    backgroundColor: defaultColors.surface,
+  },
+  infoItemBadgeText: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: '600',
+    color: defaultColors.textTertiary,
+  },
+});

@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
-import { LogOut, Shield, Settings, ChevronRight, User, Mail, Award, Truck, Plus, X, Users, Globe, Image as ImageIcon, Upload, Cpu, Link2, Warehouse, Package, Zap, RefreshCw } from 'lucide-react-native';
+import { LogOut, Shield, Settings, ChevronRight, User, Mail, Award, Truck, Plus, X, Users, Globe, Image as ImageIcon, Upload, Cpu, Link2, Warehouse, Package, Zap, RefreshCw, Trash2, RotateCcw, AlertCircle } from 'lucide-react-native';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { useAuthStore } from '@/store/authStore';
@@ -13,6 +13,7 @@ import { useUserManagementStore } from '@/store/userManagementStore';
 import { useDriverStore } from '@/store/driverStore';
 import { useVehicleStore } from '@/store/vehicleStore';
 import { useGps808Store } from '@/store/gps808Store';
+import { useTrashStore } from '@/store/trashStore';
 import { useTranslation } from '@/i18n';
 import { spacing, typography, borderRadius } from '@/constants/theme';
 import { Header } from '@/components/ui/Header';
@@ -702,6 +703,9 @@ export default function ProfileScreen() {
   const { users, loadUsers } = useUserManagementStore();
   const { locale, t, setLocale } = useTranslation();
   const inventoryStore = useInventoryStore();
+  const trashItems = useTrashStore((state) => state.items);
+  const loadTrash = useTrashStore((state) => state.loadTrash);
+  const trashCount = trashItems.filter((it) => it.expiresAt > Date.now()).length;
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [accountEditVisible, setAccountEditVisible] = useState(false);
@@ -715,7 +719,8 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     loadUsers();
-  }, [loadUsers, refreshKey]);
+    if (isAdmin) loadTrash();
+  }, [loadUsers, loadTrash, isAdmin, refreshKey]);
 
   const roleConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
     admin: { label: t('profile.admin'), color: colors.primary, icon: <Shield size={12} color={colors.primary} /> },
@@ -749,21 +754,47 @@ export default function ProfileScreen() {
   };
 
   const handleDeleteUser = (managedUser: ManagedUser) => {
-    Alert.alert(t('common.delete') + ' ' + t('profile.userManagement'), `${t('common.delete')} ${managedUser.name}?`, [
-      { text: t('common.cancel'), style: 'cancel' },
-      {
-        text: t('common.delete'),
-        style: 'destructive',
-        onPress: async () => {
-          await useUserManagementStore.getState().deleteUser(managedUser.id);
-          if (managedUser.role === 'driver') {
-            await useDriverStore.getState().deleteDriver(managedUser.id);
-          }
-          await useDriverStore.getState().loadDrivers();
-          setRefreshKey((value) => value + 1);
+    const title = '刪除使用者';
+    const body = `確定要將「${managedUser.name}」移到垃圾桶嗎？\n\n此操作可在 30 天內從垃圾桶還原。`;
+    const cancelText = '取消';
+    const confirmText = '移到垃圾桶';
+
+    const doDelete = async () => {
+      try {
+        await useUserManagementStore.getState().softDeleteUser(managedUser.id);
+        if (managedUser.role === 'driver') {
+          await useDriverStore.getState().deleteDriver(managedUser.id);
+        }
+        await useDriverStore.getState().loadDrivers();
+        setRefreshKey((value) => value + 1);
+        if (isWeb) {
+          window.alert(`✅ 已移到垃圾桶\n\n「${managedUser.name}」已移至垃圾桶，30 天內可在垃圾桶頁面還原。`);
+        } else {
+          Alert.alert('✅ 已移到垃圾桶', `${managedUser.name} 已移至垃圾桶，30 天內可在垃圾桶頁面還原。`);
+        }
+      } catch (error) {
+        if (isWeb) {
+          window.alert(`❌ 刪除失敗\n\n${error instanceof Error ? error.message : '未知錯誤，請稍後再試'}`);
+        } else {
+          Alert.alert('❌ 刪除失敗', error instanceof Error ? error.message : '未知錯誤，請稍後再試');
+        }
+      }
+    };
+
+    if (isWeb) {
+      if (window.confirm(`${title}\n\n${body}`)) {
+        void doDelete();
+      }
+    } else {
+      Alert.alert(title, body, [
+        { text: cancelText, style: 'cancel' },
+        {
+          text: confirmText,
+          style: 'destructive',
+          onPress: () => void doDelete(),
         },
-      },
-    ]);
+      ]);
+    }
   };
 
   const handleEditUser = (managedUser: ManagedUser) => {
@@ -978,6 +1009,14 @@ export default function ProfileScreen() {
                 icon={<Cpu size={18} color={colors.primary} />}
                 label={t('nav.config')}
                 onPress={() => router.push('/onefleet-system-admin/config')}
+              />
+              <View style={[styles.divider, { backgroundColor: colors.border }]} />
+              <SettingItem
+                icon={<Trash2 size={18} color={colors.danger} />}
+                label="🗑️ 垃圾桶"
+                value={`${trashCount} 項`}
+                danger
+                onPress={() => router.push('/trash')}
               />
             </Card>
           </View>

@@ -11,11 +11,11 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
-  RefreshControl,
   Image,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import {
   ChevronLeft,
   X,
@@ -276,7 +276,7 @@ export default function PairDeviceScreen() {
 
             {loading ? (
               <View style={styles.loadingState}>
-                <ActivityIndicator color={colors.primary} />
+                <LoadingSpinner size={24} />
                 <Text style={[styles.loadingText, { color: colors.textTertiary }]}>
                   {t('pair.loadingDevices')}
                 </Text>

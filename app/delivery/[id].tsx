@@ -326,8 +326,8 @@ export default function DeliveryDetailScreen() {
         <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.notFound}>
           <FileText size={48} color={colors.textTertiary} />
-          <Text style={styles.notFoundText}>Order not found</Text>
-          <Button title="Go Back" onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/delivery')} />
+          <Text style={styles.notFoundText}>{t('delivery.orderNotFound')}</Text>
+          <Button title={t('delivery.goBack')} onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/delivery')} />
         </View>
       </View>
     );
@@ -357,7 +357,7 @@ export default function DeliveryDetailScreen() {
   };
 
   const handleStartTransit = () => {
-    Alert.alert(t('delivery.startTransit'), 'Mark this delivery as in transit?', [
+    Alert.alert(t('delivery.startTransit'), t('delivery.markInTransitConfirm'), [
       { text: t('common.cancel'), style: 'cancel' },
       {
         text: t('common.confirm'),
@@ -489,18 +489,18 @@ export default function DeliveryDetailScreen() {
 
         <Animated.View entering={FadeInDown.delay(80).springify()}>
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Customer</Text>
+            <Text style={styles.sectionTitle}>{t('delivery.customer')}</Text>
             <Card style={styles.infoCard}>
-              <InfoRow icon={<User size={16} color={colors.textSecondary} />} label="Name" value={order.customerName} />
+              <InfoRow icon={<User size={16} color={colors.textSecondary} />} label={t('delivery.name')} value={order.customerName} />
               <View style={styles.divider} />
-              <InfoRow icon={<Phone size={16} color={colors.textSecondary} />} label="Phone" value={order.customerPhone} />
+              <InfoRow icon={<Phone size={16} color={colors.textSecondary} />} label={t('delivery.phone')} value={order.customerPhone} />
             </Card>
           </View>
         </Animated.View>
 
         <Animated.View entering={FadeInDown.delay(120).springify()}>
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Route</Text>
+            <Text style={styles.sectionTitle}>{t('delivery.route')}</Text>
             <Card style={styles.infoCard}>
               <View style={styles.routeContainer}>
                 <View style={styles.routeStop}>
@@ -508,7 +508,7 @@ export default function DeliveryDetailScreen() {
                     <View style={[styles.routeIconDot, { backgroundColor: colors.primary }]} />
                   </View>
                   <View style={styles.routeStopInfo}>
-                    <Text style={styles.routeStopLabel}>PICKUP</Text>
+                    <Text style={styles.routeStopLabel}>{t('delivery.pickup').toUpperCase()}</Text>
                     <Text style={styles.routeStopAddress}>{order.pickupAddress}</Text>
                     <Text style={styles.routeStopTime}>{order.pickupTime}</Text>
                   </View>
@@ -523,7 +523,7 @@ export default function DeliveryDetailScreen() {
                     <View style={[styles.routeIconDot, { backgroundColor: colors.danger }]} />
                   </View>
                   <View style={styles.routeStopInfo}>
-                    <Text style={styles.routeStopLabel}>DROPOFF</Text>
+                    <Text style={styles.routeStopLabel}>{t('delivery.dropoff').toUpperCase()}</Text>
                     <Text style={styles.routeStopAddress}>{order.dropoffAddress}</Text>
                     {order.dropoffTime && <Text style={styles.routeStopTime}>{order.dropoffTime}</Text>}
                   </View>
@@ -535,15 +535,15 @@ export default function DeliveryDetailScreen() {
 
         <Animated.View entering={FadeInDown.delay(160).springify()}>
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Cargo</Text>
+            <Text style={styles.sectionTitle}>{t('delivery.cargo')}</Text>
             <Card style={styles.infoCard}>
-              <InfoRow icon={<Package size={16} color={colors.textSecondary} />} label="Description" value={order.cargoDescription} />
+              <InfoRow icon={<Package size={16} color={colors.textSecondary} />} label={t('delivery.description')} value={order.cargoDescription} />
               <View style={styles.divider} />
-              <InfoRow icon={<Scale size={16} color={colors.textSecondary} />} label="Weight" value={`${order.cargoWeight} kg`} />
+              <InfoRow icon={<Scale size={16} color={colors.textSecondary} />} label={t('delivery.weight')} value={`${order.cargoWeight} ${t('dashboard.kg')}`} />
               {order.notes && (
                 <>
                   <View style={styles.divider} />
-                  <InfoRow icon={<StickyNote size={16} color={colors.textSecondary} />} label="Notes" value={order.notes} />
+                  <InfoRow icon={<StickyNote size={16} color={colors.textSecondary} />} label={t('delivery.notes')} value={order.notes} />
                 </>
               )}
             </Card>
@@ -553,11 +553,11 @@ export default function DeliveryDetailScreen() {
         {order.assignedDriverName && (
           <Animated.View entering={FadeInDown.delay(200).springify()}>
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Assigned Driver</Text>
+              <Text style={styles.sectionTitle}>{t('delivery.assignedDriver')}</Text>
               <Card style={styles.infoCard}>
-                <InfoRow icon={<Truck size={16} color={colors.textSecondary} />} label="Name" value={order.assignedDriverName} />
+                <InfoRow icon={<Truck size={16} color={colors.textSecondary} />} label={t('delivery.name')} value={order.assignedDriverName} />
                 <View style={styles.divider} />
-                <InfoRow icon={<Clock size={16} color={colors.textSecondary} />} label="Assigned At" value={order.pickupTime} />
+                <InfoRow icon={<Clock size={16} color={colors.textSecondary} />} label={t('delivery.assignedAt')} value={order.pickupTime} />
                 {order.signatureData && (
                   <>
                     <View style={styles.divider} />

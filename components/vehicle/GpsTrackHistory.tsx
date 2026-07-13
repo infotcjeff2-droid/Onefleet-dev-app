@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Pressable, Platform, ScrollView, Modal, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Platform, ScrollView, Modal, TouchableOpacity } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Calendar, Clock, MapPin, Navigation, X, RotateCcw } from 'lucide-react-native';
 import { Card } from '@/components/ui/Card';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useGps808Store } from '@/store/gps808Store';
 import { gps808Api, type Gps808TrackPoint } from '@/utils/gps808Api';
 import { colors, borderRadius, spacing, typography } from '@/constants/theme';
@@ -15,6 +16,7 @@ const IS_WEB = Platform.OS === 'web';
 interface GpsTrackHistoryProps {
   devIdno: string;
   plateNumber?: string;
+  bare?: boolean;
 }
 
 interface TrackPoint {
@@ -351,7 +353,7 @@ function formatSpeed(speed: number): string {
   return `${Math.round(speed)} km/h`;
 }
 
-export function GpsTrackHistory({ devIdno, plateNumber }: GpsTrackHistoryProps) {
+export function GpsTrackHistory({ devIdno, plateNumber, bare = false }: GpsTrackHistoryProps) {
   const { t, locale } = useTranslation();
   const { isConnected } = useGps808Store();
   const [selectedRange, setSelectedRange] = useState<QuickRange>('24h');
@@ -455,42 +457,46 @@ export function GpsTrackHistory({ devIdno, plateNumber }: GpsTrackHistoryProps) 
   };
 
   if (!isConnected) {
-    return (
-      <Card style={{ padding: spacing.lg }}>
+    const unavailableBody = (
+      <>
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <MapPin size={16} color={colors.textSecondary} />
+            <MapPin size={20} color={colors.textSecondary} />
             <Text style={styles.label}>{t('vehicles.trackHistory')}</Text>
           </View>
         </View>
         <Text style={styles.unavailableText}>
           {t('vehicles.connectToEnableTracking')}
         </Text>
-      </Card>
+      </>
     );
+    if (bare) return <View>{unavailableBody}</View>;
+    return <Card style={{ padding: spacing.lg }}>{unavailableBody}</Card>;
   }
 
   if (!devIdno) {
-    return (
-      <Card style={{ padding: spacing.lg }}>
+    const noDeviceBody = (
+      <>
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <MapPin size={16} color={colors.textSecondary} />
+            <MapPin size={20} color={colors.textSecondary} />
             <Text style={styles.label}>{t('vehicles.trackHistory')}</Text>
           </View>
         </View>
         <Text style={styles.unavailableText}>
           {t('vehicles.noGpsDeviceConfigured')}
         </Text>
-      </Card>
+      </>
     );
+    if (bare) return <View>{noDeviceBody}</View>;
+    return <Card style={{ padding: spacing.lg }}>{noDeviceBody}</Card>;
   }
 
-  return (
-    <Card style={{ padding: spacing.lg }}>
+  const mainBody = (
+    <>
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <MapPin size={16} color={colors.textSecondary} />
+          <MapPin size={20} color={colors.textSecondary} />
           <Text style={styles.label}>{t('vehicles.trackHistory')}</Text>
         </View>
         <Pressable onPress={fetchTrackHistory} style={styles.refreshBtn} disabled={isLoading}>
@@ -590,7 +596,7 @@ export function GpsTrackHistory({ devIdno, plateNumber }: GpsTrackHistoryProps) 
       {/* Loading State */}
       {isLoading && (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="small" color={colors.primary} />
+          <LoadingSpinner size={24} />
           <Text style={styles.loadingText}>{t('vehicles.loadingTrackHistory')}</Text>
         </View>
       )}
@@ -634,7 +640,7 @@ export function GpsTrackHistory({ devIdno, plateNumber }: GpsTrackHistoryProps) 
                 startInLoadingState
                 renderLoading={() => (
                   <View style={styles.mapLoading}>
-                    <ActivityIndicator size="small" color="#3B82F6" />
+                    <LoadingSpinner size={24} />
                     <Text style={{ marginTop: 8, fontSize: 12, color: '#6B7280' }}>{t('vehicles.loadingMap')}</Text>
                   </View>
                 )}
@@ -671,8 +677,11 @@ export function GpsTrackHistory({ devIdno, plateNumber }: GpsTrackHistoryProps) 
           <Text style={styles.viewOnMapsText}>{t('vehicles.viewOnGoogleMaps')}</Text>
         </Pressable>
       )}
-    </Card>
+    </>
   );
+
+  if (bare) return <View>{mainBody}</View>;
+  return <Card style={{ padding: spacing.lg }}>{mainBody}</Card>;
 }
 
 const styles = StyleSheet.create({
@@ -682,13 +691,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: spacing.md,
   },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   label: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    fontSize: typography.fontSize.base,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    letterSpacing: 0.3,
   },
   refreshBtn: {
     padding: spacing.xs,

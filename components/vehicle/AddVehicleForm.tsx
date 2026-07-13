@@ -14,12 +14,16 @@ import * as ImagePicker from 'expo-image-picker';
 import { Button } from '@/components/ui/Button';
 import { TextInput } from '@/components/ui/TextInput';
 import { SelectField } from '@/components/ui/SelectField';
-import { ReactQuill, ReactQuillRef } from '@/components/ui/ReactQuill';
 import { useVehicleStore } from '@/store/vehicleStore';
 import { useDriverStore } from '@/store/driverStore';
 import { colors, borderRadius, spacing, typography } from '@/constants/theme';
 import { BodyType, FuelType, TransmissionType, VehicleStatus } from '@/types';
 import { useTranslation } from '@/i18n';
+import { uploadVehicleImage } from '@/utils/supabaseStorage';
+
+function stripHtmlTags(html: string): string {
+  return html.replace(/<[^>]*>/g, '').trim();
+}
 
 interface FormData {
   make: string;
@@ -137,7 +141,7 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
           purchaseDate: existing.purchaseDate,
           insuranceExpiry: existing.insuranceExpiry,
           registrationExpiry: existing.registrationExpiry,
-          notes: existing.notes,
+          notes: stripHtmlTags(existing.notes || ''),
           imageUrl: existing.imageUrl,
           assignedDriverId: existing.assignedDriverId || '',
         });
@@ -195,7 +199,7 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
     });
 
     if (!result.canceled && result.assets[0]) {
-      updateField('imageUrl', result.assets[0].uri);
+      updateField('imageUrl', `__pending__:${result.assets[0].uri}`);
     }
   };
 
@@ -207,6 +211,23 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
     if (!validateStep(step)) return;
     setIsSubmitting(true);
     try {
+      let finalImageUrl = form.imageUrl;
+
+      if (form.imageUrl && form.imageUrl.startsWith('__pending__:')) {
+        const pendingUri = form.imageUrl.replace('__pending__:', '');
+        const tempId = `temp_${Date.now()}`;
+        try {
+          finalImageUrl = await uploadVehicleImage(pendingUri, tempId);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : '未知錯誤';
+          Alert.alert(
+            t('common.error'),
+            `圖片上傳失敗：${msg}\n車輛資料仍會儲存（無圖片）`,
+          );
+          finalImageUrl = '';
+        }
+      }
+
       const vehicleData = {
         make: form.make,
         model: form.model,
@@ -224,7 +245,7 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
         insuranceExpiry: form.insuranceExpiry || '',
         registrationExpiry: form.registrationExpiry || '',
         notes: form.notes || '',
-        imageUrl: form.imageUrl,
+        imageUrl: finalImageUrl,
         assignedDriverId: form.assignedDriverId || undefined,
       };
 
@@ -248,6 +269,11 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
       label: `${driver.name} ${driver.phone ? `(${driver.phone})` : ''}`,
     })),
   ];
+
+  // 從 __pending__: URI 中取出真實 URI 供 Image 元件顯示
+  const displayImageUrl = form.imageUrl.startsWith('__pending__:')
+    ? form.imageUrl.replace('__pending__:', '')
+    : form.imageUrl;
 
   const selectedDriver = drivers.find((d) => d.id === form.assignedDriverId);
 
@@ -287,9 +313,9 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
 
       <Text style={styles.fieldLabel}>{t('vehicles.vehicleImage')}</Text>
       <View style={styles.imageUploadSection}>
-        {form.imageUrl ? (
+        {displayImageUrl ? (
           <View style={styles.imagePreviewWrap}>
-            <Image source={{ uri: form.imageUrl }} style={styles.imagePreview} resizeMode="cover" />
+            <Image source={{ uri: displayImageUrl }} style={styles.imagePreview} resizeMode="cover" />
             <Pressable style={styles.removeImageBtn} onPress={handleRemoveImage}>
               <X size={16} color="#FFF" />
             </Pressable>
@@ -303,7 +329,7 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
             <Text style={styles.imageUploadText}>{t('vehicles.uploadVehicleImage')}</Text>
           </Pressable>
         )}
-        {form.imageUrl && (
+        {displayImageUrl && (
           <Pressable
             style={[styles.changeImageBtn, { borderColor: colors.primary }]}
             onPress={handlePickImage}
@@ -444,12 +470,15 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
         options={statusOptions}
         onValueChange={(v) => updateField('status', v)}
       />
-      <View style={styles.quillWrapper}>
+      <View style={styles.notesWrapper}>
         <Text style={styles.fieldLabel}>{t('vehicles.notes')}</Text>
-        <ReactQuill
+        <TextInput
           value={form.notes}
-          onChange={(html) => updateField('notes', html)}
+          onChangeText={(text) => updateField('notes', text)}
           placeholder={t('vehicles.notesPlaceholder')}
+          multiline
+          numberOfLines={4}
+          inputStyle={styles.notesInput}
         />
       </View>
     </View>
@@ -662,7 +691,12 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
     backgroundColor: colors.background,
   },
-  quillWrapper: {
+  notesWrapper: {
     marginBottom: spacing.lg,
+  },
+  notesInput: {
+    minHeight: 100,
+    textAlignVertical: 'top',
+    paddingTop: spacing.md,
   },
 });

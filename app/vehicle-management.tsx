@@ -36,11 +36,11 @@ import { spacing, typography, borderRadius } from '@/constants/theme';
 import { Header } from '@/components/ui/Header';
 import { Button } from '@/components/ui/Button';
 import { SelectField } from '@/components/ui/SelectField';
-import { ReactQuill, ReactQuillRef } from '@/components/ui/ReactQuill';
+import { TextInput } from '@/components/ui/TextInput';
 import { Vehicle, BodyType, FuelType, TransmissionType, VehicleStatus } from '@/types';
+import { uploadVehicleImage } from '@/utils/supabaseStorage';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const isWeb = Platform.OS === 'web';
 
 type VehicleForm = Omit<Vehicle, 'id' | 'createdAt'>;
 
@@ -59,6 +59,10 @@ function StatusDot({ status }: { status: VehicleStatus }) {
   return (
     <View style={[styles.statusDot, { backgroundColor: colorMap[status] }]} />
   );
+}
+
+function stripHtmlTags(html: string): string {
+  return html.replace(/<[^>]*>/g, '').trim();
 }
 
 function VehicleRow({
@@ -200,13 +204,13 @@ function VehicleFormModal({
           purchaseDate: vehicle.purchaseDate,
           insuranceExpiry: vehicle.insuranceExpiry,
           registrationExpiry: vehicle.registrationExpiry,
-          notes: vehicle.notes,
+          notes: stripHtmlTags(vehicle.notes || ''),
           imageUrl: vehicle.imageUrl,
           devIdno: vehicle.devIdno || '',
           assignedDriverId: vehicle.assignedDriverId || '',
         });
       } else {
-        setForm(empty);
+        setForm({ ...empty });
       }
       setError('');
     }
@@ -229,9 +233,14 @@ function VehicleFormModal({
       quality: 0.8,
     });
 
-    if (!result.canceled && result.assets[0]) {
-      set('imageUrl', result.assets[0].uri);
+    if (result.canceled || !result.assets[0]) {
+      return;
     }
+
+    // 直接設定 blob URI 供即時預覽，實際上傳在 submit 時做
+    set('imageUrl', result.assets[0].uri);
+    // 把挑選的 URI 存起來，等 submit 時一起上傳
+    set('imageUrl', `__pending__:${result.assets[0].uri}`);
   };
 
   const handleRemoveImage = () => {
@@ -244,9 +253,33 @@ function VehicleFormModal({
     if (!form.plateNumber.trim()) { setError(t('error.required')); return; }
     setLoading(true);
     setError('');
+
     try {
-      // 確保 notes 被正確保存（即使是空字串）
-      const formData = { ...form, notes: form.notes || '' };
+      let finalImageUrl = form.imageUrl;
+
+      // 如果有挑選新圖片（以 __pending__: 開頭），就上傳到 Supabase
+      if (form.imageUrl && form.imageUrl.startsWith('__pending__:')) {
+        const pendingUri = form.imageUrl.replace('__pending__:', '');
+        console.log('[Fleet Pro] 開始上傳圖片，URI:', pendingUri.substring(0, 80));
+        const tempId = `temp_${Date.now()}`;
+        try {
+          finalImageUrl = await uploadVehicleImage(pendingUri, tempId);
+          console.log('[Fleet Pro] ✅ 圖片上傳成功，URL:', finalImageUrl);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          Alert.alert(
+            t('common.error'),
+            `圖片上傳失敗：${msg}\n車輛資料仍會儲存（無圖片）`,
+          );
+          console.error('[Fleet Pro] ❌ 圖片上傳失敗:', err);
+          finalImageUrl = '';
+        }
+      } else {
+        console.log('[Fleet Pro] 無新圖片，維持現有 URL:', form.imageUrl || '(空)');
+      }
+
+      const formData = { ...form, imageUrl: finalImageUrl };
+
       if (vehicle) {
         await updateVehicle(vehicle.id, formData);
         Alert.alert(t('common.success'), t('vehicles.saved'));
@@ -298,6 +331,10 @@ function VehicleFormModal({
     })),
   ];
 
+  const displayImageUrl = form.imageUrl.startsWith('__pending__:')
+    ? form.imageUrl.replace('__pending__:', '')
+    : form.imageUrl;
+
   return (
     <Modal visible={visible} transparent animationType="slide">
       <KeyboardAvoidingView
@@ -320,9 +357,9 @@ function VehicleFormModal({
             {/* 車輛圖片 - 移到最頂 */}
             <View style={[styles.formField, { paddingHorizontal: spacing.lg, marginTop: spacing.lg }]}>
               <Text style={[styles.formLabel, labelStyle]}>{t('vehicles.vehicleImage')}</Text>
-              {form.imageUrl ? (
+              {displayImageUrl ? (
                 <View style={styles.imagePreviewWrap}>
-                  <Image source={{ uri: form.imageUrl }} style={styles.formImagePreview} resizeMode="cover" />
+                  <Image source={{ uri: displayImageUrl }} style={styles.formImagePreview} resizeMode="cover" />
                   <View style={styles.imageActions}>
                     <Pressable style={[styles.imageActionBtn, { backgroundColor: colors.primary }]} onPress={handlePickImage}>
                       <Text style={styles.imageActionText}>{t('vehicles.changeImage')}</Text>
@@ -478,10 +515,13 @@ function VehicleFormModal({
 
             <View style={styles.formField}>
               <Text style={[styles.formLabel, labelStyle]}>{t('vehicles.notes')}</Text>
-              <ReactQuill
+              <TextInput
                 value={form.notes}
-                onChange={(html) => set('notes', html)}
+                onChangeText={(text) => set('notes', text)}
                 placeholder={t('vehicles.notesPlaceholder')}
+                multiline
+                numberOfLines={4}
+                inputStyle={styles.notesInput}
               />
             </View>
 
@@ -824,5 +864,10 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     padding: spacing.lg,
     borderTopWidth: 1,
+  },
+  notesInput: {
+    minHeight: 100,
+    textAlignVertical: 'top',
+    paddingTop: spacing.md,
   },
 });

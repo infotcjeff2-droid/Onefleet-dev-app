@@ -9,12 +9,19 @@ export interface Driver {
   vehiclePlate?: string;
   status: 'available' | 'busy' | 'offline';
   avatar?: string;
-  /** 綁定的車輛 ID */
   assignedVehicleId?: string;
 }
 
 const DRIVER_STORAGE_KEY = 'managed_drivers';
 const USER_STORAGE_KEY = 'managed_users';
+
+/** 硬編碼預設資料，僅從未初始化 storage 時使用 */
+const defaultDrivers: Driver[] = [
+  { id: 'd001', name: '陳大文', phone: '+852 6123 4567', email: 'chan.daiman@example.com', vehiclePlate: 'CA 1234', status: 'available', assignedVehicleId: 'v001' },
+  { id: 'd002', name: '王小明', phone: '+852 9876 5432', email: 'wong.sioming@example.com', vehiclePlate: 'XX 5678', status: 'busy', assignedVehicleId: 'v002' },
+  { id: 'd003', name: '張志偉', phone: '+852 5555 1234', email: 'cheung.chiwai@example.com', vehiclePlate: 'EV 0001', status: 'available', assignedVehicleId: 'v003' },
+  { id: 'd004', name: '李國強', phone: '+852 6888 9999', email: 'li.kwokeung@example.com', vehiclePlate: 'TH 8899', status: 'available', assignedVehicleId: 'v008' },
+];
 
 interface StoredDriver {
   id: string;
@@ -36,13 +43,6 @@ interface StoredUser {
   avatar?: string;
 }
 
-const defaultDrivers: Driver[] = [
-  { id: 'd001', name: '陳大文', phone: '+852 6123 4567', email: 'chan.daiman@example.com', vehiclePlate: 'CA 1234', status: 'available', assignedVehicleId: 'v001' },
-  { id: 'd002', name: '王小明', phone: '+852 9876 5432', email: 'wong.sioming@example.com', vehiclePlate: 'XX 5678', status: 'busy', assignedVehicleId: 'v002' },
-  { id: 'd003', name: '張志偉', phone: '+852 5555 1234', email: 'cheung.chiwai@example.com', vehiclePlate: 'EV 0001', status: 'available', assignedVehicleId: 'v003' },
-  { id: 'd004', name: '李國強', phone: '+852 6888 9999', email: 'li.kwokeung@example.com', vehiclePlate: 'TH 8899', status: 'available', assignedVehicleId: 'v008' },
-];
-
 interface DriverState {
   drivers: Driver[];
   loadDrivers: () => Promise<void>;
@@ -50,7 +50,6 @@ interface DriverState {
   updateDriver: (id: string, updates: Partial<Driver>) => Promise<void>;
   deleteDriver: (id: string) => Promise<void>;
   getDriverById: (id: string) => Driver | undefined;
-  /** 獲取綁定到指定司機的車輛 */
   getVehiclesByDriverId: (driverId: string, vehicles: { id: string; assignedDriverId?: string; plateNumber: string }[]) => { id: string; plateNumber: string }[];
 }
 
@@ -64,23 +63,14 @@ export const useDriverStore = create<DriverState>((set, get) => ({
         storage.getItem(USER_STORAGE_KEY),
       ]);
 
-      let merged: Driver[] = [...defaultDrivers];
+      // Migration: 過濾掉殘留的啞資料（defaultDrivers 的 ID），以 storage 為準
+      const defaultDriverIds = new Set(['d001', 'd002', 'd003', 'd004']);
+      const filtered = (storedDrivers ? JSON.parse(storedDrivers) : []).filter(
+        (d: Driver) => !defaultDriverIds.has(d.id)
+      );
 
-      if (storedDrivers) {
-        const parsedDrivers: StoredDriver[] = JSON.parse(storedDrivers);
-        merged = parsedDrivers.map((driver) => {
-          if (driver.email === undefined || driver.email === '') {
-            const hasAt = driver.phone && driver.phone.includes('@');
-            return {
-              ...driver,
-              email: hasAt ? driver.phone : '',
-              phone: hasAt ? '' : (driver.phone ?? ''),
-            };
-          }
-          return driver;
-        });
-      }
-
+      // 從 managed_users 同步 driver 角色（已新增但尚未出現在 managed_drivers 的）
+      let merged: Driver[] = [...filtered];
       if (storedUsers) {
         const parsedUsers: StoredUser[] = JSON.parse(storedUsers);
         const userDrivers: Driver[] = parsedUsers
@@ -102,16 +92,23 @@ export const useDriverStore = create<DriverState>((set, get) => ({
         }
       }
 
-        const seen = new Set<string>();
-        const deduped: Driver[] = [];
-        for (const d of merged) {
-          if (!seen.has(d.id)) {
-            seen.add(d.id);
-            deduped.push(d);
-          }
+      // 若 storage 完全是空的，初始化 defaultDrivers（首次使用才需要）
+      if (!storedDrivers && !storedUsers) {
+        merged = [...defaultDrivers];
+      }
+
+      // 去重
+      const seen = new Set<string>();
+      const deduped: Driver[] = [];
+      for (const d of merged) {
+        if (!seen.has(d.id)) {
+          seen.add(d.id);
+          deduped.push(d);
         }
-        set({ drivers: deduped });
-        await storage.setItem(DRIVER_STORAGE_KEY, JSON.stringify(deduped));
+      }
+
+      set({ drivers: deduped });
+      await storage.setItem(DRIVER_STORAGE_KEY, JSON.stringify(deduped));
     } catch {
       set({ drivers: defaultDrivers });
     }
@@ -142,6 +139,7 @@ export const useDriverStore = create<DriverState>((set, get) => ({
     await storage.setItem(DRIVER_STORAGE_KEY, JSON.stringify(updated));
   },
 
+  /** 刪除司機：從 drivers 陣列移除並寫入 storage（下次 load 不會回來） */
   deleteDriver: async (id) => {
     const updated = get().drivers.filter((driver) => driver.id !== id);
     set({ drivers: updated });

@@ -36,7 +36,7 @@ const flatCache: Record<Locale, Flattened> = {
 
 interface I18nContextValue {
   locale: Locale;
-  t: (key: string) => string;
+  t: (key: string, params?: Record<string, string | number>) => string;
   setLocale: (locale: Locale) => Promise<void>;
   isInitialized: boolean;
 }
@@ -79,8 +79,14 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const t = useCallback(
-    (key: string): string => {
-      return flatCache[locale][key] ?? key;
+    (key: string, params?: Record<string, string | number>): string => {
+      let text = flatCache[locale][key] ?? key;
+      if (params) {
+        Object.entries(params).forEach(([paramKey, value]) => {
+          text = text.replace(new RegExp(`\\{${paramKey}\\}`, 'g'), String(value));
+        });
+      }
+      return text;
     },
     [locale]
   );

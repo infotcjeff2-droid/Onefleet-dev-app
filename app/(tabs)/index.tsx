@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet, ScrollView, Image, Pressable } from 'react-native';
+import { useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
@@ -22,10 +23,7 @@ import {
   ChevronRight,
   Building2,
   Shield,
-  ArrowUpRight,
   Users,
-  FileClock,
-  CalendarRange,
 } from 'lucide-react-native';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -56,7 +54,7 @@ function HeroBanner({ t, total, active, maintenance, inactive }: {
             <Text style={styles.heroSubGreeting}>{t('dashboard.title')}</Text>
           </View>
           <View style={styles.heroBadge}>
-            <Badge label="Live" variant="active" dot size="sm" />
+            <Badge label={t('dashboard.live')} variant="active" dot size="sm" />
           </View>
         </View>
 
@@ -288,11 +286,11 @@ function DriverDeliveryCard({
         </View>
       </View>
 
-      <View style={styles.driverDeliveryFooter}>
-        <View style={styles.driverDeliveryChip}>
-          <Package size={14} color={colors.textSecondary} />
-          <Text style={styles.driverDeliveryChipText}>{order.cargoWeight} kg</Text>
-        </View>
+          <View style={styles.driverDeliveryFooter}>
+            <View style={styles.driverDeliveryChip}>
+              <Package size={14} color={colors.textSecondary} />
+              <Text style={styles.driverDeliveryChipText}>{order.cargoWeight} {t('dashboard.kg')}</Text>
+            </View>
         <View style={styles.driverDeliveryChip}>
           <Truck size={14} color={colors.textSecondary} />
           <Text style={styles.driverDeliveryChipText}>{order.cargoDescription}</Text>
@@ -377,7 +375,7 @@ function DriverDashboard({
           <DriverStatCard
             icon={<Package size={18} color={colors.accentSecondary} />}
             label={t('dashboard.driverCargo')}
-            value={`${totalWeight} kg`}
+            value={`${totalWeight} ${t('dashboard.kg')}`}
             accentColor={colors.accentSecondary}
             accentBg="#FFF8E8"
           />
@@ -496,65 +494,62 @@ function CompanyAdminDashboard({
   vehicles: Vehicle[];
   deliveries: DeliveryOrder[];
 }) {
+  const inTransitOrders = deliveries.filter((delivery) => delivery.status === 'in_transit');
+  const pendingOrders = deliveries.filter((delivery) => delivery.status === 'pending');
+  const signedOrders = deliveries.filter((delivery) => delivery.status === 'signed');
   const activeVehicles = vehicles.filter((vehicle) => vehicle.status === 'active');
   const maintenanceVehicles = vehicles.filter((vehicle) => vehicle.status === 'maintenance');
   const inactiveVehicles = vehicles.filter((vehicle) => vehicle.status === 'inactive');
-  const pendingOrders = deliveries.filter((delivery) => delivery.status === 'pending');
-  const activeOrders = deliveries.filter((delivery) => delivery.status === 'assigned' || delivery.status === 'in_transit' || delivery.status === 'delivered');
-  const signedOrders = deliveries.filter((delivery) => delivery.status === 'signed');
-  const urgentVehicles = vehicles
-    .map((vehicle) => ({
-      vehicle,
-      daysLeft: vehicle.insuranceExpiry
-        ? Math.ceil((new Date(vehicle.insuranceExpiry).getTime() - Date.now()) / 86400000)
-        : 999,
-    }))
-    .filter((item) => item.daysLeft <= 45)
-    .sort((a, b) => a.daysLeft - b.daysLeft)
-    .slice(0, 3);
-
-  const topMileageVehicles = [...vehicles]
-    .sort((a, b) => b.mileage - a.mileage)
-    .slice(0, 3);
 
   const totalMileage = vehicles.reduce((sum, vehicle) => sum + vehicle.mileage, 0);
   const averageMileage = vehicles.length ? Math.round(totalMileage / vehicles.length) : 0;
-  const roleLabel = role === 'admin' ? 'Admin Control Center' : 'Company Operations';
+  const roleLabel = role === 'admin' ? t('dashboard.adminControlCenter') : t('dashboard.companyOperations');
+
+  const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'week' | 'month'>('today');
+
+  const getDeliveryStats = (days: number) => {
+    const now = new Date();
+    const startOfPeriod = new Date(now);
+    startOfPeriod.setDate(startOfPeriod.getDate() - days);
+    startOfPeriod.setHours(0, 0, 0, 0);
+
+    const periodDeliveries = deliveries.filter((d) => {
+      const createdAt = new Date(d.createdAt || Date.now());
+      return createdAt >= startOfPeriod;
+    });
+
+    const dispatched = periodDeliveries.filter(
+      (d) => d.status === 'assigned' || d.status === 'in_transit' || d.status === 'delivered'
+    ).length;
+    const completed = periodDeliveries.filter((d) => d.status === 'signed').length;
+
+    return { dispatched, completed };
+  };
+
+  const todayStats = getDeliveryStats(1);
+  const weekStats = getDeliveryStats(7);
+  const monthStats = getDeliveryStats(30);
+
+  const currentStats = selectedPeriod === 'today' ? todayStats
+    : selectedPeriod === 'week' ? weekStats
+    : monthStats;
 
   const overviewMetrics: OverviewMetric[] = [
     {
       key: 'fleet',
-      label: 'Fleet Assets',
+      label: t('dashboard.fleet'),
       value: String(vehicles.length),
-      caption: `${activeVehicles.length} active vehicles`,
+      caption: t('dashboard.activeVehiclesCount', { count: activeVehicles.length }),
       icon: <Car size={18} color={colors.primary} />,
       accent: colors.primary,
       bg: '#E8FFF6',
     },
     {
-      key: 'jobs',
-      label: 'Active Orders',
-      value: String(activeOrders.length),
-      caption: `${pendingOrders.length} waiting dispatch`,
-      icon: <Route size={18} color={colors.secondary} />,
-      accent: colors.secondary,
-      bg: '#EEF5FF',
-    },
-    {
-      key: 'team',
-      label: 'Drivers Online',
-      value: String(new Set(deliveries.filter((delivery) => delivery.assignedDriverId).map((delivery) => delivery.assignedDriverId)).size),
-      caption: `${signedOrders.length} orders completed`,
-      icon: <Users size={18} color={colors.accentSecondary} />,
-      accent: colors.accentSecondary,
-      bg: '#FFF8E8',
-    },
-    {
-      key: 'mileage',
-      label: 'Avg. Mileage',
-      value: averageMileage.toLocaleString(),
-      caption: `${totalMileage.toLocaleString()} km total`,
-      icon: <Gauge size={18} color={colors.accent} />,
+      key: 'inTransit',
+      label: t('dashboard.inTransitOrders'),
+      value: String(inTransitOrders.length),
+      caption: t('dashboard.inTransitDesc'),
+      icon: <Route size={18} color={colors.accent} />,
       accent: colors.accent,
       bg: '#FFF1EA',
     },
@@ -563,7 +558,7 @@ function CompanyAdminDashboard({
   const healthMetrics: FleetHealthMetric[] = [
     {
       key: 'active',
-      label: 'Active',
+      label: t('dashboard.active'),
       value: activeVehicles.length,
       color: colors.primary,
       bg: '#E8FFF6',
@@ -571,7 +566,7 @@ function CompanyAdminDashboard({
     },
     {
       key: 'maintenance',
-      label: 'Maintenance',
+      label: t('dashboard.maintenance'),
       value: maintenanceVehicles.length,
       color: colors.warning,
       bg: '#FFF8E8',
@@ -579,7 +574,7 @@ function CompanyAdminDashboard({
     },
     {
       key: 'inactive',
-      label: 'Inactive',
+      label: t('dashboard.inactive'),
       value: inactiveVehicles.length,
       color: colors.textSecondary,
       bg: '#F2F4F8',
@@ -612,46 +607,13 @@ function CompanyAdminDashboard({
             <View style={styles.adminHeroTopRow}>
               <View style={styles.adminHeroTitleBlock}>
                 <Text style={styles.adminHeroEyebrow}>{roleLabel}</Text>
-                <Text style={styles.adminHeroTitle}>Welcome back, {userName}</Text>
-                <Text style={styles.adminHeroSubtitle}>Monitor fleet health, dispatch flow, and expiring documents in one place.</Text>
+                <Text style={styles.adminHeroTitle}>{t('dashboard.welcomeBack', { name: userName })}</Text>
+                <Text style={styles.adminHeroSubtitle}>{t('dashboard.monitorFleetDesc')}</Text>
               </View>
               <View style={styles.adminHeroBadgeWrap}>
                 <View style={styles.adminHeroBadge}>
                   {role === 'admin' ? <Shield size={15} color="#0D1325" /> : <Building2 size={15} color="#0D1325" />}
-                  <Text style={styles.adminHeroBadgeText}>{role === 'admin' ? 'Administrator' : 'Company'}</Text>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.adminHeroOverviewRow}>
-              <View style={styles.adminHeroKpiCard}>
-                <Text style={styles.adminHeroKpiValue}>{vehicles.length}</Text>
-                <Text style={styles.adminHeroKpiLabel}>Fleet Units</Text>
-              </View>
-              <View style={styles.adminHeroKpiCard}>
-                <Text style={styles.adminHeroKpiValue}>{activeOrders.length}</Text>
-                <Text style={styles.adminHeroKpiLabel}>Orders In Motion</Text>
-              </View>
-              <View style={styles.adminHeroKpiCard}>
-                <Text style={styles.adminHeroKpiValue}>{urgentVehicles.length}</Text>
-                <Text style={styles.adminHeroKpiLabel}>Needs Attention</Text>
-              </View>
-            </View>
-
-            <View style={styles.adminHeroFloatingCard}>
-              <View style={styles.adminHeroFloatingHeader}>
-                <Text style={styles.adminHeroFloatingTitle}>Dispatch Snapshot</Text>
-                <ArrowUpRight size={16} color="#7EE6B8" />
-              </View>
-              <View style={styles.adminHeroFloatingStats}>
-                <View>
-                  <Text style={styles.adminHeroFloatingValue}>{pendingOrders.length}</Text>
-                  <Text style={styles.adminHeroFloatingLabel}>Pending</Text>
-                </View>
-                <View style={styles.adminHeroFloatingDivider} />
-                <View>
-                  <Text style={styles.adminHeroFloatingValue}>{signedOrders.length}</Text>
-                  <Text style={styles.adminHeroFloatingLabel}>Delivered</Text>
+                  <Text style={styles.adminHeroBadgeText}>{role === 'admin' ? t('dashboard.administrator') : t('dashboard.company')}</Text>
                 </View>
               </View>
             </View>
@@ -664,72 +626,53 @@ function CompanyAdminDashboard({
           ))}
         </Animated.View>
 
+        <Animated.View entering={FadeInUp.delay(150).springify()} style={styles.adminSection}>
+          <View style={styles.adminSectionHeader}>
+            <Text style={styles.adminSectionTitle}>{t('dashboard.deliveryOverview')}</Text>
+          </View>
+          <Card style={styles.deliveryOverviewCard}>
+            <View style={styles.deliveryOverviewTabs}>
+              <Pressable
+                style={[styles.deliveryOverviewTab, selectedPeriod === 'today' && styles.deliveryOverviewTabActive]}
+                onPress={() => setSelectedPeriod('today')}
+              >
+                <Text style={[styles.deliveryOverviewTabText, selectedPeriod === 'today' && styles.deliveryOverviewTabTextActive]}>{t('dashboard.today')}</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.deliveryOverviewTab, selectedPeriod === 'week' && styles.deliveryOverviewTabActive]}
+                onPress={() => setSelectedPeriod('week')}
+              >
+                <Text style={[styles.deliveryOverviewTabText, selectedPeriod === 'week' && styles.deliveryOverviewTabTextActive]}>{t('dashboard.last7Days')}</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.deliveryOverviewTab, selectedPeriod === 'month' && styles.deliveryOverviewTabActive]}
+                onPress={() => setSelectedPeriod('month')}
+              >
+                <Text style={[styles.deliveryOverviewTabText, selectedPeriod === 'month' && styles.deliveryOverviewTabTextActive]}>{t('dashboard.last30Days')}</Text>
+              </Pressable>
+            </View>
+            <View style={styles.deliveryOverviewContent}>
+              <View style={styles.deliveryOverviewStatBlock}>
+                <Text style={styles.deliveryOverviewStatValue}>{currentStats.dispatched}</Text>
+                <Text style={styles.deliveryOverviewStatLabel}>{t('dashboard.dispatched')}</Text>
+              </View>
+              <View style={styles.deliveryOverviewDivider} />
+              <View style={styles.deliveryOverviewStatBlock}>
+                <Text style={[styles.deliveryOverviewStatValue, { color: colors.primary }]}>{currentStats.completed}</Text>
+                <Text style={styles.deliveryOverviewStatLabel}>{t('dashboard.completed')}</Text>
+              </View>
+            </View>
+          </Card>
+        </Animated.View>
+
         <Animated.View entering={FadeInUp.delay(180).springify()} style={styles.adminSection}>
           <View style={styles.adminSectionHeader}>
-            <Text style={styles.adminSectionTitle}>Fleet Health</Text>
-            <Text style={styles.adminSectionHint}>Live operational split</Text>
+            <Text style={styles.adminSectionTitle}>{t('dashboard.fleetHealth')}</Text>
+            <Text style={styles.adminSectionHint}>{t('dashboard.liveOperationalSplit')}</Text>
           </View>
           <Card style={styles.adminHealthCard}>
             {healthMetrics.map((item) => (
               <FleetHealthCard key={item.key} item={item} total={vehicles.length} />
-            ))}
-          </Card>
-        </Animated.View>
-
-        <Animated.View entering={FadeInUp.delay(240).springify()} style={styles.adminTwoColumnRow}>
-          <Card style={[styles.adminPanelCard, styles.adminPanelSpacing]}>
-            <View style={styles.adminPanelHeader}>
-              <Text style={styles.adminPanelTitle}>Document Alerts</Text>
-              <View style={styles.adminPanelTag}>
-                <FileClock size={14} color={colors.warning} />
-                <Text style={styles.adminPanelTagText}>45 days</Text>
-              </View>
-            </View>
-            {urgentVehicles.length === 0 ? (
-              <View style={styles.adminEmptyState}>
-                <Text style={styles.adminEmptyTitle}>All documents are healthy</Text>
-                <Text style={styles.adminEmptyText}>No insurance expiry requiring action right now.</Text>
-              </View>
-            ) : (
-              urgentVehicles.map(({ vehicle, daysLeft }) => (
-                <View key={vehicle.id} style={styles.adminListRow}>
-                  <View style={styles.adminListLead}>
-                    <View style={[styles.adminMiniBadge, { backgroundColor: daysLeft < 0 ? '#FFE8EA' : '#FFF8E8' }]}>
-                      <CalendarRange size={14} color={daysLeft < 0 ? colors.danger : colors.warning} />
-                    </View>
-                    <View>
-                      <Text style={styles.adminListTitle}>{vehicle.make} {vehicle.model}</Text>
-                      <Text style={styles.adminListSubtitle}>{vehicle.plateNumber}</Text>
-                    </View>
-                  </View>
-                  <Badge
-                    label={daysLeft < 0 ? `${Math.abs(daysLeft)} days overdue` : `${daysLeft} days left`}
-                    variant={daysLeft < 0 ? 'danger' : 'warning'}
-                    size="sm"
-                  />
-                </View>
-              ))
-            )}
-          </Card>
-
-          <Card style={[styles.adminPanelCard, styles.adminPanelSpacing]}>
-            <View style={styles.adminPanelHeader}>
-              <Text style={styles.adminPanelTitle}>Top Mileage Vehicles</Text>
-              <Text style={styles.adminPanelMuted}>Highest utilization</Text>
-            </View>
-            {topMileageVehicles.map((vehicle, index) => (
-              <View key={vehicle.id} style={styles.adminListRow}>
-                <View style={styles.adminListLead}>
-                  <View style={styles.adminRankCircle}>
-                    <Text style={styles.adminRankText}>{index + 1}</Text>
-                  </View>
-                  <View>
-                    <Text style={styles.adminListTitle}>{vehicle.make} {vehicle.model}</Text>
-                    <Text style={styles.adminListSubtitle}>{vehicle.plateNumber}</Text>
-                  </View>
-                </View>
-                <Text style={styles.adminMileageText}>{vehicle.mileage.toLocaleString()} km</Text>
-              </View>
             ))}
           </Card>
         </Animated.View>
@@ -1168,6 +1111,62 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: borderRadius.full,
   },
+
+  deliveryOverviewCard: {
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    borderRadius: 24,
+  },
+  deliveryOverviewTabs: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    padding: 4,
+    marginBottom: spacing.lg,
+  },
+  deliveryOverviewTab: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    borderRadius: borderRadius.sm,
+  },
+  deliveryOverviewTabActive: {
+    backgroundColor: '#FFFFFF',
+  },
+  deliveryOverviewTabText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  deliveryOverviewTabTextActive: {
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  deliveryOverviewContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deliveryOverviewStatBlock: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  deliveryOverviewStatValue: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: colors.accent,
+  },
+  deliveryOverviewStatLabel: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 4,
+  },
+  deliveryOverviewDivider: {
+    width: 1,
+    height: 50,
+    backgroundColor: colors.border,
+  },
+
   adminTwoColumnRow: {
     gap: spacing.md,
     paddingBottom: 20,

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { TextInput as RNTextInput, View, Text, StyleSheet, Pressable, ViewStyle } from 'react-native';
+import { TextInput as RNTextInput, View, Text, StyleSheet, Pressable, ViewStyle, TextStyle } from 'react-native';
 import { Eye, EyeOff } from 'lucide-react-native';
 import { colors, borderRadius, spacing, typography } from '@/constants/theme';
 
@@ -19,6 +19,7 @@ interface TextInputProps {
   numberOfLines?: number;
   icon?: React.ReactNode;
   maxLength?: number;
+  inputStyle?: TextStyle;
   style?: ViewStyle;
 }
 
@@ -38,6 +39,7 @@ export function TextInput({
   numberOfLines = 1,
   icon,
   maxLength,
+  inputStyle,
 }: TextInputProps) {
   const [isFocused, setIsFocused] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -58,6 +60,7 @@ export function TextInput({
             styles.input,
             icon ? styles.inputWithIcon : null,
             multiline ? { height: numberOfLines * 24 + spacing.lg * 2, textAlignVertical: 'top' } : null,
+            inputStyle,
           ]}
           placeholder={placeholder}
           placeholderTextColor={colors.textTertiary}

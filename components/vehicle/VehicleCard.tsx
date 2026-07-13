@@ -12,11 +12,16 @@ interface VehicleCardProps {
   index?: number;
 }
 
-function formatMileage(miles: number): string {
+function formatMileage(miles: number, t: (key: string) => string): string {
   if (miles >= 1000) {
-    return `${(miles / 1000).toFixed(1)}k`;
+    return `${(miles / 1000).toFixed(1)}k ${t('vehicles.mileageUnit')}`;
   }
-  return miles.toString();
+  return `${miles} ${t('vehicles.mileageUnit')}`;
+}
+
+function getFuelTypeTranslation(fuelType: string, t: (key: string) => string): string {
+  const fuelKey = `vehicles.fuel${fuelType.charAt(0).toUpperCase() + fuelType.slice(1)}`;
+  return t(fuelKey);
 }
 
 export function VehicleCard({ vehicle, onPress, index = 0 }: VehicleCardProps) {
@@ -63,13 +68,13 @@ export function VehicleCard({ vehicle, onPress, index = 0 }: VehicleCardProps) {
           <View style={styles.stats}>
             <View style={styles.stat}>
               <Gauge size={14} color={colors.textSecondary} />
-              <Text style={styles.statText}>{formatMileage(vehicle.mileage)} mi</Text>
+              <Text style={styles.statText}>{formatMileage(vehicle.mileage, t)}</Text>
             </View>
             <View style={styles.statDot} />
             <View style={styles.stat}>
               <Fuel size={14} color={colors.textSecondary} />
               <Text style={styles.statText}>
-                {vehicle.fuelType.charAt(0).toUpperCase() + vehicle.fuelType.slice(1)}
+                {getFuelTypeTranslation(vehicle.fuelType, t)}
               </Text>
             </View>
             <View style={styles.statDot} />

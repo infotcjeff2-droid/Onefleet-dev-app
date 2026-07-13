@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Pressable, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Alert, Platform } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MapPin, Navigation, Gauge, Clock, RefreshCw, WifiOff, ExternalLink, AlertCircle, Maximize2, Minimize2 } from 'lucide-react-native';
 import { Card } from '@/components/ui/Card';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useGps808Store } from '@/store/gps808Store';
-import { useAuthStore } from '@/store/authStore';
 import { gps808Api } from '@/utils/gps808Api';
 import { storage } from '@/utils/storage';
 import { colors, borderRadius, spacing, typography } from '@/constants/theme';
@@ -23,6 +23,7 @@ interface GpsLiveTrackerProps {
   devIdno: string;
   plateNumber?: string;
   onStatusUpdate?: (status: { isOnline: boolean; hasGps: boolean; speed: number; address?: string }) => void;
+  bare?: boolean;
 }
 
 interface GpsData {
@@ -280,15 +281,10 @@ function buildMapHtml(opts: {
 </html>`;
 }
 
-export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate }: GpsLiveTrackerProps) {
+export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate, bare = false }: GpsLiveTrackerProps) {
   const { locale, t } = useTranslation();
   const { isConnected } = useGps808Store();
-  const role = useAuthStore((state) => state.role);
-  const isAdmin = role === 'admin';
   const [gpsData, setGpsData] = useState<GpsData | null>(null);
-  const [rawResponse, setRawResponse] = useState<string | null>(null);
-  const [coordSource, setCoordSource] = useState<string>('none');
-  const [listDeviceRaw, setListDeviceRaw] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
@@ -328,7 +324,6 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate }: GpsLive
 
       // Try getDeviceStatus first
       const res = await gps808Api.getDeviceStatus(devIdno);
-      setRawResponse(JSON.stringify(res, null, 2));
 
       let lat = 0;
       let lng = 0;
@@ -336,7 +331,6 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate }: GpsLive
       let direction = 0;
       let gpsTime = Date.now();
       let onlineStatus = 0;
-      let coordSource = 'none';
       let gpsDataAddress = '';
 
       // Try to parse from getDeviceStatus response
@@ -355,7 +349,6 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate }: GpsLive
           // Values > 180 are in 1e6 format
           lat = Math.abs(rawLat) > 180 ? rawLat / 1_000_000 : rawLat;
           lng = Math.abs(rawLng) > 180 ? rawLng / 1_000_000 : rawLng;
-          coordSource = 'status[lng/lat]';
         }
         
         // Try status.mlat/mlng (string format: "22.565703" = 22.565703)
@@ -367,11 +360,9 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate }: GpsLive
           if (rawMlat !== 0 && rawMlng !== 0) {
             lat = Math.abs(rawMlat) > 180 ? rawMlat / 1_000_000 : rawMlat;
             lng = Math.abs(rawMlng) > 180 ? rawMlng / 1_000_000 : rawMlng;
-            coordSource = 'status[mlat/mlng]';
           } else if (rawMlat !== 0 && rawLang !== 0) {
             lat = Math.abs(rawMlat) > 180 ? rawMlat / 1_000_000 : rawMlat;
             lng = Math.abs(rawLang) > 180 ? rawLang / 1_000_000 : rawLang;
-            coordSource = 'status[mlat/lang]';
           }
         }
         
@@ -425,7 +416,6 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate }: GpsLive
             // Convert from 1e6 format to decimal (if value is too large)
             lat = Math.abs(rawLat) > 180 ? rawLat / 1e6 : rawLat;
             lng = Math.abs(rawLng) > 180 ? rawLng / 1e6 : rawLng;
-            if (lat !== 0 && lng !== 0) coordSource = 'queryVehicleList';
             
             speed = parseSpeed(device.speed);
             direction = parseCoord(device.direction);
@@ -458,7 +448,6 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate }: GpsLive
             
             lat = Math.abs(rawLat) > 180 ? rawLat / 1e6 : rawLat;
             lng = Math.abs(rawLng) > 180 ? rawLng / 1e6 : rawLng;
-            if (lat !== 0 && lng !== 0) coordSource = 'findVehicleInfoByDeviceId';
             
             speed = parseSpeed(device.speed);
             direction = parseCoord(device.direction);
@@ -478,11 +467,7 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate }: GpsLive
         }
       }
 
-      console.log('[GpsLiveTracker] Final coords:', lat, lng, 'source:', coordSource);
-      console.log('[GpsLiveTracker] queryVehicleList device:', listRawResponse);
-
-      setCoordSource(coordSource);
-      setListDeviceRaw(listRawResponse);
+      console.log('[GpsLiveTracker] Final coords:', lat, lng);
 
       setGpsData({
         lat,
@@ -522,11 +507,11 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate }: GpsLive
   }, [isConnected, hasValidGps, gpsData]);
 
   if (!isConnected) {
-    return (
-      <Card style={{ padding: spacing.lg }}>
+    const unavailableBody = (
+      <>
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <MapPin size={16} color={colors.textSecondary} />
+            <MapPin size={20} color={colors.textSecondary} />
             <Text style={styles.label}>{t('vehicles.liveTracking')}</Text>
           </View>
           <View style={[styles.statusDot, { backgroundColor: '#F59E0B' }]} />
@@ -534,16 +519,18 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate }: GpsLive
         <Text style={styles.unavailableText}>
           {t('vehicles.connectToEnableTracking')}
         </Text>
-      </Card>
+      </>
     );
+    if (bare) return <View>{unavailableBody}</View>;
+    return <Card style={{ padding: spacing.lg }}>{unavailableBody}</Card>;
   }
 
   if (!devIdno) {
-    return (
-      <Card style={{ padding: spacing.lg }}>
+    const noDeviceBody = (
+      <>
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <MapPin size={16} color={colors.textSecondary} />
+            <MapPin size={20} color={colors.textSecondary} />
             <Text style={styles.label}>{t('vehicles.liveTracking')}</Text>
           </View>
         </View>
@@ -557,15 +544,17 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate }: GpsLive
           <ExternalLink size={12} color={colors.primary} />
           <Text style={styles.setupLinkText}>{t('vehicles.setupGpsDevice')}</Text>
         </Pressable>
-      </Card>
+      </>
     );
+    if (bare) return <View>{noDeviceBody}</View>;
+    return <Card style={{ padding: spacing.lg }}>{noDeviceBody}</Card>;
   }
 
-  return (
-    <Card style={{ padding: spacing.lg }}>
+  const mainBody = (
+    <>
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <MapPin size={16} color={colors.textSecondary} />
+          <MapPin size={20} color={colors.textSecondary} />
           <Text style={styles.label}>{t('vehicles.liveTracking')}</Text>
         </View>
         <View style={styles.headerRight}>
@@ -579,7 +568,7 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate }: GpsLive
 
       {isLoading && !gpsData && (
         <View style={styles.loadingRow}>
-          <ActivityIndicator size="small" color={colors.primary} />
+          <LoadingSpinner size={24} />
           <Text style={styles.loadingText}>{t('vehicles.fetchingGps')}</Text>
         </View>
       )}
@@ -682,7 +671,7 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate }: GpsLive
                 startInLoadingState
                 renderLoading={() => (
                   <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E5E7EB' }}>
-                    <ActivityIndicator size="small" color="#3B82F6" />
+                    <LoadingSpinner size={24} />
                     <Text style={{ marginTop: 8, fontSize: 12, color: '#6B7280' }}>Loading map…</Text>
                   </View>
                 )}
@@ -692,121 +681,11 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate }: GpsLive
         </View>
       </View>
 
-      <Pressable
-        style={styles.mapLink}
-        onPress={() => {
-          if (hasValidGps) {
-            Alert.alert(
-              t('vehicles.openInMaps'),
-              `${gpsData.lat.toFixed(6)}, ${gpsData.lng.toFixed(6)}\n\nhttps://www.google.com/maps?q=${gpsData.lat},${gpsData.lng}`,
-            );
-          } else {
-            Alert.alert(t('vehicles.noLocationData'), t('vehicles.fetchingGps'));
-          }
-        }}
-      >
-        <ExternalLink size={12} color={colors.primary} />
-        <Text style={styles.mapLinkText}>
-          {hasValidGps ? t('vehicles.viewOnGoogleMaps') : t('vehicles.noLocationData')}
-        </Text>
-      </Pressable>
-
-      {/* Debug info - only visible for admin role */}
-      {rawResponse && isAdmin && (
-        <View style={debugStyles.debugContainer}>
-          <View style={debugStyles.debugHeader}>
-            <Text style={debugStyles.debugLabel}>API Debug Info</Text>
-            <Pressable
-              style={debugStyles.testApiBtn}
-              onPress={async () => {
-                try {
-                  const baseUrl = await (async () => {
-                    const stored = await storage.getItem('gps808_server_url');
-                    if (stored) return stored;
-                    if (!IS_WEB) return 'https://console.onefleet.hk';
-                    // For Web debugging, check if proxy is running
-                    const proxyUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL;
-                    if (proxyUrl && (proxyUrl.includes('/api/gps') || proxyUrl.includes('localhost'))) {
-                      return proxyUrl;
-                    }
-                    return 'http://localhost:3001/api/gps';
-                  })();
-                  const jsession = await storage.getItem('gps808_jsession');
-                  const url = `${baseUrl}/StandardApiAction_getDeviceStatus.action?devIdno=${devIdno}&toMap=1`;
-                  const response = await fetch(url, {
-                    headers: jsession ? { Cookie: `JSESSIONID=${jsession}` } : {},
-                  });
-                  const text = await response.text();
-                  Alert.alert('Raw API Response', text.slice(0, 1500));
-                } catch (e) {
-                  Alert.alert('Error', String(e));
-                }
-              }}
-            >
-              <Text style={debugStyles.testApiBtnText}>Test API</Text>
-            </Pressable>
-          </View>
-          {(() => {
-            try {
-              const parsed = JSON.parse(rawResponse);
-              const hasValidCoords = gpsData && gpsData.lat !== 0;
-              const status = parsed.status || {};
-              return (
-                <View>
-                  <Text style={debugStyles.debugField}>
-                    result: <Text style={parsed.result === 0 ? debugStyles.debugValueOk : debugStyles.debugValueError}>{parsed.result}</Text>
-                  </Text>
-                  <Text style={debugStyles.debugField}>
-                    raw lat: <Text style={debugStyles.debugValueMono}>"{String(status.lat ?? 'null')}"</Text>
-                  </Text>
-                  <Text style={debugStyles.debugField}>
-                    raw lng: <Text style={debugStyles.debugValueMono}>"{String(status.lng ?? 'null')}"</Text>
-                  </Text>
-                  <Text style={debugStyles.debugField}>
-                    raw mlat: <Text style={debugStyles.debugValueMono}>"{String(status.mlat ?? 'null')}"</Text>
-                  </Text>
-                  <Text style={debugStyles.debugField}>
-                    raw mlng: <Text style={debugStyles.debugValueMono}>"{String(status.mlng ?? 'null')}"</Text>
-                  </Text>
-                  <Text style={debugStyles.debugField}>
-                    parsed lat: <Text style={hasValidCoords ? debugStyles.debugValueOk : debugStyles.debugValueError}>{gpsData?.lat?.toFixed(6) ?? 'N/A'}</Text>
-                  </Text>
-                  <Text style={debugStyles.debugField}>
-                    parsed lng: <Text style={hasValidCoords ? debugStyles.debugValueOk : debugStyles.debugValueError}>{gpsData?.lng?.toFixed(6) ?? 'N/A'}</Text>
-                  </Text>
-                  <Text style={debugStyles.debugField}>
-                    speed: <Text style={debugStyles.debugValueMono}>{status.sp ?? '--'}</Text>
-                  </Text>
-                  <Text style={debugStyles.debugField}>
-                    online: <Text style={(status.ol as number) === 1 ? debugStyles.debugValueOk : debugStyles.debugValueError}>{status.ol ?? '--'}</Text>
-                  </Text>
-                  <Text style={debugStyles.debugField}>
-                    time: <Text style={debugStyles.debugValueMono}>{status.gt ?? '--'}</Text>
-                  </Text>
-                  <Text style={debugStyles.debugField}>
-                    address: <Text style={debugStyles.debugValueMono}>{status.ps ? extractChineseAddress(String(status.ps)) : '--'}</Text>
-                  </Text>
-                  <Text style={debugStyles.debugField}>
-                    source: <Text style={hasValidCoords ? debugStyles.debugValueOk : debugStyles.debugValueError}>{coordSource}</Text>
-                  </Text>
-                  {listDeviceRaw && (
-                    <>
-                      <Text style={[debugStyles.debugField, { marginTop: 4, color: '#FBBF24' }]}>
-                        queryVehicleList device:
-                      </Text>
-                      <Text style={debugStyles.debugText}>{listDeviceRaw.slice(0, 400)}</Text>
-                    </>
-                  )}
-                </View>
-              );
-            } catch {
-              return <Text style={debugStyles.debugText}>{rawResponse.slice(0, 300)}</Text>;
-            }
-          })()}
-        </View>
-      )}
-    </Card>
+    </>
   );
+
+  if (bare) return <View>{mainBody}</View>;
+  return <Card style={{ padding: spacing.lg }}>{mainBody}</Card>;
 }
 
 const styles = StyleSheet.create({
@@ -816,14 +695,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: spacing.md,
   },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   label: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    fontSize: typography.fontSize.base,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    letterSpacing: 0.3,
   },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
   statusText: { fontSize: typography.fontSize.xs, color: colors.textTertiary, fontWeight: '600' },
@@ -900,59 +778,3 @@ const styles = StyleSheet.create({
   },
 });
 
-const debugStyles = StyleSheet.create({
-  debugContainer: {
-    marginTop: spacing.md,
-    padding: spacing.sm,
-    backgroundColor: '#0F172A',
-    borderRadius: borderRadius.sm,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  debugHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.xs,
-  },
-  debugLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#22C55E',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  testApiBtn: {
-    backgroundColor: '#3B82F6',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: 4,
-  },
-  testApiBtnText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  debugField: {
-    fontFamily: 'monospace',
-    fontSize: 11,
-    color: '#94A3B8',
-    marginBottom: 2,
-  },
-  debugValueMono: {
-    color: '#FBBF24',
-  },
-  debugValueOk: {
-    color: '#22C55E',
-    fontWeight: '700',
-  },
-  debugValueError: {
-    color: '#EF4444',
-    fontWeight: '700',
-  },
-  debugText: {
-    fontFamily: 'monospace',
-    fontSize: 10,
-    color: '#94A3B8',
-  },
-});
