@@ -185,7 +185,12 @@ export interface Gps808ApiResponse<T> {
 }
 
 function extractJsession(headers: Headers): string | undefined {
-  // Headers may be a Headers object or a plain object on web.
+  // Browser fetch cannot read Set-Cookie on cross-origin responses, so the
+  // Vercel serverless proxy and the localhost proxy both surface the session
+  // as `x-session-value` / embedded in JSON. Try both forms.
+  const sessionValue = headers.get('x-session-value');
+  if (sessionValue) return sessionValue;
+  // Legacy path (non-web / response.headers.raw still works):
   let raw = '';
   if (typeof (headers as any).getSetCookie === 'function') {
     raw = (headers as any).getSetCookie().join('; ');

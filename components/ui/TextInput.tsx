@@ -1,5 +1,14 @@
 import { useState } from 'react';
-import { TextInput as RNTextInput, View, Text, StyleSheet, Pressable, ViewStyle, TextStyle } from 'react-native';
+import {
+  TextInput as RNTextInput,
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  ViewStyle,
+  TextStyle,
+  Platform,
+} from 'react-native';
 import { Eye, EyeOff } from 'lucide-react-native';
 import { colors, borderRadius, spacing, typography } from '@/constants/theme';
 
@@ -32,6 +41,22 @@ interface TextInputProps {
   style?: ViewStyle;
 }
 
+const IS_WEB = Platform.OS === 'web';
+
+// Web 用純 CSSProperties（React DOM 會原樣設給 CSSStyleDeclaration）
+const webBaseStyle: React.CSSProperties = {
+  flex: 1,
+  height: 48,
+  paddingLeft: 16,
+  paddingRight: 16,
+  color: colors.textPrimary,
+  fontSize: typography.fontSize.base,
+  background: 'transparent',
+  border: 'none',
+  outline: 'none',
+  fontFamily: 'inherit',
+};
+
 export function TextInput({
   label,
   placeholder,
@@ -61,44 +86,126 @@ export function TextInput({
     ? colors.primary
     : colors.border;
 
+  const isPasswordMasked = secureTextEntry && !showPassword;
+
   // 密碼欄位尚未顯示時，告訴瀏覽器目前是當前密碼而不是新密碼
   const resolvedAutoComplete =
     autoComplete === 'password'
-      ? secureTextEntry && !showPassword
+      ? isPasswordMasked
         ? 'current-password'
         : 'off'
       : autoComplete;
+
+  const nativeInputStyle = [
+    styles.input,
+    icon ? styles.inputWithIcon : null,
+    multiline
+      ? { height: numberOfLines * 24 + spacing.lg * 2, textAlignVertical: 'top' as const }
+      : null,
+    inputStyle,
+  ];
+
+  // Web：react-native-web 的 TextInput 內部用白名單 pickProps() 過濾 props，
+  // `name` 並不在白名單內，導致瀏覽器的 password manager 抓不到欄位。
+  // 所以 Web 直接渲染原生 <input> / <textarea>，讓 name / autocomplete / type 全部精準生效。
+  const webInputStyle: React.CSSProperties = {
+    ...webBaseStyle,
+    ...(icon ? { paddingLeft: 8 } : null),
+    ...(typeof inputStyle === 'object' && inputStyle
+      ? (inputStyle as unknown as React.CSSProperties)
+      : null),
+    ...(multiline
+      ? {
+          height: numberOfLines * 24 + spacing.lg * 2,
+          textAlignVertical: 'top',
+          paddingTop: spacing.lg,
+        }
+      : null),
+  };
+
+  const webInputType: string = secureTextEntry
+    ? isPasswordMasked
+      ? 'password'
+      : 'text'
+    : keyboardType === 'email-address'
+    ? 'email'
+    : keyboardType === 'url'
+    ? 'url'
+    : 'text';
+
+  const webInputMode: 'text' | 'email' | 'tel' | 'url' | 'numeric' | undefined =
+    keyboardType === 'email-address'
+      ? 'email'
+      : keyboardType === 'numeric'
+      ? 'numeric'
+      : keyboardType === 'phone-pad'
+      ? 'tel'
+      : keyboardType === 'url'
+      ? 'url'
+      : undefined;
+
+  const renderWebControl = () => {
+    const sharedProps = {
+      placeholder,
+      value: value ?? '',
+      onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+        onChangeText(e.target.value),
+      onFocus: () => setIsFocused(true),
+      onBlur: () => setIsFocused(false),
+      disabled: !editable,
+      maxLength,
+      name,
+      autoComplete: resolvedAutoComplete,
+      spellCheck: false,
+      style: webInputStyle,
+      'data-testid': name ? `web-input-${name}` : undefined,
+    };
+
+    if (multiline) {
+      return (
+        <textarea
+          {...(sharedProps as React.TextareaHTMLAttributes<HTMLTextAreaElement>)}
+          rows={numberOfLines || 1}
+        />
+      );
+    }
+    return (
+      <input
+        {...(sharedProps as React.InputHTMLAttributes<HTMLInputElement>)}
+        type={webInputType}
+        inputMode={webInputMode}
+        autoCapitalize={autoCapitalize}
+      />
+    );
+  };
+
+  const renderNativeInput = () => (
+    <RNTextInput
+      style={nativeInputStyle}
+      placeholder={placeholder}
+      placeholderTextColor={colors.textTertiary}
+      value={value}
+      onChangeText={onChangeText}
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => setIsFocused(false)}
+      secureTextEntry={secureTextEntry && !showPassword}
+      keyboardType={keyboardType}
+      autoCapitalize={autoCapitalize}
+      autoComplete={resolvedAutoComplete as any}
+      textContentType={textContentType as any}
+      editable={editable}
+      multiline={multiline}
+      numberOfLines={numberOfLines}
+      maxLength={maxLength}
+    />
+  );
 
   return (
     <View style={styles.container}>
       {label && <Text style={styles.label}>{label}</Text>}
       <View style={[styles.inputWrapper, { borderColor }]}>
         {icon && <View style={styles.iconLeft}>{icon}</View>}
-        <RNTextInput
-          style={[
-            styles.input,
-            icon ? styles.inputWithIcon : null,
-            multiline ? { height: numberOfLines * 24 + spacing.lg * 2, textAlignVertical: 'top' } : null,
-            inputStyle,
-          ]}
-          placeholder={placeholder}
-          placeholderTextColor={colors.textTertiary}
-          value={value}
-          onChangeText={onChangeText}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
-          secureTextEntry={secureTextEntry && !showPassword}
-          keyboardType={keyboardType}
-          autoCapitalize={autoCapitalize}
-          autoComplete={resolvedAutoComplete as any}
-          textContentType={textContentType as any}
-          // @ts-expect-error - Web 專用屬性（react-native-web 會轉成 name="..."）
-          name={name}
-          editable={editable}
-          multiline={multiline}
-          numberOfLines={numberOfLines}
-          maxLength={maxLength}
-        />
+        {IS_WEB ? renderWebControl() : renderNativeInput()}
         {secureTextEntry && (
           <Pressable
             onPress={() => setShowPassword(!showPassword)}

@@ -1,13 +1,14 @@
-import { View, Text, StyleSheet, ScrollView, Alert, Pressable, TextInput, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert, Pressable, Image } from 'react-native';
 import { Header } from '@/components/ui/Header';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { TextInput } from '@/components/ui/TextInput';
 import { useThemeStore } from '@/store/themeStore';
 import { useGps808Store } from '@/store/gps808Store';
 import { useGoogleMapsStore } from '@/store/googleMapsStore';
 import { useTranslation } from '@/i18n';
 import { spacing, typography } from '@/constants/theme';
-import { Cpu, Database, Wifi, Bell, Shield, FileText, Link2, ChevronRight, CheckCircle, XCircle, Globe, Activity, Map } from 'lucide-react-native';
+import { Cpu, Database, Wifi, Bell, Shield, FileText, Link2, ChevronRight, CheckCircle, XCircle, Activity, Map } from 'lucide-react-native';
 import { useState, useEffect } from 'react';
 
 function ConfigItem({
@@ -169,9 +170,7 @@ function Gps808Panel() {
               {t('config.gps808ServerUrl')}
             </Text>
             <View style={[styles.fieldInput, { backgroundColor: colors.background, borderColor: colors.border }]}>
-              <Globe size={14} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
               <TextInput
-                style={[styles.fieldInputText, { color: colors.textPrimary }]}
                 value={localConfig.serverUrl}
                 onChangeText={(text) => setLocalConfig({ ...localConfig, serverUrl: text })}
                 placeholder="https://console.onefleet.hk"
@@ -181,6 +180,8 @@ function Gps808Panel() {
                 autoCorrect={false}
                 autoComplete="url"
                 name="url"
+                inputStyle={styles.fieldInputText}
+                style={{ marginBottom: 0 }}
               />
             </View>
           </View>
@@ -191,7 +192,6 @@ function Gps808Panel() {
             </Text>
             <View style={[styles.fieldInput, { backgroundColor: colors.background, borderColor: colors.border }]}>
               <TextInput
-                style={[styles.fieldInputText, { color: colors.textPrimary }]}
                 value={localConfig.account}
                 onChangeText={(text) => setLocalConfig({ ...localConfig, account: text })}
                 placeholder={t('config.gps808AccountPlaceholder')}
@@ -201,6 +201,8 @@ function Gps808Panel() {
                 autoComplete="username"
                 textContentType="username"
                 name="username"
+                inputStyle={styles.fieldInputText}
+                style={{ marginBottom: 0 }}
               />
             </View>
           </View>
@@ -211,7 +213,6 @@ function Gps808Panel() {
             </Text>
             <View style={[styles.fieldInput, { backgroundColor: colors.background, borderColor: colors.border }]}>
               <TextInput
-                style={[styles.fieldInputText, { color: colors.textPrimary }]}
                 value={localConfig.password}
                 onChangeText={(text) => setLocalConfig({ ...localConfig, password: text })}
                 placeholder={t('config.gps808PasswordPlaceholder')}
@@ -222,6 +223,8 @@ function Gps808Panel() {
                 autoComplete="password"
                 textContentType="password"
                 name="password"
+                inputStyle={styles.fieldInputText}
+                style={{ marginBottom: 0 }}
               />
             </View>
           </View>
