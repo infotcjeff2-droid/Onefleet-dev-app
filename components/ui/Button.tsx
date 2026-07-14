@@ -63,9 +63,15 @@ export function Button({
   const v = variantStyles[variant];
   const s = sizeStyles[size];
 
+  const handlePress = () => {
+    if (!disabled && !loading && onPress) {
+      onPress();
+    }
+  };
+
   return (
     <Pressable
-      onPress={onPress}
+      onPress={handlePress}
       disabled={disabled || loading}
       style={({ pressed }) => [
         styles.base,
@@ -81,25 +87,18 @@ export function Button({
         style,
       ]}
     >
-      {({ pressed }) => (
-        <View style={styles.inner}>
-          {loading ? (
-            <ActivityIndicator size="small" color={v.text} />
-          ) : (
-            <>
-              {icon && <View style={styles.icon}>{icon}</View>}
-              <Text
-                style={[
-                  styles.text,
-                  { color: v.text, fontSize: s.fontSize },
-                ]}
-              >
-                {title}
-              </Text>
-            </>
-          )}
-        </View>
-      )}
+      <View style={styles.inner}>
+        {loading ? (
+          <ActivityIndicator size="small" color={v.text} />
+        ) : (
+          <>
+            {icon && <View style={styles.icon}>{icon}</View>}
+            <Text style={[styles.text, { color: v.text, fontSize: s.fontSize }]}>
+              {title}
+            </Text>
+          </>
+        )}
+      </View>
     </Pressable>
   );
 }

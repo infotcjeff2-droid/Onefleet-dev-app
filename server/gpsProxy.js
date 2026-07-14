@@ -270,13 +270,15 @@ async function handleRequest(req, res) {
 // 創建 HTTP 服務器
 const server = http.createServer(handleRequest);
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
+  const localIP = '192.168.1.55'; // 請根據你的實際網絡配置調整
   console.log(`
 ╔══════════════════════════════════════════════════════════╗
 ║                                                          ║
 ║   GPS Proxy Server 已啟動 (增強版)                       ║
 ║                                                          ║
-║   監聽端口: http://localhost:${PORT}                       ║
+║   本地監聽: http://localhost:${PORT}                       ║
+║   網路監聽: http://${localIP}:${PORT}                      ║
 ║   代理目標: https://${GPS_SERVER}                         ║
 ║                                                          ║
 ║   功能:                                                  ║
@@ -287,7 +289,7 @@ server.listen(PORT, () => {
 ║                                                          ║
 ║   使用方式:                                              ║
 ║   將請求發送到 http://localhost:${PORT}/api/gps/...        ║
-║   例如: http://localhost:${PORT}/api/gps/Login/login.action ║
+║   或 http://${localIP}:${PORT}/api/gps/...                ║
 ║                                                          ║
 ╚══════════════════════════════════════════════════════════╝
   `);

@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Image,
+  RefreshControl,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';

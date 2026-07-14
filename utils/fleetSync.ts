@@ -1,4 +1,4 @@
-import { Vehicle, User, DeliveryOrder } from '@/types';
+﻿import { Vehicle, User, DeliveryOrder } from '@/types';
 import { supabase } from './supabase';
 
 export const SYNC_FLEET_ID = 'fleetpro-demo';
