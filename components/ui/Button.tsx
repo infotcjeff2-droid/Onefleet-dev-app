@@ -73,6 +73,7 @@ export function Button({
     <Pressable
       onPress={handlePress}
       disabled={disabled || loading}
+      delayLongPress={200}
       style={({ pressed }) => [
         styles.base,
         {
@@ -82,7 +83,6 @@ export function Button({
           paddingHorizontal: s.paddingH,
           opacity: disabled ? 0.5 : 1,
           width: fullWidth ? '100%' : undefined,
-          transform: [{ scale: pressed ? 0.96 : 1 }],
         },
         style,
       ]}
@@ -109,6 +109,8 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     justifyContent: 'center',
     alignItems: 'center',
+    // 移除 transform scale，避免移動瀏覽器觸摸問題
+    // 使用 boxShadow 作為按壓回饋
   },
   inner: {
     flexDirection: 'row',

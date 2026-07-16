@@ -211,23 +211,6 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
     if (!validateStep(step)) return;
     setIsSubmitting(true);
     try {
-      let finalImageUrl = form.imageUrl;
-
-      if (form.imageUrl && form.imageUrl.startsWith('__pending__:')) {
-        const pendingUri = form.imageUrl.replace('__pending__:', '');
-        const tempId = `temp_${Date.now()}`;
-        try {
-          finalImageUrl = await uploadVehicleImage(pendingUri, tempId);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : '未知錯誤';
-          Alert.alert(
-            t('common.error'),
-            `圖片上傳失敗：${msg}\n車輛資料仍會儲存（無圖片）`,
-          );
-          finalImageUrl = '';
-        }
-      }
-
       const vehicleData = {
         make: form.make,
         model: form.model,
@@ -245,14 +228,46 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
         insuranceExpiry: form.insuranceExpiry || '',
         registrationExpiry: form.registrationExpiry || '',
         notes: form.notes || '',
-        imageUrl: finalImageUrl,
+        imageUrl: '',
         assignedDriverId: form.assignedDriverId || undefined,
       };
 
+      let finalImageUrl = '';
+
       if (isEditMode && editId) {
-        await updateVehicle(editId, vehicleData);
+        // 編輯模式：先上傳圖片（如果有的話），然後更新
+        if (form.imageUrl && form.imageUrl.startsWith('__pending__:')) {
+          const pendingUri = form.imageUrl.replace('__pending__:', '');
+          try {
+            finalImageUrl = await uploadVehicleImage(pendingUri, editId);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : '未知錯誤';
+            Alert.alert(
+              t('common.error'),
+              `圖片上傳失敗：${msg}\n車輛資料仍會儲存（無圖片）`,
+            );
+          }
+        } else if (form.imageUrl) {
+          finalImageUrl = form.imageUrl;
+        }
+        await updateVehicle(editId, { ...vehicleData, imageUrl: finalImageUrl });
       } else {
-        await addVehicle(vehicleData);
+        // 新增模式：先創建車輛取得 ID，用 ID 上傳圖片，再更新車輛
+        const newVehicle = await addVehicle(vehicleData);
+
+        if (form.imageUrl && form.imageUrl.startsWith('__pending__:')) {
+          const pendingUri = form.imageUrl.replace('__pending__:', '');
+          try {
+            finalImageUrl = await uploadVehicleImage(pendingUri, newVehicle.id);
+            await updateVehicle(newVehicle.id, { imageUrl: finalImageUrl });
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : '未知錯誤';
+            Alert.alert(
+              t('common.error'),
+              `圖片上傳失敗：${msg}\n車輛資料已儲存（無圖片）`,
+            );
+          }
+        }
       }
       router.canGoBack() ? router.back() : router.replace('/(tabs)');
     } catch {

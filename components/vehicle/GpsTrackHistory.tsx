@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, Pressable, Platform, ScrollView, Modal, TouchableOpacity } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { Calendar, Clock, MapPin, Navigation, X, RotateCcw } from 'lucide-react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Calendar, Clock, MapPin, Navigation, X, RotateCcw, ChevronDown, ChevronRight } from 'lucide-react-native';
 import { Card } from '@/components/ui/Card';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useGps808Store } from '@/store/gps808Store';
@@ -10,6 +11,13 @@ import { colors, borderRadius, spacing, typography } from '@/constants/theme';
 import { useTranslation } from '@/i18n';
 
 type QuickRange = '24h' | '7d' | 'custom';
+
+interface DailyRoute {
+  date: string;
+  points: TrackPoint[];
+  distance: number;
+  duration: string;
+}
 
 const IS_WEB = Platform.OS === 'web';
 
@@ -26,6 +34,35 @@ interface TrackPoint {
   direction: number;
   gpsTime: number;
   address?: string;
+  /** Park time in seconds (from API pt field) */
+  parkTime?: number;
+}
+
+/** Calculate distance between two points in km using Haversine formula */
+function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371; // Earth's radius in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+/** Calculate total distance from an array of track points */
+function calculateTotalDistance(points: TrackPoint[]): number {
+  let total = 0;
+  for (let i = 1; i < points.length; i++) {
+    total += calculateDistance(
+      points[i - 1].lat,
+      points[i - 1].lng,
+      points[i].lat,
+      points[i].lng
+    );
+  }
+  return total;
 }
 
 function parseCoord(val: unknown): number {
@@ -38,6 +75,25 @@ function parseCoord(val: unknown): number {
     return isNaN(num) ? 0 : num;
   }
   return 0;
+}
+
+/** GPS API response info item */
+interface Gps808InfoItem {
+  id?: string;
+  devIdno?: string;
+  gt?: string;
+  lat?: number | string;
+  lng?: number | string;
+  sp?: number | string;
+  hx?: number | string;
+  lc?: number | string;
+  mlng?: string;
+  mlat?: string;
+  address?: string;
+  vid?: string;
+  /** Park time in seconds */
+  pt?: number | string;
+  [key: string]: unknown;
 }
 
 function parseTrackPoint(raw: Gps808TrackPoint): TrackPoint | null {
@@ -57,9 +113,20 @@ function parseTrackPoint(raw: Gps808TrackPoint): TrackPoint | null {
   let gpsTime = Date.now();
   const gt = raw.gpsTime;
   if (typeof gt === 'number') {
-    gpsTime = gt > 1e12 ? gt : gt * 1000;
+    // 808 GPS API 返回毫秒或秒，根據數值大小判斷
+    if (gt > 1e12) {
+      // 毫秒級時間戳
+      gpsTime = gt;
+    } else if (gt > 1e9) {
+      // 秒級時間戳，轉為毫秒
+      gpsTime = gt * 1000;
+    } else {
+      // 其他數值，預設為當前時間
+      gpsTime = Date.now();
+    }
   } else if (typeof gt === 'string') {
-    gpsTime = new Date(gt).getTime();
+    const parsed = new Date(gt).getTime();
+    gpsTime = isNaN(parsed) ? Date.now() : parsed;
   }
 
   return {
@@ -72,8 +139,57 @@ function parseTrackPoint(raw: Gps808TrackPoint): TrackPoint | null {
   };
 }
 
+/** Parse GPS info item from API response (uses 'infos' array) */
+function parseGpsInfoItem(raw: Gps808InfoItem): TrackPoint | null {
+  // 優先使用字串格式的座標 (mlat, mlng)
+  let lat = 0;
+  let lng = 0;
+  
+  if (raw.mlat && raw.mlng) {
+    lat = parseCoord(raw.mlat);
+    lng = parseCoord(raw.mlng);
+  }
+  
+  // 如果字串格式無效，嘗試使用整數格式並除以 1,000,000
+  if (lat === 0 || lng === 0) {
+    lat = parseCoord(raw.lat) / 1_000_000;
+    lng = parseCoord(raw.lng) / 1_000_000;
+  }
+
+  if (lat === 0 || lng === 0 || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+
+  const speed = parseCoord(raw.sp) / 10;
+  const direction = parseCoord(raw.hx);
+
+  // gt 格式: "2026-07-15 00:00:04"
+  let gpsTime = Date.now();
+  const gtStr = raw.gt;
+  if (typeof gtStr === 'string' && gtStr) {
+    // 替換空格為 T 來符合 ISO 格式
+    const isoStr = gtStr.replace(' ', 'T');
+    const parsed = new Date(isoStr).getTime();
+    gpsTime = isNaN(parsed) ? Date.now() : parsed;
+  }
+
+  // pt 是停泊時間（秒）
+  const parkTime = parseCoord(raw.pt);
+
+  return {
+    lat,
+    lng,
+    speed,
+    direction,
+    gpsTime,
+    address: typeof raw.address === 'string' ? raw.address : undefined,
+    parkTime: parkTime > 0 ? parkTime : undefined,
+  };
+}
+
 function formatDate(date: Date): string {
-  return date.toISOString().split('T')[0];
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function formatTime(date: Date): string {
@@ -90,7 +206,7 @@ function formatChineseAddress(str: string): string {
   return meaningful.join('、');
 }
 
-function getQuickRangeDates(range: QuickRange, customDate?: Date): { begintime: string; endtime: string } {
+function getQuickRangeDates(range: QuickRange, customDate?: Date, customStartTime?: { hour: number; minute: number }, customEndTime?: { hour: number; minute: number }): { begintime: string; endtime: string } {
   const now = new Date();
   const end = new Date(now);
   end.setSeconds(59, 999);
@@ -103,9 +219,17 @@ function getQuickRangeDates(range: QuickRange, customDate?: Date): { begintime: 
     start.setDate(start.getDate() - 7);
   } else if (range === 'custom' && customDate) {
     start = new Date(customDate);
-    start.setHours(0, 0, 0, 0);
+    if (customStartTime) {
+      start.setHours(customStartTime.hour, customStartTime.minute, 0, 0);
+    } else {
+      start.setHours(0, 0, 0, 0);
+    }
     const endCustom = new Date(customDate);
-    endCustom.setHours(23, 59, 59, 999);
+    if (customEndTime) {
+      endCustom.setHours(customEndTime.hour, customEndTime.minute, 59, 999);
+    } else {
+      endCustom.setHours(23, 59, 59, 999);
+    }
     return {
       begintime: `${formatDate(start)} ${formatTime(start)}`,
       endtime: `${formatDate(endCustom)} ${formatTime(endCustom)}`,
@@ -343,9 +467,12 @@ function extractChineseAddress(str: string): string {
   if (!str) return '';
   const cleaned = str.replace(/\s+/g, ' ').replace(/\s*,\s*/g, ',').replace(/\s*-\s*/g, '-');
   const chineseChunks = cleaned.match(/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]+/g);
-  if (!chineseChunks || chineseChunks.length === 0) return '';
+  if (!chineseChunks || chineseChunks.length === 0) {
+    // 沒有中文，返回原始地址
+    return cleaned;
+  }
   const meaningful = chineseChunks.filter((chunk) => chunk.length >= 2);
-  if (meaningful.length === 0) return chineseChunks.join(' ');
+  if (meaningful.length === 0) return cleaned;
   return meaningful.join('、');
 }
 
@@ -366,15 +493,189 @@ export function GpsTrackHistory({ devIdno, plateNumber, bare = false }: GpsTrack
   const [totalDuration, setTotalDuration] = useState<string>('');
   const webViewRef = useRef<WebView>(null);
 
-  const fetchTrackHistory = useCallback(async () => {
+  // Time range state for custom date selection
+  const [startHour, setStartHour] = useState(0);
+  const [startMinute, setStartMinute] = useState(0);
+  const [endHour, setEndHour] = useState(23);
+  const [endMinute, setEndMinute] = useState(59);
+
+  // 7-day route data
+  const [dailyRoutes, setDailyRoutes] = useState<DailyRoute[]>([]);
+  const [selectedDayIndex, setSelectedDayIndex] = useState<number>(0);
+  const [isLoading7Days, setIsLoading7Days] = useState(false);
+  const [is7DaysDataReady, setIs7DaysDataReady] = useState(false);
+
+  // Full day start/end points (for showing actual device on/off times)
+  const [dayStartPoint, setDayStartPoint] = useState<TrackPoint | null>(null);
+  const [dayEndPoint, setDayEndPoint] = useState<TrackPoint | null>(null);
+
+  // Filtered time range points (for map display in custom/24h modes)
+  const [filteredStartPoint, setFilteredStartPoint] = useState<TrackPoint | null>(null);
+  const [filteredEndPoint, setFilteredEndPoint] = useState<TrackPoint | null>(null);
+
+  // For 24h/custom: show time range picker after selecting date/day
+  const [showTimeRangePicker, setShowTimeRangePicker] = useState(false);
+  // For 7d: selected day for time range
+  const [selectedDayTimeRange, setSelectedDayTimeRange] = useState<{ start: number; end: number }>({ start: 0, end: 23 });
+  // Expanded parking location index
+  const [expandedParkIndex, setExpandedParkIndex] = useState<number | null>(null);
+
+  const fetchTrackHistory = useCallback(async (forceRange?: QuickRange, forceDate?: Date, forceStartTime?: { hour: number; minute: number }, forceEndTime?: { hour: number; minute: number }) => {
     if (!devIdno) return;
     if (!isConnected) return;
+
+    const range = forceRange ?? selectedRange;
+    const date = forceDate ?? customDate;
+
+    // If 7-day mode, fetch all 7 days data in parallel (simplified - just show routes)
+    if (range === '7d') {
+      setIsLoading7Days(true);
+      try {
+        // Create promises for all 7 days
+        const dayPromises: Promise<DailyRoute>[] = [];
+        for (let i = 6; i >= 0; i--) {
+          const dayDate = new Date();
+          dayDate.setDate(dayDate.getDate() - i);
+          const { begintime, endtime } = getQuickRangeDates('custom', dayDate);
+          const dateStr = formatDate(dayDate);
+
+          dayPromises.push(
+            gps808Api.getTrackHistory(devIdno, begintime, endtime, {
+              distance: 0,
+              parkTime: 0,
+              currentPage: 1,
+              pageRecords: 500,
+              toMap: 1,
+            }).then((response) => {
+              const infos = (response as unknown as { infos?: Gps808InfoItem[] }).infos;
+              const parsedPoints: TrackPoint[] = [];
+              
+              if (response.result === 0 && infos) {
+                for (const raw of infos) {
+                  const point = parseGpsInfoItem(raw);
+                  if (point) {
+                    parsedPoints.push(point);
+                  }
+                }
+              }
+
+              // Calculate distance from parsed points
+              const dayDistance = calculateTotalDistance(parsedPoints);
+              
+              let dayDuration = '';
+              if (parsedPoints.length >= 2) {
+                const first = parsedPoints[0].gpsTime;
+                const last = parsedPoints[parsedPoints.length - 1].gpsTime;
+                const durationMs = last - first;
+                const hours = Math.floor(durationMs / (1000 * 60 * 60));
+                const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
+                dayDuration = `${hours}h ${minutes}m`;
+              }
+
+              return {
+                date: dateStr,
+                points: parsedPoints,
+                distance: dayDistance,
+                duration: dayDuration,
+              };
+            }).catch(() => ({
+              date: dateStr,
+              points: [] as TrackPoint[],
+              distance: 0,
+              duration: '',
+            }))
+          );
+        }
+
+        // Wait for all requests to complete
+        const routes = await Promise.all(dayPromises);
+        setDailyRoutes(routes);
+        setSelectedDayIndex(0);
+        setIs7DaysDataReady(true);
+        
+        // Only set first day's points if available (simplified - don't process all days)
+        const firstDay = routes[0];
+        if (firstDay.points.length > 0) {
+          setDayStartPoint(firstDay.points[0]);
+          setDayEndPoint(firstDay.points[firstDay.points.length - 1]);
+          setTrackPoints(firstDay.points);
+          setTotalDistance(firstDay.distance);
+          setTotalDuration(firstDay.duration);
+          setFilteredStartPoint(firstDay.points[0]);
+          setFilteredEndPoint(firstDay.points[firstDay.points.length - 1]);
+          // Auto show time range picker for first day
+          setSelectedDayTimeRange({ start: 0, end: 23 });
+          setShowTimeRangePicker(true);
+        } else {
+          setDayStartPoint(null);
+          setDayEndPoint(null);
+          setTrackPoints([]);
+          setTotalDistance(0);
+          setTotalDuration('');
+          setFilteredStartPoint(null);
+          setFilteredEndPoint(null);
+        }
+      } finally {
+        setIsLoading7Days(false);
+      }
+      return;
+    }
+
+    // Reset 7d ready flag when not in 7d mode
+    setIs7DaysDataReady(false);
 
     setIsLoading(true);
     setError(null);
 
     try {
-      const { begintime, endtime } = getQuickRangeDates(selectedRange, customDate);
+      // Fetch full day data first to get device on/off times (S/E)
+      const fullDayStart = new Date(date);
+      fullDayStart.setHours(0, 0, 0, 0);
+      const fullDayEnd = new Date(date);
+      fullDayEnd.setHours(23, 59, 59, 999);
+      const fullDayStartStr = `${formatDate(fullDayStart)} ${formatTime(fullDayStart)}`;
+      const fullDayEndStr = `${formatDate(fullDayEnd)} ${formatTime(fullDayEnd)}`;
+
+      const fullDayResponse = await gps808Api.getTrackHistory(devIdno, fullDayStartStr, fullDayEndStr, {
+        distance: 0,
+        parkTime: 0,
+        currentPage: 1,
+        pageRecords: 500,
+        toMap: 1,
+      });
+
+      let fullDayStartPoint: TrackPoint | null = null;
+      let fullDayEndPoint: TrackPoint | null = null;
+
+      // API 使用 'infos' 陣列而非 'tracks'
+      const infos = (fullDayResponse as unknown as { infos?: Gps808InfoItem[] }).infos;
+
+      if (fullDayResponse.result === 0 && infos && infos.length > 0) {
+        console.log('[GPS] Full day infos count:', infos.length);
+        
+        // 第一筆是最早的，最後一筆是最晚的
+        const firstRaw = infos[0];
+        const lastRaw = infos[infos.length - 1];
+        console.log('[GPS] First info raw:', JSON.stringify(firstRaw));
+        console.log('[GPS] Last info raw:', JSON.stringify(lastRaw));
+        
+        const firstPoint = parseGpsInfoItem(firstRaw);
+        const lastPoint = parseGpsInfoItem(lastRaw);
+        console.log('[GPS] First point parsed:', JSON.stringify(firstPoint));
+        console.log('[GPS] Last point parsed:', JSON.stringify(lastPoint));
+        
+        if (firstPoint) {
+          fullDayStartPoint = firstPoint;
+        }
+        if (lastPoint) {
+          fullDayEndPoint = lastPoint;
+        }
+      }
+      setDayStartPoint(fullDayStartPoint);
+      setDayEndPoint(fullDayEndPoint);
+
+      // Now fetch the requested time range (for map display)
+      const { begintime, endtime } = getQuickRangeDates(range, date, forceStartTime, forceEndTime);
 
       const response = await gps808Api.getTrackHistory(devIdno, begintime, endtime, {
         distance: 0,
@@ -384,21 +685,33 @@ export function GpsTrackHistory({ devIdno, plateNumber, bare = false }: GpsTrack
         toMap: 1,
       });
 
-      if (response.result === 0 && response.tracks) {
+      // API 使用 'infos' 陣列
+      const responseInfos = (response as unknown as { infos?: Gps808InfoItem[] }).infos;
+
+      if (response.result === 0 && responseInfos) {
         const parsedPoints: TrackPoint[] = [];
-        for (const raw of response.tracks) {
-          const point = parseTrackPoint(raw);
+        for (const raw of responseInfos) {
+          const point = parseGpsInfoItem(raw);
           if (point) {
-            point.address = raw.address;
             parsedPoints.push(point);
           }
         }
 
+        // Calculate distance from parsed points using Haversine formula
+        const dayDistance = calculateTotalDistance(parsedPoints);
         setTrackPoints(parsedPoints);
+        setDailyRoutes([]);
 
-        if (response.distance) {
-          setTotalDistance(parseFloat(String(response.distance)));
+        // Set filtered start/end points (for recent locations list)
+        if (parsedPoints.length > 0) {
+          setFilteredStartPoint(parsedPoints[0]);
+          setFilteredEndPoint(parsedPoints[parsedPoints.length - 1]);
+        } else {
+          setFilteredStartPoint(null);
+          setFilteredEndPoint(null);
         }
+
+        setTotalDistance(dayDistance);
 
         if (parsedPoints.length >= 2) {
           const first = parsedPoints[0].gpsTime;
@@ -407,14 +720,22 @@ export function GpsTrackHistory({ devIdno, plateNumber, bare = false }: GpsTrack
           const hours = Math.floor(durationMs / (1000 * 60 * 60));
           const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
           setTotalDuration(`${hours}h ${minutes}m`);
+        } else {
+          setTotalDuration('');
         }
       } else {
         setTrackPoints([]);
+        setDailyRoutes([]);
+        setFilteredStartPoint(null);
+        setFilteredEndPoint(null);
         setError(response.error || t('vehicles.noTrackData'));
       }
     } catch (err) {
       setError(String(err));
       setTrackPoints([]);
+      setDailyRoutes([]);
+      setFilteredStartPoint(null);
+      setFilteredEndPoint(null);
     } finally {
       setIsLoading(false);
     }
@@ -438,12 +759,81 @@ export function GpsTrackHistory({ devIdno, plateNumber, bare = false }: GpsTrack
     if (range !== 'custom') {
       setShowDatePicker(false);
     }
+    if (range !== '7d') {
+      setShowTimeRangePicker(false);
+    }
   };
 
   const handleDateSelect = (date: Date) => {
     setCustomDate(date);
     setSelectedRange('custom');
     setShowDatePicker(false);
+    setShowTimeRangePicker(true);
+  };
+
+  const handleTimeRangeApply = () => {
+    setShowTimeRangePicker(false);
+    fetchTrackHistory('custom', customDate, { hour: startHour, minute: startMinute }, { hour: endHour, minute: endMinute });
+  };
+
+  const handleDaySelect = (index: number) => {
+    setSelectedDayIndex(index);
+    const route = dailyRoutes[index];
+    if (route) {
+      // Set all points for this day to display on map
+      setTrackPoints(route.points);
+      // Set S/E from full day data (for display in S/E section)
+      setDayStartPoint(route.points[0] || null);
+      setDayEndPoint(route.points[route.points.length - 1] || null);
+      // Set filtered points (same as full day initially)
+      setFilteredStartPoint(route.points[0] || null);
+      setFilteredEndPoint(route.points[route.points.length - 1] || null);
+      setTotalDistance(route.distance);
+      setTotalDuration(route.duration);
+      // Show time range picker for this day
+      setSelectedDayTimeRange({ start: 0, end: 23 });
+      setShowTimeRangePicker(true);
+    }
+  };
+
+  // When 7-day mode is active, ensure time picker shows
+  useEffect(() => {
+    if (selectedRange === '7d' && is7DaysDataReady && !showTimeRangePicker) {
+      setSelectedDayTimeRange({ start: 0, end: 23 });
+      setShowTimeRangePicker(true);
+    }
+  }, [selectedRange, is7DaysDataReady]);
+
+  const handle7DayTimeRangeApply = (closePicker = false) => {
+    if (closePicker) {
+      setShowTimeRangePicker(false);
+    }
+    const route = dailyRoutes[selectedDayIndex];
+    if (route && route.points.length > 0) {
+      // Filter points by selected time range
+      const startHour = selectedDayTimeRange.start;
+      const endHour = selectedDayTimeRange.end;
+      const filtered = route.points.filter((p) => {
+        const hour = new Date(p.gpsTime).getHours();
+        return hour >= startHour && hour <= endHour;
+      });
+      setTrackPoints(filtered);
+      setFilteredStartPoint(filtered[0] || null);
+      setFilteredEndPoint(filtered[filtered.length - 1] || null);
+      // Recalculate distance and duration for filtered range
+      if (filtered.length >= 2) {
+        const first = filtered[0].gpsTime;
+        const last = filtered[filtered.length - 1].gpsTime;
+        const durationMs = last - first;
+        const hours = Math.floor(durationMs / (1000 * 60 * 60));
+        const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
+        setTotalDuration(`${hours}h ${minutes}m`);
+        setTotalDistance(route.distance);
+      } else {
+        setTotalDuration('');
+        setTotalDistance(0);
+      }
+    }
   };
 
   const handleViewInMaps = () => {
@@ -572,6 +962,41 @@ export function GpsTrackHistory({ devIdno, plateNumber, bare = false }: GpsTrack
         </Pressable>
       </Modal>
 
+      {/* 7-Day Route Selector */}
+      {selectedRange === '7d' && (
+        <>
+          {isLoading7Days ? (
+            <View style={styles.dailyRouteLoading}>
+              <LoadingSpinner size={32} />
+              <Text style={styles.dailyRouteLoadingText}>{t('common.loading')}...</Text>
+            </View>
+          ) : is7DaysDataReady && dailyRoutes.length > 0 ? (
+            <View style={styles.dailyRouteContainer}>
+              <Text style={styles.dailyRouteTitle}>{t('vehicles.dailyRoute')}</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {dailyRoutes.map((route, index) => (
+                  <Pressable
+                    key={route.date}
+                    style={[styles.dailyRouteItem, selectedDayIndex === index && styles.dailyRouteItemActive]}
+                    onPress={() => handleDaySelect(index)}
+                  >
+                    <Text style={[styles.dailyRouteDate, selectedDayIndex === index && styles.dailyRouteDateActive]}>
+                      {route.date.slice(5)}
+                    </Text>
+                    <Text style={[styles.dailyRoutePoints, selectedDayIndex === index && styles.dailyRoutePointsActive]}>
+                      {route.points.length > 0 ? `${route.points.length} pts` : 'No data'}
+                    </Text>
+                    <Text style={[styles.dailyRouteDistance, selectedDayIndex === index && styles.dailyRouteDistanceActive]}>
+                      {route.distance > 0 ? `${route.distance.toFixed(1)}km` : ''}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+          ) : null}
+        </>
+      )}
+
       {/* Stats Row */}
       {trackPoints.length > 0 && (
         <View style={styles.statsRow}>
@@ -650,33 +1075,212 @@ export function GpsTrackHistory({ devIdno, plateNumber, bare = false }: GpsTrack
         </View>
       )}
 
-      {/* Recent Points List */}
-      {!isLoading && trackPoints.length > 0 && (
+      {/* Start and End Location Display - Full Day Device On/Off Times (always show when available) */}
+      {(dayStartPoint || dayEndPoint) && (
+        <View style={styles.locationSummaryContainer}>
+          <View style={styles.locationItem}>
+            <View style={[styles.locationIcon, styles.locationIconStart]}>
+              <Text style={styles.locationIconText}>S</Text>
+            </View>
+            <View style={styles.locationInfo}>
+              <Text style={styles.locationLabel}>{t('vehicles.deviceOnTime')}</Text>
+              <Text style={styles.locationTime}>
+                {dayStartPoint
+                  ? new Date(dayStartPoint.gpsTime).toLocaleString(locale, { month: 'short', day: 'numeric', hour12: false, hour: '2-digit', minute: '2-digit' })
+                  : '-'}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.locationDivider} />
+          <View style={styles.locationItem}>
+            <View style={[styles.locationIcon, styles.locationIconEnd]}>
+              <Text style={styles.locationIconText}>E</Text>
+            </View>
+            <View style={styles.locationInfo}>
+              <Text style={styles.locationLabel}>{t('vehicles.deviceOffTime')}</Text>
+              <Text style={styles.locationTime}>
+                {dayEndPoint
+                  ? new Date(dayEndPoint.gpsTime).toLocaleString(locale, { month: 'short', day: 'numeric', hour12: false, hour: '2-digit', minute: '2-digit' })
+                  : '-'}
+              </Text>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Inline Time Range Filter - Shows below On/Off section */}
+      {(showTimeRangePicker && (selectedRange === 'custom' || selectedRange === '7d')) && (
+        <View style={styles.timeRangePickerInline}>
+          <View style={styles.timeRangePickerHeader}>
+            <Text style={styles.timeRangePickerTitle}>
+              {selectedRange === '7d' 
+                ? `${dailyRoutes[selectedDayIndex]?.date || ''} - ${t('vehicles.selectTime')}`
+                : t('vehicles.selectTime')}
+            </Text>
+          </View>
+          
+          {/* Simple Range Bar - 24 hour slider with drag */}
+          <View style={styles.rangeBarContainer}>
+            <View style={styles.rangeBarLabels}>
+              <Text style={styles.rangeBarTime}>
+                {String(selectedRange === '7d' ? selectedDayTimeRange.start : startHour).padStart(2, '0')}:00
+              </Text>
+              <Text style={styles.rangeBarTime}>
+                {String(selectedRange === '7d' ? selectedDayTimeRange.end : endHour).padStart(2, '0')}:59
+              </Text>
+            </View>
+            <View style={styles.rangeBarTrack}>
+              <View 
+                style={[
+                  styles.rangeBarSelected,
+                  {
+                    left: `${((selectedRange === '7d' ? selectedDayTimeRange.start : startHour) / 24) * 100}%`,
+                    width: `${((selectedRange === '7d' ? selectedDayTimeRange.end : endHour) - (selectedRange === '7d' ? selectedDayTimeRange.start : startHour) + 1) / 24 * 100}%`,
+                  }
+                ]}
+              />
+              <GestureDetector gesture={Gesture.Pan().onUpdate((e) => {
+                const newHour = Math.round(Math.max(0, Math.min(23, (e.absoluteX - 40) / 280 * 24)));
+                if (selectedRange === '7d') {
+                  if (Math.abs(newHour - selectedDayTimeRange.start) < Math.abs(newHour - selectedDayTimeRange.end)) {
+                    setSelectedDayTimeRange(prev => ({ ...prev, start: newHour }));
+                  }
+                } else {
+                  if (Math.abs(newHour - startHour) < Math.abs(newHour - endHour)) {
+                    setStartHour(newHour);
+                  }
+                }
+              }).onEnd(() => {
+                if (selectedRange === '7d') {
+                  handle7DayTimeRangeApply(false);
+                } else {
+                  handleTimeRangeApply();
+                }
+              })}>
+                <View 
+                  style={[
+                    styles.rangeBarThumb,
+                    { left: `${((selectedRange === '7d' ? selectedDayTimeRange.start : startHour) / 24) * 100}%` }
+                  ]}
+                />
+              </GestureDetector>
+              <GestureDetector gesture={Gesture.Pan().onUpdate((e) => {
+                const newHour = Math.round(Math.max(0, Math.min(23, (e.absoluteX - 40) / 280 * 24)));
+                if (selectedRange === '7d') {
+                  if (Math.abs(newHour - selectedDayTimeRange.end) <= Math.abs(newHour - selectedDayTimeRange.start)) {
+                    setSelectedDayTimeRange(prev => ({ ...prev, end: newHour }));
+                  }
+                } else {
+                  if (Math.abs(newHour - endHour) >= Math.abs(newHour - startHour)) {
+                    setEndHour(newHour);
+                  }
+                }
+              }).onEnd(() => {
+                if (selectedRange === '7d') {
+                  handle7DayTimeRangeApply(false);
+                } else {
+                  handleTimeRangeApply();
+                }
+              })}>
+                <View 
+                  style={[
+                    styles.rangeBarThumb,
+                    { left: `${((selectedRange === '7d' ? selectedDayTimeRange.end : endHour) / 24) * 100}%` }
+                  ]}
+                />
+              </GestureDetector>
+            </View>
+            <View style={styles.rangeBarTicks}>
+              {[0, 6, 12, 18, 24].map(hour => (
+                <Text key={hour} style={styles.rangeBarTick}>
+                  {String(hour).padStart(2, '0')}
+                </Text>
+              ))}
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Parked Locations List - Shows locations from selected time range */}
+      {trackPoints.length > 0 && (
         <View style={styles.recentPointsContainer}>
-          <Text style={styles.recentPointsTitle}>{t('vehicles.recentLocations')}</Text>
+          <Text style={styles.recentPointsTitle}>{t('vehicles.parkedLocations')}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {trackPoints.slice(-10).reverse().map((point, index) => (
-              <View key={index} style={styles.recentPointItem}>
-                <Text style={styles.recentPointTime}>
-                  {new Date(point.gpsTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            {/* Start of range */}
+            {filteredStartPoint && (
+              <View style={styles.recentPointItem}>
+                <View style={[styles.recentPointBadge, styles.recentPointBadgeStart]}>
+                  <Text style={styles.recentPointBadgeText}>S</Text>
+                </View>
+                <Text style={styles.recentPointSpeed}>
+                  {new Date(filteredStartPoint.gpsTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </Text>
-                <Text style={styles.recentPointAddress} numberOfLines={2}>
-                  {extractChineseAddress(point.address || `${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}`)}
-                </Text>
-                <Text style={styles.recentPointSpeed}>{formatSpeed(point.speed)}</Text>
               </View>
-            ))}
+            )}
+            {/* Parked/stopped points (every ~30min, expandable) */}
+            {(() => {
+              const parkPoints = trackPoints.slice(1, -1).filter((point, i, arr) => {
+                const prevPoint = arr[i - 1];
+                if (prevPoint) {
+                  const timeDiff = point.gpsTime - prevPoint.gpsTime;
+                  return timeDiff >= 30 * 60 * 1000; // 30 minutes
+                }
+                return false;
+              });
+              return parkPoints.map((point, index) => {
+                const isExpanded = expandedParkIndex === index;
+                return (
+                  <Pressable 
+                    key={`park-${index}`} 
+                    style={styles.recentPointItem}
+                    onPress={() => setExpandedParkIndex(isExpanded ? null : index)}
+                  >
+                    <View style={styles.recentPointHeader}>
+                      <View style={[styles.recentPointBadge, styles.recentPointBadgePark]}>
+                        <Text style={styles.recentPointBadgeText}>P</Text>
+                      </View>
+                      {isExpanded ? (
+                        <ChevronDown size={14} color={colors.textSecondary} />
+                      ) : (
+                        <ChevronRight size={14} color={colors.textSecondary} />
+                      )}
+                    </View>
+                    <Text style={styles.recentPointSpeed}>
+                      {new Date(point.gpsTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {point.parkTime ? ` (${Math.round(point.parkTime / 60)}min)` : ''}
+                    </Text>
+                    {isExpanded && (
+                      <View style={styles.recentPointExpanded}>
+                        <Text style={styles.recentPointExpandedText}>
+                          速度: {point.speed.toFixed(1)} km/h
+                        </Text>
+                        <Text style={styles.recentPointExpandedText}>
+                          方向: {point.direction.toFixed(0)}°
+                        </Text>
+                        <Text style={styles.recentPointExpandedText}>
+                          時間: {new Date(point.gpsTime).toLocaleString()}
+                        </Text>
+                      </View>
+                    )}
+                  </Pressable>
+                );
+              });
+            })()}
+            {/* End of range */}
+            {filteredEndPoint && filteredEndPoint !== filteredStartPoint && (
+              <View style={styles.recentPointItem}>
+                <View style={[styles.recentPointBadge, styles.recentPointBadgeEnd]}>
+                  <Text style={styles.recentPointBadgeText}>E</Text>
+                </View>
+                <Text style={styles.recentPointSpeed}>
+                  {new Date(filteredEndPoint.gpsTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </Text>
+              </View>
+            )}
           </ScrollView>
         </View>
       )}
 
-      {/* View on Maps Button */}
-      {trackPoints.length > 0 && (
-        <Pressable style={styles.viewOnMapsBtn} onPress={handleViewInMaps}>
-          <MapPin size={14} color={colors.primary} />
-          <Text style={styles.viewOnMapsText}>{t('vehicles.viewOnGoogleMaps')}</Text>
-        </Pressable>
-      )}
     </>
   );
 
@@ -885,6 +1489,44 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: colors.textTertiary,
   },
+  recentPointBadge: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  recentPointBadgeStart: {
+    backgroundColor: '#22C55E',
+  },
+  recentPointBadgeEnd: {
+    backgroundColor: '#EF4444',
+  },
+  recentPointBadgePark: {
+    backgroundColor: '#F59E0B',
+  },
+  recentPointBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  recentPointHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  recentPointExpanded: {
+    marginTop: spacing.xs,
+    paddingTop: spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  recentPointExpandedText: {
+    fontSize: typography.fontSize.xs,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
   viewOnMapsBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -903,5 +1545,272 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     color: colors.textTertiary,
     lineHeight: 20,
+  },
+  // Inline time range picker styles (replaces modal)
+  timeRangePickerInline: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  timeRangePickerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  timeRangePickerTitle: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  rangeBarContainer: {
+    marginVertical: spacing.sm,
+  },
+  rangeBarLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: spacing.xs,
+  },
+  rangeBarTime: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  rangeBarTrack: {
+    height: 8,
+    backgroundColor: colors.border,
+    borderRadius: 4,
+    position: 'relative',
+    marginVertical: spacing.sm,
+  },
+  rangeBarSelected: {
+    position: 'absolute',
+    height: '100%',
+    backgroundColor: colors.primary,
+    borderRadius: 4,
+  },
+  rangeBarThumb: {
+    position: 'absolute',
+    top: -6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.primary,
+    marginLeft: -10,
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  rangeBarTicks: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: spacing.xs,
+  },
+  rangeBarTick: {
+    fontSize: typography.fontSize.xs,
+    color: colors.textTertiary,
+  },
+  timeRangeActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  timeCancelBtn: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  timeCancelText: {
+    fontSize: typography.fontSize.md,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  // Time range picker styles
+  timeRangeContainer: {
+    padding: spacing.md,
+  },
+  timeRangeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  timeRangeLabel: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  timePickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  timePickerGroup: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.sm,
+    padding: spacing.xs,
+  },
+  timeAdjustBtn: {
+    padding: spacing.xs,
+    width: 36,
+    alignItems: 'center',
+  },
+  timeAdjustText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  timeValue: {
+    fontSize: typography.fontSize.lg,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    paddingHorizontal: spacing.xs,
+    minWidth: 36,
+    textAlign: 'center',
+  },
+  timeSeparator: {
+    fontSize: typography.fontSize.lg,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  timeApplyBtn: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timeApplyText: {
+    fontSize: typography.fontSize.md,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  // 7-day route selector styles
+  dailyRouteLoading: {
+    height: 100,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  dailyRouteLoadingText: {
+    marginTop: spacing.sm,
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+  },
+  dailyRouteContainer: {
+    marginBottom: spacing.md,
+  },
+  dailyRouteTitle: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: spacing.sm,
+  },
+  dailyRouteItem: {
+    width: 80,
+    padding: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.sm,
+    marginRight: spacing.sm,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  dailyRouteItemActive: {
+    backgroundColor: `${colors.primary}15`,
+    borderColor: colors.primary,
+  },
+  dailyRouteDate: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  dailyRouteDateActive: {
+    color: colors.primary,
+  },
+  dailyRoutePoints: {
+    fontSize: 10,
+    color: colors.textTertiary,
+    marginTop: 2,
+  },
+  dailyRoutePointsActive: {
+    color: colors.primary,
+  },
+  dailyRouteDistance: {
+    fontSize: 10,
+    color: colors.textTertiary,
+  },
+  dailyRouteDistanceActive: {
+    color: colors.primary,
+  },
+  // Start/End location styles
+  locationSummaryContainer: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  locationItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  locationIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  locationIconStart: {
+    backgroundColor: '#22C55E',
+  },
+  locationIconEnd: {
+    backgroundColor: '#EF4444',
+  },
+  locationIconText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  locationInfo: {
+    flex: 1,
+  },
+  locationLabel: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    color: colors.textTertiary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  locationAddress: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginTop: 2,
+  },
+  locationTime: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginTop: 2,
+  },
+  locationDivider: {
+    width: 1,
+    backgroundColor: colors.border,
+    marginHorizontal: spacing.md,
   },
 });

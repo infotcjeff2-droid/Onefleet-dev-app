@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { storage } from '@/utils/storage';
+import { hasSupabaseEnv, pushFleetSnapshot } from '@/utils/fleetSync';
 
 export interface Driver {
   id: string;
@@ -10,6 +11,8 @@ export interface Driver {
   status: 'available' | 'busy' | 'offline';
   avatar?: string;
   assignedVehicleId?: string;
+  /** 所屬公司 ID */
+  companyId?: string;
 }
 
 const DRIVER_STORAGE_KEY = 'managed_drivers';
@@ -32,6 +35,7 @@ interface StoredDriver {
   status: 'available' | 'busy' | 'offline';
   avatar?: string;
   assignedVehicleId?: string;
+  companyId?: string;
 }
 
 interface StoredUser {
@@ -41,16 +45,18 @@ interface StoredUser {
   role: 'driver' | 'company' | 'admin';
   phone?: string;
   avatar?: string;
+  companyId?: string;
 }
 
 interface DriverState {
   drivers: Driver[];
   loadDrivers: () => Promise<void>;
-  addDriver: (name: string, phone: string, email: string, vehiclePlate?: string, avatar?: string) => Promise<Driver>;
+  addDriver: (name: string, phone: string, email: string, vehiclePlate?: string, avatar?: string, companyId?: string) => Promise<Driver>;
   updateDriver: (id: string, updates: Partial<Driver>) => Promise<void>;
   deleteDriver: (id: string) => Promise<void>;
   getDriverById: (id: string) => Driver | undefined;
   getVehiclesByDriverId: (driverId: string, vehicles: { id: string; assignedDriverId?: string; plateNumber: string }[]) => { id: string; plateNumber: string }[];
+  getDriversByCompanyId: (companyId: string) => Driver[];
 }
 
 export const useDriverStore = create<DriverState>((set, get) => ({
@@ -70,6 +76,7 @@ export const useDriverStore = create<DriverState>((set, get) => ({
       );
 
       // 從 managed_users 同步 driver 角色（已新增但尚未出現在 managed_drivers 的）
+      // 同時也更新已存在司機的 companyId（用戶可能在其他地方編輯了司機的公司歸屬）
       let merged: Driver[] = [...filtered];
       if (storedUsers) {
         const parsedUsers: StoredUser[] = JSON.parse(storedUsers);
@@ -83,10 +90,19 @@ export const useDriverStore = create<DriverState>((set, get) => ({
             vehiclePlate: '',
             status: 'available' as const,
             avatar: user.avatar,
+            companyId: user.companyId,
           }));
 
         for (const userDriver of userDrivers) {
-          if (!merged.some((driver) => driver.email.toLowerCase() === userDriver.email.toLowerCase())) {
+          const existingIndex = merged.findIndex(
+            (driver) => driver.email.toLowerCase() === userDriver.email.toLowerCase()
+          );
+          if (existingIndex !== -1) {
+            // 更新已存在司機的 companyId（以 managed_users 為準）
+            if (userDriver.companyId !== undefined) {
+              merged[existingIndex] = { ...merged[existingIndex], companyId: userDriver.companyId };
+            }
+          } else {
             merged.push(userDriver);
           }
         }
@@ -114,7 +130,7 @@ export const useDriverStore = create<DriverState>((set, get) => ({
     }
   },
 
-  addDriver: async (name, phone, email, vehiclePlate, avatar) => {
+  addDriver: async (name, phone, email, vehiclePlate, avatar, companyId) => {
     const id = `d${String(Date.now()).slice(-6)}`;
     const newDriver: Driver = {
       id,
@@ -124,6 +140,7 @@ export const useDriverStore = create<DriverState>((set, get) => ({
       vehiclePlate,
       status: 'available',
       avatar,
+      companyId,
     };
     const updated = [...get().drivers, newDriver];
     set({ drivers: updated });
@@ -137,6 +154,9 @@ export const useDriverStore = create<DriverState>((set, get) => ({
     );
     set({ drivers: updated });
     await storage.setItem(DRIVER_STORAGE_KEY, JSON.stringify(updated));
+    if (hasSupabaseEnv) {
+      await pushFleetSnapshot({ users: updated.map((d) => ({ ...d, role: 'driver' as const })) }).catch(() => {});
+    }
   },
 
   /** 刪除司機：從 drivers 陣列移除並寫入 storage（下次 load 不會回來） */
@@ -152,5 +172,9 @@ export const useDriverStore = create<DriverState>((set, get) => ({
 
   getVehiclesByDriverId: (driverId, vehicles) => {
     return vehicles.filter((v) => v.assignedDriverId === driverId);
+  },
+
+  getDriversByCompanyId: (companyId) => {
+    return get().drivers.filter((driver) => driver.companyId === companyId);
   },
 }));

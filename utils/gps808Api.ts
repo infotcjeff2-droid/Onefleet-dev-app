@@ -7,11 +7,9 @@
  *   → BASE_URL=https://console.onefleet.hk
  *
  * - Web: MUST use proxy to avoid CORS
- *   → If EXPO_PUBLIC_GPS_PROXY_URL is set to a proxy URL (e.g. http://localhost:3001/api/gps),
- *     use that proxy.
- *   → If EXPO_PUBLIC_GPS_PROXY_URL is set to the raw server (e.g. https://console.onefleet.hk),
- *     which is NOT proxy, fall back to localhost:3001 proxy.
- *   → If no EXPO_PUBLIC_GPS_PROXY_URL, default to http://localhost:3001/api/gps
+ *   → Dynamically constructs proxy URL from current page origin
+ *   → If page is at http://192.168.1.55:8081, proxy is http://192.168.1.55:3001
+ *   → Falls back to localhost:3001 if origin cannot be determined
  */
 
 import { Platform } from 'react-native';
@@ -19,25 +17,34 @@ import { storage } from './storage';
 import { md5 } from 'js-md5';
 
 const IS_WEB = Platform.OS === 'web';
+const PROXY_PORT = 3001; // GPS Proxy Server port
+
+/**
+ * Dynamically determines the proxy URL based on current page origin.
+ * This ensures mobile devices can reach the proxy on the development machine.
+ */
+function getProxyUrlFromOrigin(): string {
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    const origin = window.location.origin;
+    try {
+      const url = new URL(origin);
+      // Replace the port with proxy port
+      url.port = String(PROXY_PORT);
+      url.pathname = 'api/gps';
+      return url.toString().replace(/\/$/, '');
+    } catch {
+      // Fallback
+    }
+  }
+  return `http://localhost:${PROXY_PORT}/api/gps`;
+}
 
 function resolveDefaultBaseUrl(): string {
   if (!IS_WEB) {
     return 'https://console.onefleet.hk';
   }
-  // For Web, determine if EXPO_PUBLIC_GPS_PROXY_URL is a proxy or the raw server
-  const envUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL;
-  if (envUrl) {
-    // If it contains '/api/gps' or 'localhost', it's likely a proxy URL
-    if (envUrl.includes('/api/gps') || envUrl.includes('localhost')) {
-      // Ensure it ends with /api/gps
-      return envUrl.endsWith('/api/gps') ? envUrl : `${envUrl.replace(/\/$/, '')}/api/gps`;
-    }
-    // Otherwise it's pointing to the raw server (e.g. https://console.onefleet.hk)
-    // This causes CORS on Web, so we MUST use the local proxy instead
-    console.warn('[GPS808] EXPO_PUBLIC_GPS_PROXY_URL points to raw server, which causes CORS on Web. Using localhost proxy instead.');
-  }
-  // Default proxy for Web - use localhost:3001 for local dev
-  return 'http://localhost:3001/api/gps';
+  // For Web, dynamically determine proxy URL from current origin
+  return getProxyUrlFromOrigin();
 }
 
 const DEFAULT_BASE_URL = resolveDefaultBaseUrl();

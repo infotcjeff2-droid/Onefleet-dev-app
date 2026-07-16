@@ -87,12 +87,6 @@ export default function TabLayout() {
       <Tabs.Screen
         name="profile"
         options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="onefleet-system-admin"
-        options={{
           title: t('nav.profile'),
           tabBarIcon: ({ color, focused }) => (
             <TabBarIcon name="profile" color={color} focused={focused} />
@@ -108,17 +102,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-    height: 70,
+    height: 75,
     paddingTop: 8,
-    paddingBottom: 8,
+    paddingBottom: 10,
   },
   tabBarLabel: {
     fontSize: 11,
     fontWeight: '600',
-    marginTop: 2,
+    marginTop: 4,
+    paddingHorizontal: 2,
+    textAlign: 'center',
+    minWidth: '100%',
   },
   tabBarItem: {
-    height: 50,
+    paddingHorizontal: 2,
+    minWidth: 60,
   },
   iconContainer: {
     width: 40,

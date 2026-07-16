@@ -20,15 +20,52 @@ export interface Vehicle {
   insuranceExpiry: string;
   registrationExpiry: string;
   notes: string;
+  /** 車輛圖片 URL */
   imageUrl: string;
   createdAt: string;
   /** GPS 808 設備 ID (devIdno)，用於 live tracking */
   devIdno?: string;
   /** 綁定的司機 ID */
   assignedDriverId?: string;
+  /** 所屬用戶 ID（用於跨設備同步） */
+  userId?: string;
 }
 
 export type UserRole = 'admin' | 'company' | 'driver' | 'user';
+
+/** 公司管理相關 - 擴展 User 介面 */
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  phone?: string;
+  avatar?: string;
+  /** 密碼（僅在建立/更新時傳遞，不會被持久化儲存） */
+  password?: string;
+  /** 中文名稱（公司必填） */
+  nameZh?: string;
+  /** 英文名稱 */
+  nameEn?: string;
+  /** 地址 */
+  address?: string;
+  /** 所屬公司 ID（司機角色使用） */
+  companyId?: string;
+}
+
+/** 駕駛員擴展介面 */
+export interface Driver {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  vehiclePlate?: string;
+  status: 'available' | 'busy' | 'offline';
+  avatar?: string;
+  assignedVehicleId?: string;
+  /** 所屬公司 ID */
+  companyId?: string;
+}
 
 export type DeliveryStatus = 'pending' | 'assigned' | 'in_transit' | 'delivered' | 'signed' | 'expired';
 
@@ -75,15 +112,6 @@ export interface DeliveryCargoItem {
   quantity: number;
   unitWeight: number; // kg per unit
   totalWeight: number; // quantity * unitWeight
-}
-
-export interface User {
-  id: string;
-  email: string;
-  name: string;
-  role: UserRole;
-  phone?: string;
-  avatar?: string;
 }
 
 export type RootStackParamList = {

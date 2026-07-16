@@ -38,6 +38,5 @@ const styles = StyleSheet.create({
   },
   cardPressed: {
     backgroundColor: colors.cardHover,
-    transform: [{ scale: 0.98 }],
   },
 });

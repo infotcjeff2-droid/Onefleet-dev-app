@@ -1,12 +1,13 @@
 import { View, Text, StyleSheet, Image, Pressable } from 'react-native';
 import { useState } from 'react';
-import { Shield, FileText, Wrench, MapPin, Fuel, Settings2, Gauge, User, Wifi, WifiOff, Navigation, Activity } from 'lucide-react-native';
+import { Shield, FileText, Wrench, MapPin, Fuel, Settings2, Gauge, User, Wifi, WifiOff, Navigation, Activity, Building2 } from 'lucide-react-native';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Vehicle } from '@/types';
 import { VehicleTrackingSection } from './VehicleTrackingSection';
 import { useThemeStore } from '@/store/themeStore';
 import { useDriverStore } from '@/store/driverStore';
+import { useUserManagementStore } from '@/store/userManagementStore';
 import { useGps808Store } from '@/store/gps808Store';
 import { defaultColors } from '@/store/themeStore';
 import { borderRadius, spacing, typography, statusColors, fuelTypeLabels, transmissionLabels } from '@/constants/theme';
@@ -82,6 +83,7 @@ export function BentoGrid({ vehicle }: BentoGridProps) {
   const { t } = useTranslation();
   const { colors } = useThemeStore();
   const { getDriverById } = useDriverStore();
+  const { getCompanyById } = useUserManagementStore();
   const { isConnected } = useGps808Store();
   const [gpsStatus, setGpsStatus] = useState<GpsStatusState>({
     isOnline: false,
@@ -94,6 +96,7 @@ export function BentoGrid({ vehicle }: BentoGridProps) {
   const insuranceInfo = daysUntilLocalized(vehicle.insuranceExpiry, t);
   const regInfo = daysUntilLocalized(vehicle.registrationExpiry, t);
   const assignedDriver = vehicle.assignedDriverId ? getDriverById(vehicle.assignedDriverId) : undefined;
+  const assignedCompany = assignedDriver?.companyId ? getCompanyById(assignedDriver.companyId) : undefined;
 
   const getGpsStatusLabel = () => {
     if (!isConnected) return t('vehicles.gpsNotConnected');
@@ -181,9 +184,9 @@ export function BentoGrid({ vehicle }: BentoGridProps) {
           <View style={[styles.driverSection, { marginTop: spacing.lg }]}>
             <Text style={styles.driverLabel}>{t('vehicles.driver')}</Text>
             <View style={styles.driverInfo}>
-              <View style={[styles.driverAvatar, { backgroundColor: defaultColors.primary, zIndex: 0 }]}>
+              <View style={[styles.driverAvatar, { backgroundColor: defaultColors.primary }]}>
                 {assignedDriver.avatar ? (
-                  <Image source={{ uri: assignedDriver.avatar }} style={{ width: '100%', height: '100%', borderRadius: 30, zIndex: 0 }} />
+                  <Image source={{ uri: assignedDriver.avatar }} style={{ width: '100%', height: '100%', borderRadius: 30 }} />
                 ) : (
                   <Text style={styles.driverAvatarText}>{assignedDriver.name.charAt(0).toUpperCase()}</Text>
                 )}
@@ -191,6 +194,14 @@ export function BentoGrid({ vehicle }: BentoGridProps) {
               <View style={{ flex: 1 }}>
                 <Text style={styles.driverName}>{assignedDriver.name}</Text>
                 <Text style={styles.driverPhone}>{assignedDriver.phone}</Text>
+                {assignedCompany && (
+                  <View style={[styles.companyBadge, { marginTop: spacing.xs }]}>
+                    <Building2 size={12} color={colors.secondary} />
+                    <Text style={styles.companyBadgeText}>
+                      {assignedCompany.nameZh || assignedCompany.name}
+                    </Text>
+                  </View>
+                )}
               </View>
             </View>
           </View>
@@ -299,7 +310,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   sectionTitleText: {
-    fontSize: typography.fontSize.lg,
+    fontSize: typography.fontSize.xl,
     fontWeight: '700',
     color: defaultColors.textPrimary,
     letterSpacing: 0.3,
@@ -348,6 +359,18 @@ const styles = StyleSheet.create({
   driverPhone: {
     fontSize: typography.fontSize.xs,
     color: defaultColors.textTertiary,
+  },
+  companyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: spacing.xs,
+    zIndex: 10,
+  },
+  companyBadgeText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    color: defaultColors.secondary,
   },
   notesSection: {
     borderTopWidth: 1,
@@ -436,19 +459,19 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   infoItemLabel: {
-    fontSize: typography.fontSize.base,
+    fontSize: typography.fontSize.lg,
     fontWeight: '700',
     color: defaultColors.textPrimary,
     marginBottom: spacing.xs,
     letterSpacing: 0,
   },
   infoItemValue: {
-    fontSize: typography.fontSize.xs,
+    fontSize: typography.fontSize.sm,
     fontWeight: '600',
     color: defaultColors.textTertiary,
   },
   infoItemSub: {
-    fontSize: 11,
+    fontSize: typography.fontSize.sm,
     color: defaultColors.textTertiary,
     marginTop: 4,
     opacity: 0.75,

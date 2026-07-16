@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { storage } from '@/utils/storage';
-import { gps808Api, setServerUrl } from '@/utils/gps808Api';
+import { gps808Api, setServerUrl, Gps808Vehicle } from '@/utils/gps808Api';
 import { Platform } from 'react-native';
 
 const IS_WEB = Platform.OS === 'web';
@@ -169,3 +169,18 @@ export const useGps808Store = create<Gps808State>((set, get) => ({
 
   clearError: () => set({ error: null }),
 }));
+
+// 從 GPS 808 系統獲取車輛列表
+export async function fetchGpsVehicles(): Promise<Gps808Vehicle[]> {
+  try {
+    const response = await gps808Api.queryVehicleList(1, 500);
+    if (response.result === 0 && response.infos) {
+      return response.infos;
+    }
+    console.log('[GPS808] queryVehicleList response:', response);
+    return [];
+  } catch (error) {
+    console.error('[GPS808] Failed to fetch vehicles:', error);
+    return [];
+  }
+}

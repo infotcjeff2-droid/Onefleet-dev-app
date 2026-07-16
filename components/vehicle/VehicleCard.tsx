@@ -1,10 +1,12 @@
 import { View, Text, Image, StyleSheet, Pressable } from 'react-native';
-import { ChevronRight, Gauge, Fuel } from 'lucide-react-native';
+import { ChevronRight, Gauge, Fuel, Truck, Building2 } from 'lucide-react-native';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Vehicle } from '@/types';
 import { colors, borderRadius, spacing, typography } from '@/constants/theme';
 import { useTranslation } from '@/i18n';
+import { useDriverStore } from '@/store/driverStore';
+import { useUserManagementStore } from '@/store/userManagementStore';
 
 interface VehicleCardProps {
   vehicle: Vehicle;
@@ -26,6 +28,13 @@ function getFuelTypeTranslation(fuelType: string, t: (key: string) => string): s
 
 export function VehicleCard({ vehicle, onPress, index = 0 }: VehicleCardProps) {
   const { t } = useTranslation();
+  const hasImage = vehicle.imageUrl && vehicle.imageUrl.trim() !== '';
+  const { getDriverById } = useDriverStore();
+  const { getCompanyById } = useUserManagementStore();
+
+  // Get driver and company info
+  const driver = vehicle.assignedDriverId ? getDriverById(vehicle.assignedDriverId) : null;
+  const company = driver?.companyId ? getCompanyById(driver.companyId) : null;
 
   return (
     <Pressable
@@ -37,11 +46,17 @@ export function VehicleCard({ vehicle, onPress, index = 0 }: VehicleCardProps) {
     >
       <View style={styles.card}>
         <View style={styles.imageContainer}>
-          <Image
-            source={{ uri: vehicle.imageUrl }}
-            style={styles.image}
-            resizeMode="cover"
-          />
+          {hasImage ? (
+            <Image
+              source={{ uri: vehicle.imageUrl }}
+              style={styles.image}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={styles.placeholderImage}>
+              <Truck size={48} color={colors.textTertiary} />
+            </View>
+          )}
           <View style={styles.imageOverlay} />
           <View style={styles.statusBadge}>
             <Badge
@@ -80,6 +95,21 @@ export function VehicleCard({ vehicle, onPress, index = 0 }: VehicleCardProps) {
             <View style={styles.statDot} />
             <Text style={styles.yearText}>{vehicle.year}</Text>
           </View>
+
+          {company && (
+            <View style={[styles.companyInfo, { borderTopColor: colors.border }]}>
+              <View style={styles.companyInfoIcon}>
+                <Building2 size={14} color={colors.secondary} />
+              </View>
+              <View style={styles.companyInfoContent}>
+                <Text style={styles.companyInfoLabel}>{t('vehicles.companyInfo')}</Text>
+                <Text style={styles.companyNameZh}>{company.nameZh || company.name}</Text>
+                {company.nameEn && (
+                  <Text style={styles.companyNameEn}>{company.nameEn}</Text>
+                )}
+              </View>
+            </View>
+          )}
         </View>
       </View>
     </Pressable>
@@ -101,10 +131,18 @@ const styles = StyleSheet.create({
   imageContainer: {
     height: 160,
     position: 'relative',
+    backgroundColor: colors.surface,
   },
   image: {
     width: '100%',
     height: '100%',
+  },
+  placeholderImage: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
   },
   imageOverlay: {
     position: 'absolute',
@@ -181,5 +219,42 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     color: colors.textSecondary,
     fontWeight: '500',
+  },
+  companyInfo: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    gap: spacing.sm,
+  },
+  companyInfoIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.secondaryGlow,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  companyInfoContent: {
+    flex: 1,
+  },
+  companyInfoLabel: {
+    fontSize: typography.fontSize.xs,
+    color: colors.textTertiary,
+    fontWeight: '500',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  companyNameZh: {
+    fontSize: typography.fontSize.sm,
+    color: colors.secondary,
+    fontWeight: '600',
+  },
+  companyNameEn: {
+    fontSize: typography.fontSize.xs,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
 });

@@ -167,16 +167,16 @@ function buildMapHtml(opts: {
       background: #3B82F6;
       border: 3px solid #fff;
       border-radius: 50%;
-      width: 20px; height: 20px;
+      width: 32px; height: 32px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.5);
       display: flex; align-items: center; justify-content: center;
     }
     .car-icon::after {
       content: '';
       width: 0; height: 0;
-      border-left: 5px solid transparent;
-      border-right: 5px solid transparent;
-      border-bottom: 8px solid #fff;
+      border-left: 7px solid transparent;
+      border-right: 7px solid transparent;
+      border-bottom: 12px solid #fff;
       transform: translateY(-1px);
     }
     .no-signal-badge {
@@ -193,12 +193,12 @@ function buildMapHtml(opts: {
     #marker-label {
       position: absolute; z-index: 999;
       background: #1E293B; color: #fff;
-      padding: 3px 8px; border-radius: 6px;
+      padding: 5px 12px; border-radius: 8px;
       font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-      font-size: 11px; font-weight: 700;
+      font-size: 15px; font-weight: 700;
       white-space: nowrap;
-      transform: translate(-50%, -130%);
-      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+      transform: translate(-50%, 10px);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
     }
     .center-btn {
       position: absolute; bottom: 10px; left: 10px; z-index: 1000;
@@ -251,11 +251,11 @@ function buildMapHtml(opts: {
     const carIcon = L.divIcon({
       html: '<div class="car-icon" style="transform: rotate(' + ${0} + 'deg)"></div>',
       className: '',
-      iconSize: [20, 20],
-      iconAnchor: [10, 10],
+      iconSize: [32, 32],
+      iconAnchor: [16, 16],
     });
     const marker = L.marker([${lat}, ${lng}], { icon: carIcon, title: '${label.replace(/'/g, "\\'")}' }).addTo(map);
-    marker.bindPopup('<b>${label.replace(/'/g, "\\'")}</b><br/><span style="word-break:break-all;font-size:12px">${formattedAddress.replace(/'/g, "\\'")}</span>').openPopup();
+    marker.bindPopup('<b style="font-size:15px">${label.replace(/'/g, "\\'")}</b><br/><span style="word-break:break-all;font-size:14px">${formattedAddress.replace(/'/g, "\\'")}</span>').openPopup();
     const labelEl = document.getElementById('marker-label');
     if (labelEl) {
       labelEl.textContent = '${label.replace(/'/g, "\\'")}';
@@ -303,7 +303,7 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate, bare = fa
     lat: displayLat,
     lng: displayLng,
     label: plateNumber || devIdno,
-    zoom: hasValidGps ? 16 : 10,
+    zoom: hasValidGps ? 18 : 12,
     showMarker: true,
     noSignal: !hasValidGps,
     noGpsSignalText: t('vehicles.noGpsSignal'),

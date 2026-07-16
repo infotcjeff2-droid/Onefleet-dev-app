@@ -100,7 +100,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   title: {
-    fontSize: typography.fontSize.lg,
+    fontSize: typography.fontSize.xl,
     fontWeight: '700',
     color: colors.textPrimary,
     letterSpacing: 0.3,

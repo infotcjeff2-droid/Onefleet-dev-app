@@ -3,6 +3,9 @@ import { Vehicle } from '@/types';
 import { storage } from '@/utils/storage';
 import { fetchFleetSnapshot, hasSupabaseEnv, pushFleetSnapshot } from '@/utils/fleetSync';
 import { mockVehicles } from '@/constants/mockData';
+import { useGps808Store } from './gps808Store';
+import { fetchGpsVehicles } from './gps808Store';
+import { useAuthStore } from './authStore';
 
 const STORAGE_KEY = 'vehicles';
 
@@ -53,15 +56,48 @@ export const useVehicleStore = create<VehicleState>((set, get) => ({
 
   loadVehicles: async () => {
     try {
+      // 優先從 GPS 808 系統獲取車輛列表（如果已連接）
+      const gpsStore = useGps808Store.getState();
+      if (gpsStore.isConnected) {
+        const gpsVehicles = await fetchGpsVehicles();
+        if (gpsVehicles.length > 0) {
+          const currentUser = useAuthStore.getState().user;
+          // 將 GPS 車輛轉換為本地格式
+          const mappedVehicles: Vehicle[] = gpsVehicles.map((gv, index) => ({
+            id: gv.devIdno || `gps-${index}`,
+            make: gv.companyName || 'GPS Device',
+            model: gv.plateType ? `Type ${gv.plateType}` : 'Unknown',
+            plateNumber: gv.vehiIdno || 'Unknown',
+            color: 'N/A',
+            year: 2024,
+            vin: gv.devIdno || '',
+            status: gv.onlineStatus === 1 ? 'active' : 'inactive',
+            gpsDeviceId: gv.devIdno,
+            createdAt: new Date().toISOString(),
+            imageUrl: '',
+            userId: currentUser?.id,
+          }));
+          set({ vehicles: mappedVehicles, isLoading: false });
+          await persistVehicles(mappedVehicles);
+          return;
+        }
+      }
+
+      // 否則從本地存儲讀取，並根據 userId 過濾
+      const currentUser = useAuthStore.getState().user;
       const stored = await storage.getItem(STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
+        // 如果有 userId，過濾顯示該用戶的車輛
+        const userVehicles = currentUser?.id
+          ? parsed.filter((v: Vehicle) => !v.userId || v.userId === currentUser.id)
+          : parsed;
         // 如果存儲的數據為空或車輛數為0，使用 mockVehicles
-        if (parsed.length === 0) {
+        if (userVehicles.length === 0) {
           set({ vehicles: mockVehicles, isLoading: false });
           await persistVehicles(mockVehicles);
         } else {
-          set({ vehicles: parsed, isLoading: false });
+          set({ vehicles: userVehicles, isLoading: false });
         }
       } else {
         // 首次載入，使用 mockVehicles
@@ -81,9 +117,14 @@ export const useVehicleStore = create<VehicleState>((set, get) => ({
     set({ isSyncing: true, syncError: null });
     try {
       const remote = await fetchFleetSnapshot();
+      const currentUser = useAuthStore.getState().user;
       if (remote) {
-        set({ vehicles: remote.vehicles });
-        await persistVehicles(remote.vehicles);
+        // 只同步該用戶的車輛
+        const userVehicles = currentUser?.id
+          ? remote.vehicles.filter((v) => !v.userId || v.userId === currentUser.id)
+          : remote.vehicles;
+        set({ vehicles: userVehicles });
+        await persistVehicles(userVehicles);
       } else {
         const localVehicles = get().vehicles;
         await persistVehicles(localVehicles);
@@ -97,10 +138,12 @@ export const useVehicleStore = create<VehicleState>((set, get) => ({
   },
 
   addVehicle: async (vehicleData) => {
+    const currentUser = useAuthStore.getState().user;
     const newVehicle: Vehicle = {
       ...vehicleData,
       id: generateId(),
       createdAt: new Date().toISOString(),
+      userId: currentUser?.id,
     };
     const updated = [...get().vehicles, newVehicle];
     set({ vehicles: updated });

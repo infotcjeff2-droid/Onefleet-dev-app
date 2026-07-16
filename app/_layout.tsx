@@ -63,7 +63,18 @@ function AppContent() {
           <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="vehicle/[id]" />
           <Stack.Screen name="delivery/[id]" />
+          <Stack.Screen name="profile/config" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="onefleet-system-admin" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="onefleet-system-admin/settings" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="onefleet-system-admin/vehicle-management" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="onefleet-system-admin/pair-device" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="onefleet-system-admin/config" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="onefleet-system-admin/trash" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="onefleet-system-admin/warehouse" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="onefleet-system-admin/inventory" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="onefleet-system-admin/fleet" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="onefleet-system-admin/dispatch" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="onefleet-system-admin/replenishment" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="+not-found" />
         </Stack>
     </>

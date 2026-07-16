@@ -5,6 +5,8 @@ import Animated, { useSharedValue, useAnimatedStyle, withTiming, interpolate, Ex
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft } from 'lucide-react-native';
 import { useVehicleStore } from '@/store/vehicleStore';
+import { useDriverStore } from '@/store/driverStore';
+import { useUserManagementStore } from '@/store/userManagementStore';
 import { BentoGrid } from '@/components/vehicle/BentoGrid';
 import { SkeletonCard } from '@/components/ui/SkeletonCard';
 import { colors, spacing, typography, borderRadius, layout } from '@/constants/theme';
@@ -19,14 +21,17 @@ export default function VehicleDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { getVehicleById, isLoading } = useVehicleStore();
+  const { drivers, loadDrivers } = useDriverStore();
+  const { users, loadUsers } = useUserManagementStore();
   const { t } = useTranslation();
 
-  const [vehicle, setVehicle] = useState(getVehicleById(id));
+  const vehicle = getVehicleById(id ?? '');
   const scrollY = useSharedValue(0);
 
   useEffect(() => {
-    setVehicle(getVehicleById(id));
-  }, [id]);
+    loadDrivers();
+    loadUsers();
+  }, [loadDrivers, loadUsers]);
 
   if (isLoading || !vehicle) {
     return (
@@ -242,20 +247,29 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#FFFFFF',
     lineHeight: 36,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   heroModel: {
     fontSize: typography.fontSize['2xl'],
     fontWeight: '500',
-    color: 'rgba(255,255,255,0.7)',
+    color: 'rgba(255,255,255,0.9)',
     lineHeight: 28,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   heroPlate: {
     fontFamily: 'JetBrains Mono',
-    fontSize: typography.fontSize.base,
+    fontSize: typography.fontSize.lg,
     fontWeight: '700',
-    color: colors.primary,
+    color: '#FFFFFF',
     letterSpacing: 2,
     marginTop: spacing.xs,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   heroMeta: {
     flexDirection: 'row',
@@ -264,25 +278,34 @@ const styles = StyleSheet.create({
   },
   heroYear: {
     fontSize: typography.fontSize.sm,
-    color: 'rgba(255,255,255,0.6)',
+    color: 'rgba(255,255,255,0.8)',
     fontWeight: '600',
+    textShadowColor: 'rgba(0, 0, 0, 0.4)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   heroDot: {
     width: 4,
     height: 4,
     borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.3)',
+    backgroundColor: 'rgba(255,255,255,0.5)',
     marginHorizontal: spacing.sm,
   },
   heroBodyType: {
     fontSize: typography.fontSize.sm,
-    color: 'rgba(255,255,255,0.6)',
+    color: 'rgba(255,255,255,0.8)',
     fontWeight: '600',
+    textShadowColor: 'rgba(0, 0, 0, 0.4)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   heroColor: {
     fontSize: typography.fontSize.sm,
-    color: 'rgba(255,255,255,0.6)',
+    color: 'rgba(255,255,255,0.8)',
     fontWeight: '500',
+    textShadowColor: 'rgba(0, 0, 0, 0.4)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   scrollContent: {
     paddingBottom: spacing['3xl'],

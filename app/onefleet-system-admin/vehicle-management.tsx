@@ -12,6 +12,7 @@ import {
   Dimensions,
   KeyboardAvoidingView,
   Platform,
+  SafeAreaView,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
@@ -25,15 +26,16 @@ import {
   Wifi,
   WifiOff,
   Camera,
+  Building2,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useVehicleStore } from '@/store/vehicleStore';
 import { useDriverStore } from '@/store/driverStore';
+import { useUserManagementStore } from '@/store/userManagementStore';
 import { useGps808Store } from '@/store/gps808Store';
 import { useThemeStore } from '@/store/themeStore';
 import { useTranslation } from '@/i18n';
-import { spacing, typography, borderRadius } from '@/constants/theme';
-import { Header } from '@/components/ui/Header';
+import { spacing, typography, borderRadius, layout } from '@/constants/theme';
 import { Button } from '@/components/ui/Button';
 import { SelectField } from '@/components/ui/SelectField';
 import { TextInput } from '@/components/ui/TextInput';
@@ -77,65 +79,107 @@ function VehicleRow({
   const { colors } = useThemeStore();
   const { t } = useTranslation();
   const { getDriverById } = useDriverStore();
+  const { getCompanyById } = useUserManagementStore();
 
   const assignedDriver = vehicle.assignedDriverId
     ? getDriverById(vehicle.assignedDriverId)
     : null;
 
+  const assignedCompany = assignedDriver?.companyId
+    ? getCompanyById(assignedDriver.companyId)
+    : null;
+
   return (
-    <Pressable
-      onPress={onEdit}
-      style={({ pressed }) => [
+    <View
+      style={[
         styles.vehicleRow,
-        { backgroundColor: pressed ? colors.cardHover : 'transparent' },
+        { backgroundColor: 'transparent' },
       ]}
     >
-      <View style={styles.vehicleRowLeft}>
-        <View style={[styles.vehicleThumb, { backgroundColor: `${colors.primary}20` }]}>
-          {vehicle.imageUrl ? (
-            <Image source={{ uri: vehicle.imageUrl }} style={styles.vehicleThumbImage} resizeMode="cover" />
-          ) : (
-            <Truck size={20} color={colors.primary} />
-          )}
-        </View>
-        <View style={styles.vehicleRowInfo}>
-          <View style={styles.vehicleRowNameRow}>
-            <Text style={[styles.vehicleRowName, { color: colors.textPrimary }]} numberOfLines={1}>
-              {vehicle.make} {vehicle.model}
-            </Text>
-            <StatusDot status={vehicle.status} />
+      <Pressable
+        onPress={(e) => {
+          e.stopPropagation?.();
+          onEdit();
+        }}
+        style={({ pressed }) => [
+          styles.vehicleRowLeftPressable,
+          { backgroundColor: pressed ? colors.cardHover : 'transparent' },
+        ]}
+      >
+        <View style={styles.vehicleRowLeft}>
+          <View style={[styles.vehicleThumb, { backgroundColor: `${colors.primary}20` }]}>
+            {vehicle.imageUrl ? (
+              <Image source={{ uri: vehicle.imageUrl }} style={styles.vehicleThumbImage} resizeMode="cover" />
+            ) : (
+              <Truck size={20} color={colors.primary} />
+            )}
           </View>
-          <Text style={[styles.vehicleRowPlate, { color: colors.textTertiary }]}>
-            {vehicle.plateNumber}
-          </Text>
-          {assignedDriver && (
-            <Text style={[styles.vehicleRowDriver, { color: colors.textTertiary }]} numberOfLines={1}>
-              {t('vehicles.driver')}: {assignedDriver.name}
-            </Text>
-          )}
-          {vehicle.devIdno && (
-            <View style={[styles.gpsBadge, { backgroundColor: `${colors.primary}15` }]}>
-              {vehicle.status === 'active' ? (
-                <Wifi size={10} color={colors.primary} />
-              ) : (
-                <WifiOff size={10} color={colors.textTertiary} />
-              )}
-              <Text style={[styles.gpsBadgeText, { color: colors.primary }]}>
-                {vehicle.devIdno}
+          <View style={styles.vehicleRowInfo}>
+            <View style={styles.vehicleRowNameRow}>
+              <Text style={[styles.vehicleRowName, { color: colors.textPrimary }]} numberOfLines={1}>
+                {vehicle.make} {vehicle.model}
               </Text>
+              <StatusDot status={vehicle.status} />
             </View>
-          )}
+            <Text style={[styles.vehicleRowPlate, { color: colors.textTertiary }]}>
+              {vehicle.plateNumber}
+            </Text>
+            {assignedDriver && (
+              <Text style={[styles.vehicleRowDriver, { color: colors.textTertiary }]} numberOfLines={1}>
+                {t('vehicles.driver')}: {assignedDriver.name}
+              </Text>
+            )}
+            {assignedCompany && (
+              <View style={[styles.companyBadge, { backgroundColor: `${colors.secondary}15` }]}>
+                <Building2 size={10} color={colors.secondary} />
+                <Text style={[styles.companyBadgeText, { color: colors.secondary }]}>
+                  {assignedCompany.nameZh || assignedCompany.name}
+                </Text>
+              </View>
+            )}
+            {vehicle.devIdno && (
+              <View style={[styles.gpsBadge, { backgroundColor: `${colors.primary}15` }]}>
+                {vehicle.status === 'active' ? (
+                  <Wifi size={10} color={colors.primary} />
+                ) : (
+                  <WifiOff size={10} color={colors.textTertiary} />
+                )}
+                <Text style={[styles.gpsBadgeText, { color: colors.primary }]}>
+                  {vehicle.devIdno}
+                </Text>
+              </View>
+            )}
+          </View>
         </View>
-      </View>
-      <View style={styles.vehicleRowActions}>
-        <Pressable onPress={onEdit} style={styles.rowActionBtn} hitSlop={8}>
-          <Edit2 size={16} color={colors.primary} />
+      </Pressable>
+      <View style={[styles.vehicleRowActions, { position: 'absolute', right: 8, top: '50%', transform: [{ translateY: -22 }] }]}>
+        <Pressable
+          onPress={(e) => {
+            e.stopPropagation?.();
+            onEdit();
+          }}
+          style={({ pressed }) => [
+            styles.rowActionBtn,
+            { backgroundColor: pressed ? `${colors.primary}15` : 'transparent' },
+          ]}
+        >
+          <Edit2 size={18} color={colors.primary} />
         </Pressable>
-        <Pressable onPress={onDelete} style={styles.rowActionBtn} hitSlop={8}>
-          <Trash2 size={16} color={colors.danger} />
+        <Pressable
+          onPress={(e) => {
+            e.stopPropagation?.();
+            onDelete();
+          }}
+          style={({ pressed }) => [
+            styles.rowActionBtn,
+            styles.deleteBtn,
+            { backgroundColor: pressed ? `${colors.danger}15` : 'transparent' },
+          ]}
+        >
+          <Trash2 size={18} color={colors.danger} />
         </Pressable>
       </View>
-    </Pressable>
+    </View>
   );
 }
 
@@ -538,23 +582,79 @@ function VehicleFormModal({
   );
 }
 
+function DeleteConfirmModal({
+  visible,
+  vehicleName,
+  onCancel,
+  onConfirm,
+}: {
+  visible: boolean;
+  vehicleName: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const { colors } = useThemeStore();
+  const { t } = useTranslation();
+
+  return (
+    <Modal visible={visible} transparent animationType="fade">
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <Pressable style={[styles.modalBackdrop, { backgroundColor: 'rgba(0,0,0,0.6)' }]} onPress={onCancel}>
+          <Pressable style={[styles.deleteConfirmBox, { backgroundColor: colors.card }]} onPress={(e) => e.stopPropagation()}>
+            <View style={[styles.deleteConfirmIcon, { backgroundColor: `${colors.danger}15` }]}>
+              <Trash2 size={32} color={colors.danger} />
+            </View>
+            <Text style={[styles.deleteConfirmTitle, { color: colors.textPrimary }]}>
+              {t('vehicles.deleteVehicle')}
+            </Text>
+            <Text style={[styles.deleteConfirmText, { color: colors.textSecondary }]}>
+              {t('common.delete')} {vehicleName}?
+            </Text>
+            <View style={styles.deleteConfirmActions}>
+              <Pressable
+                style={[styles.deleteConfirmBtn, { borderColor: colors.border }]}
+                onPress={onCancel}
+              >
+                <Text style={[styles.deleteConfirmBtnText, { color: colors.textSecondary }]}>
+                  {t('common.cancel')}
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.deleteConfirmBtn, styles.deleteConfirmBtnDanger, { backgroundColor: colors.danger }]}
+                onPress={onConfirm}
+              >
+                <Text style={[styles.deleteConfirmBtnText, { color: '#FFF' }]}>
+                  {t('common.delete')}
+                </Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
 export default function VehicleManagementScreen() {
   const router = useRouter();
   const { colors } = useThemeStore();
   const { t } = useTranslation();
   const { vehicles, loadVehicles, deleteVehicle } = useVehicleStore();
-  const { loadDrivers } = useDriverStore();
+  const { drivers, loadDrivers } = useDriverStore();
+  const { users, loadUsers } = useUserManagementStore();
   const { isConnected } = useGps808Store();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<VehicleStatus | 'all'>('all');
   const [formVisible, setFormVisible] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
+  const [deleteConfirmVehicle, setDeleteConfirmVehicle] = useState<Vehicle | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     loadVehicles();
     loadDrivers();
-  }, [loadVehicles, loadDrivers]);
+    loadUsers();
+  }, [loadVehicles, loadDrivers, loadUsers]);
 
   const filtered = vehicles.filter((v) => {
     const q = search.toLowerCase();
@@ -568,21 +668,14 @@ export default function VehicleManagementScreen() {
   });
 
   const handleDelete = (vehicle: Vehicle) => {
-    Alert.alert(
-      t('vehicles.deleteVehicle'),
-      `${t('common.delete')} ${vehicle.make} ${vehicle.model}?`,
-      [
-        { text: t('common.cancel'), style: 'cancel' as const },
-        {
-          text: t('common.delete'),
-          style: 'destructive' as const,
-          onPress: async () => {
-            await deleteVehicle(vehicle.id);
-          },
-        },
-      ],
-      { cancelable: true },
-    );
+    setDeleteConfirmVehicle(vehicle);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (deleteConfirmVehicle) {
+      await deleteVehicle(deleteConfirmVehicle.id);
+      setDeleteConfirmVehicle(null);
+    }
   };
 
   const handleEdit = (vehicle: Vehicle) => {
@@ -604,24 +697,55 @@ export default function VehicleManagementScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Header
-        title={t('nav.vehicleManagement')}
-        showBack
-        leftElement={
-          <Pressable onPress={() => router.push('/(tabs)')} hitSlop={8}>
-            <Image
-              source={require('@/assets/onefleet_2560.png')}
-              style={{ width: 90, height: 30 }}
-              resizeMode="contain"
-            />
-          </Pressable>
-        }
-        rightAction={
-          <Pressable onPress={handleAdd} style={[styles.addBtn, { backgroundColor: `${colors.primary}20` }]}>
-            <Plus size={18} color={colors.primary} />
-          </Pressable>
-        }
-      />
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+        <View style={[styles.headerBorder, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+          <View style={styles.header}>
+            <View style={styles.leftSection}>
+              <Pressable
+                onPress={() => router.canGoBack() ? router.back() : router.replace('/')}
+                style={styles.backButton}
+                hitSlop={12}
+              >
+                <View style={[styles.backArrow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <Text style={[styles.backArrowText, { color: colors.textPrimary }]}>{'<'}</Text>
+                </View>
+              </Pressable>
+            </View>
+
+            <View style={styles.logoTitleContainer}>
+              <Pressable onPress={() => router.push('/(tabs)')} hitSlop={8}>
+                <Image
+                  source={require('@/assets/onefleet_2560.png')}
+                  style={{ width: 90, height: 30 }}
+                  resizeMode="contain"
+                />
+              </Pressable>
+              <View style={styles.titleSpacer} />
+            </View>
+            <View style={styles.titleOverlay} pointerEvents="none">
+              <Text style={[styles.title, { color: colors.textPrimary }]} numberOfLines={1}>{t('nav.vehicleManagement')}</Text>
+            </View>
+
+            <View style={styles.rightSection} />
+          </View>
+        </View>
+      </SafeAreaView>
+
+      {/* Floating Add Button - Top Right - Hidden */}
+      {false && (
+      <Pressable
+        onPress={handleAdd}
+        style={({ pressed }) => [
+          styles.floatingAddBtn,
+          {
+            backgroundColor: colors.primary,
+            transform: [{ scale: pressed ? 0.95 : 1 }],
+          },
+        ]}
+      >
+        <Plus size={24} color="#FFF" />
+      </Pressable>
+      )}
 
       <View style={styles.searchBar}>
         <View style={[styles.searchWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -702,13 +826,69 @@ export default function VehicleManagementScreen() {
         onClose={() => { setFormVisible(false); setEditingVehicle(null); }}
         onSaved={() => { loadVehicles(); }}
       />
+
+      <DeleteConfirmModal
+        visible={deleteConfirmVehicle !== null}
+        vehicleName={deleteConfirmVehicle ? `${deleteConfirmVehicle.make} ${deleteConfirmVehicle.model}` : ''}
+        onCancel={() => setDeleteConfirmVehicle(null)}
+        onConfirm={handleConfirmDelete}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  searchBar: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.sm },
+  safeArea: {},
+  headerBorder: { borderBottomWidth: 1 },
+  header: {
+    height: layout.headerHeight,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  leftSection: { alignItems: 'flex-start', justifyContent: 'center', minWidth: 50 },
+  backButton: { padding: spacing.sm, marginLeft: -spacing.sm },
+  backArrow: {
+    width: 32,
+    height: 32,
+    borderRadius: borderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  backArrowText: { fontSize: 16, fontWeight: '700' },
+  logoTitleContainer: { flexDirection: 'row', alignItems: 'center' },
+  logoWrap: { marginRight: spacing.sm },
+  titleSpacer: { width: 0, flex: 1 },
+  titleOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: spacing.lg,
+    right: spacing.lg,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: { fontSize: typography.fontSize.lg, fontWeight: '600' },
+  rightSection: { alignItems: 'flex-end', justifyContent: 'center', minWidth: 50 },
+  floatingAddBtn: {
+    position: 'absolute',
+    top: layout.headerHeight + 10,
+    right: spacing.lg,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 100,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  searchBar: { paddingHorizontal: spacing.lg, paddingTop: 8, paddingBottom: spacing.sm },
   searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -750,7 +930,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: spacing.md,
+    position: 'relative',
   },
+  vehicleRowLeftPressable: { flex: 1 },
   vehicleRowLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   vehicleThumb: {
     width: 48,
@@ -778,26 +960,82 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   gpsBadgeText: { fontSize: typography.fontSize.xs, fontWeight: '600' },
-  vehicleRowActions: { flexDirection: 'row', gap: spacing.sm },
-  rowActionBtn: { padding: spacing.xs },
+  companyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+    marginTop: 4,
+    alignSelf: 'flex-start',
+  },
+  companyBadgeText: { fontSize: typography.fontSize.xs, fontWeight: '600' },
+  vehicleRowActions: { flexDirection: 'row', gap: spacing.sm, alignItems: 'center', zIndex: 10 },
+  rowActionBtn: {
+    padding: spacing.md,
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: borderRadius.md,
+    zIndex: 11,
+  },
+  deleteBtn: { marginLeft: spacing.xs },
   divider: { height: 1, marginLeft: 48 + spacing.md },
   emptyState: { alignItems: 'center', paddingTop: 80 },
   emptyTitle: { fontSize: typography.fontSize.lg, fontWeight: '600', marginTop: spacing.md },
   emptyHint: { fontSize: typography.fontSize.sm, marginTop: spacing.xs },
-  addBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   modalOverlay: { flex: 1, justifyContent: 'flex-end' },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
   modalContent: {
     borderTopLeftRadius: borderRadius.xl,
     borderTopRightRadius: borderRadius.xl,
     paddingBottom: 40,
     maxHeight: '85%',
+  },
+  deleteConfirmBox: {
+    width: 300,
+    borderRadius: borderRadius.xl,
+    padding: spacing.xl,
+    alignItems: 'center',
+  },
+  deleteConfirmIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  deleteConfirmTitle: {
+    fontSize: typography.fontSize.lg,
+    fontWeight: '700',
+    marginBottom: spacing.xs,
+  },
+  deleteConfirmText: {
+    fontSize: typography.fontSize.sm,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
+  deleteConfirmActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    width: '100%',
+  },
+  deleteConfirmBtn: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  deleteConfirmBtnDanger: {
+    borderWidth: 0,
+  },
+  deleteConfirmBtnText: {
+    fontSize: typography.fontSize.md,
+    fontWeight: '600',
   },
   modalHeader: {
     flexDirection: 'row',

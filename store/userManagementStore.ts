@@ -15,10 +15,13 @@ interface UserManagementState {
   syncError: string | null;
   loadUsers: () => Promise<void>;
   syncUsers: () => Promise<void>;
-  addUser: (name: string, email: string, password: string, role: 'driver' | 'company', phone?: string, avatar?: string) => Promise<{ success: boolean; error?: string }>;
-  updateUser: (id: string, updates: Partial<Pick<ManagedUser, 'name' | 'email' | 'phone' | 'role' | 'avatar'>>) => Promise<void>;
+  addUser: (name: string, email: string, password: string, role: 'driver' | 'company', phone?: string, avatar?: string, nameZh?: string, nameEn?: string, address?: string, companyId?: string) => Promise<{ success: boolean; error?: string }>;
+  updateUser: (id: string, updates: Partial<Pick<ManagedUser, 'name' | 'email' | 'phone' | 'role' | 'avatar' | 'nameZh' | 'nameEn' | 'address' | 'companyId'>>) => Promise<void>;
   deleteUser: (id: string) => Promise<void>;
   getUserByEmail: (email: string) => ManagedUser | undefined;
+  getCompanies: () => ManagedUser[];
+  getCompanyById: (id: string) => ManagedUser | undefined;
+  getUsersByCompanyId: (companyId: string) => ManagedUser[];
 }
 
 const generateId = (role: UserRole) => {
@@ -117,7 +120,7 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
     }
   },
 
-  addUser: async (name, email, password, role, phone, avatar) => {
+  addUser: async (name, email, password, role, phone, avatar, nameZh, nameEn, address, companyId) => {
     const existing = get().users.find((user) => user.email.toLowerCase() === email.toLowerCase());
     if (existing) {
       return { success: false, error: 'Email already registered' };
@@ -125,12 +128,16 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
 
     const newUser: ManagedUser = {
       id: generateId(role),
-      name,
+      name: nameZh || name || email.split('@')[0],
+      nameZh,
+      nameEn,
       email,
       password,
       role,
       phone,
       avatar,
+      address,
+      companyId,
     };
 
     const updated = [...get().users, newUser];
@@ -193,5 +200,17 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
 
   getUserByEmail: (email) => {
     return get().users.find((user) => user.email.toLowerCase() === email.toLowerCase());
+  },
+
+  getCompanies: () => {
+    return get().users.filter((user) => user.role === 'company');
+  },
+
+  getCompanyById: (id) => {
+    return get().users.find((user) => user.id === id && user.role === 'company');
+  },
+
+  getUsersByCompanyId: (companyId) => {
+    return get().users.filter((user) => user.companyId === companyId);
   },
 }));
