@@ -265,7 +265,7 @@ export const zhTW = {
     latitude: '緯度',
     longitude: '經度',
     trackHistory: '過往路線',
-    last24h: '24小時',
+    last24h: '1日',
     last7d: '7天',
     customDate: '日期',
     selectDate: '選擇日期',

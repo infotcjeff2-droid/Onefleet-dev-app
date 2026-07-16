@@ -10,7 +10,7 @@ import { gps808Api, type Gps808TrackPoint } from '@/utils/gps808Api';
 import { colors, borderRadius, spacing, typography } from '@/constants/theme';
 import { useTranslation } from '@/i18n';
 
-type QuickRange = '24h' | '7d' | 'custom';
+type QuickRange = '1d' | '7d' | 'custom';
 
 interface DailyRoute {
   date: string;
@@ -75,6 +75,67 @@ function parseCoord(val: unknown): number {
     return isNaN(num) ? 0 : num;
   }
   return 0;
+}
+
+/**
+ * Fetch all pages of track history for a given time range.
+ * Handles GPS devices that may have multiple on/off cycles per day.
+ */
+async function fetchAllTrackPages(
+  devIdno: string,
+  begintime: string,
+  endtime: string,
+  maxPages: number = 100,
+): Promise<TrackPoint[]> {
+  const allPoints: TrackPoint[] = [];
+  let currentPage = 1;
+  let totalPages = 1;
+  const pageSize = 500;
+
+  while (currentPage <= totalPages && currentPage <= maxPages) {
+    const response = await gps808Api.getTrackHistory(devIdno, begintime, endtime, {
+      distance: 0,
+      parkTime: 0,
+      currentPage,
+      pageRecords: pageSize,
+      toMap: 1,
+    });
+
+    // Handle tracks array (from Gps808TrackHistoryResponse)
+    if (response.result === 0 && response.tracks) {
+      for (const raw of response.tracks) {
+        const point = parseGpsInfoItem(raw as unknown as Gps808InfoItem);
+        if (point) {
+          allPoints.push(point);
+        }
+      }
+    }
+
+    // Handle infos array (alternative response format)
+    const infos = (response as unknown as { infos?: Gps808InfoItem[] }).infos;
+    if (response.result === 0 && infos) {
+      for (const raw of infos) {
+        const point = parseGpsInfoItem(raw);
+        if (point) {
+          allPoints.push(point);
+        }
+      }
+    }
+
+    // Check pagination info
+    if (response.pagination) {
+      totalPages = response.pagination.totalPages;
+    }
+
+    // If no pagination info, assume we're done after first page
+    if (!response.pagination) {
+      break;
+    }
+
+    currentPage++;
+  }
+
+  return allPoints;
 }
 
 /** GPS API response info item */
@@ -213,8 +274,16 @@ function getQuickRangeDates(range: QuickRange, customDate?: Date, customStartTim
 
   let start = new Date(now);
 
-  if (range === '24h') {
-    start.setHours(start.getHours() - 24);
+  if (range === '1d') {
+    // 1日 = 昨天整天 (例如: 今天是16號, 則顯示15號的資料)
+    start.setDate(start.getDate() - 1);
+    start.setHours(0, 0, 0, 0);
+    const endYesterday = new Date(start);
+    endYesterday.setHours(23, 59, 59, 999);
+    return {
+      begintime: `${formatDate(start)} ${formatTime(start)}`,
+      endtime: `${formatDate(endYesterday)} ${formatTime(endYesterday)}`,
+    };
   } else if (range === '7d') {
     start.setDate(start.getDate() - 7);
   } else if (range === 'custom' && customDate) {
@@ -483,7 +552,7 @@ function formatSpeed(speed: number): string {
 export function GpsTrackHistory({ devIdno, plateNumber, bare = false }: GpsTrackHistoryProps) {
   const { t, locale } = useTranslation();
   const { isConnected } = useGps808Store();
-  const [selectedRange, setSelectedRange] = useState<QuickRange>('24h');
+  const [selectedRange, setSelectedRange] = useState<QuickRange>('1d');
   const [customDate, setCustomDate] = useState<Date>(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [trackPoints, setTrackPoints] = useState<TrackPoint[]>([]);
@@ -540,25 +609,7 @@ export function GpsTrackHistory({ devIdno, plateNumber, bare = false }: GpsTrack
           const dateStr = formatDate(dayDate);
 
           dayPromises.push(
-            gps808Api.getTrackHistory(devIdno, begintime, endtime, {
-              distance: 0,
-              parkTime: 0,
-              currentPage: 1,
-              pageRecords: 500,
-              toMap: 1,
-            }).then((response) => {
-              const infos = (response as unknown as { infos?: Gps808InfoItem[] }).infos;
-              const parsedPoints: TrackPoint[] = [];
-              
-              if (response.result === 0 && infos) {
-                for (const raw of infos) {
-                  const point = parseGpsInfoItem(raw);
-                  if (point) {
-                    parsedPoints.push(point);
-                  }
-                }
-              }
-
+            fetchAllTrackPages(devIdno, begintime, endtime).then((parsedPoints) => {
               // Calculate distance from parsed points
               const dayDistance = calculateTotalDistance(parsedPoints);
               
@@ -628,75 +679,42 @@ export function GpsTrackHistory({ devIdno, plateNumber, bare = false }: GpsTrack
     setError(null);
 
     try {
-      // Fetch full day data first to get device on/off times (S/E)
-      const fullDayStart = new Date(date);
+      // Fetch full day data first to get device on/off times (S/E) - with pagination support
+      // For '1d' mode, use yesterday's date for full day data
+      const is1dMode = range === '1d';
+      const fullDayDate = is1dMode ? new Date(Date.now() - 24 * 60 * 60 * 1000) : new Date(date);
+      const fullDayStart = new Date(fullDayDate);
       fullDayStart.setHours(0, 0, 0, 0);
-      const fullDayEnd = new Date(date);
+      const fullDayEnd = new Date(fullDayDate);
       fullDayEnd.setHours(23, 59, 59, 999);
       const fullDayStartStr = `${formatDate(fullDayStart)} ${formatTime(fullDayStart)}`;
       const fullDayEndStr = `${formatDate(fullDayEnd)} ${formatTime(fullDayEnd)}`;
 
-      const fullDayResponse = await gps808Api.getTrackHistory(devIdno, fullDayStartStr, fullDayEndStr, {
-        distance: 0,
-        parkTime: 0,
-        currentPage: 1,
-        pageRecords: 500,
-        toMap: 1,
-      });
+      const fullDayInfos = await fetchAllTrackPages(devIdno, fullDayStartStr, fullDayEndStr);
 
       let fullDayStartPoint: TrackPoint | null = null;
       let fullDayEndPoint: TrackPoint | null = null;
 
-      // API 使用 'infos' 陣列而非 'tracks'
-      const infos = (fullDayResponse as unknown as { infos?: Gps808InfoItem[] }).infos;
-
-      if (fullDayResponse.result === 0 && infos && infos.length > 0) {
-        console.log('[GPS] Full day infos count:', infos.length);
+      if (fullDayInfos.length > 0) {
+        console.log('[GPS] Full day infos count:', fullDayInfos.length);
         
         // 第一筆是最早的，最後一筆是最晚的
-        const firstRaw = infos[0];
-        const lastRaw = infos[infos.length - 1];
-        console.log('[GPS] First info raw:', JSON.stringify(firstRaw));
-        console.log('[GPS] Last info raw:', JSON.stringify(lastRaw));
+        const firstPoint = fullDayInfos[0];
+        const lastPoint = fullDayInfos[fullDayInfos.length - 1];
+        console.log('[GPS] First info parsed:', JSON.stringify(firstPoint));
+        console.log('[GPS] Last info parsed:', JSON.stringify(lastPoint));
         
-        const firstPoint = parseGpsInfoItem(firstRaw);
-        const lastPoint = parseGpsInfoItem(lastRaw);
-        console.log('[GPS] First point parsed:', JSON.stringify(firstPoint));
-        console.log('[GPS] Last point parsed:', JSON.stringify(lastPoint));
-        
-        if (firstPoint) {
-          fullDayStartPoint = firstPoint;
-        }
-        if (lastPoint) {
-          fullDayEndPoint = lastPoint;
-        }
+        fullDayStartPoint = firstPoint;
+        fullDayEndPoint = lastPoint;
       }
       setDayStartPoint(fullDayStartPoint);
       setDayEndPoint(fullDayEndPoint);
 
-      // Now fetch the requested time range (for map display)
+      // Now fetch the requested time range (for map display) - with pagination support
       const { begintime, endtime } = getQuickRangeDates(range, date, forceStartTime, forceEndTime);
+      const parsedPoints = await fetchAllTrackPages(devIdno, begintime, endtime);
 
-      const response = await gps808Api.getTrackHistory(devIdno, begintime, endtime, {
-        distance: 0,
-        parkTime: 0,
-        currentPage: 1,
-        pageRecords: 500,
-        toMap: 1,
-      });
-
-      // API 使用 'infos' 陣列
-      const responseInfos = (response as unknown as { infos?: Gps808InfoItem[] }).infos;
-
-      if (response.result === 0 && responseInfos) {
-        const parsedPoints: TrackPoint[] = [];
-        for (const raw of responseInfos) {
-          const point = parseGpsInfoItem(raw);
-          if (point) {
-            parsedPoints.push(point);
-          }
-        }
-
+      if (parsedPoints.length > 0) {
         // Calculate distance from parsed points using Haversine formula
         const dayDistance = calculateTotalDistance(parsedPoints);
         setTrackPoints(parsedPoints);
@@ -724,11 +742,12 @@ export function GpsTrackHistory({ devIdno, plateNumber, bare = false }: GpsTrack
           setTotalDuration('');
         }
       } else {
+        // No data found for the selected time range
         setTrackPoints([]);
         setDailyRoutes([]);
         setFilteredStartPoint(null);
         setFilteredEndPoint(null);
-        setError(response.error || t('vehicles.noTrackData'));
+        setError(t('vehicles.noTrackData'));
       }
     } catch (err) {
       setError(String(err));
@@ -897,10 +916,10 @@ export function GpsTrackHistory({ devIdno, plateNumber, bare = false }: GpsTrack
       {/* Quick Range Selector */}
       <View style={styles.quickRangeContainer}>
         <Pressable
-          style={[styles.quickRangeBtn, selectedRange === '24h' && styles.quickRangeBtnActive]}
-          onPress={() => handleQuickRange('24h')}
+          style={[styles.quickRangeBtn, selectedRange === '1d' && styles.quickRangeBtnActive]}
+          onPress={() => handleQuickRange('1d')}
         >
-          <Text style={[styles.quickRangeText, selectedRange === '24h' && styles.quickRangeTextActive]}>
+          <Text style={[styles.quickRangeText, selectedRange === '1d' && styles.quickRangeTextActive]}>
             {t('vehicles.last24h')}
           </Text>
         </Pressable>

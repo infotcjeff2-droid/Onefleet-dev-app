@@ -6,10 +6,8 @@
  * - Mobile (iOS/Android): direct API calls, no CORS issue
  *   → BASE_URL=https://console.onefleet.hk
  *
- * - Web: MUST use proxy to avoid CORS
- *   → Dynamically constructs proxy URL from current page origin
- *   → If page is at http://192.168.1.55:8081, proxy is http://192.168.1.55:3001
- *   → Falls back to localhost:3001 if origin cannot be determined
+ * - Web (Vercel): use Vercel API route /api/gps/...
+ * - Web (Local Dev): use local proxy http://localhost:3001/api/gps
  */
 
 import { Platform } from 'react-native';
@@ -17,44 +15,47 @@ import { storage } from './storage';
 import { md5 } from 'js-md5';
 
 const IS_WEB = Platform.OS === 'web';
-const PROXY_PORT = 3001; // GPS Proxy Server port
 
 /**
- * Dynamically determines the proxy URL based on current page origin.
- * This ensures mobile devices can reach the proxy on the development machine.
+ * Detect if running on Vercel (or other production deployment)
  */
-function getProxyUrlFromOrigin(): string {
-  if (typeof window !== 'undefined' && window.location?.origin) {
-    const origin = window.location.origin;
-    try {
-      const url = new URL(origin);
-      // Replace the port with proxy port
-      url.port = String(PROXY_PORT);
-      url.pathname = 'api/gps';
-      return url.toString().replace(/\/$/, '');
-    } catch {
-      // Fallback
-    }
-  }
-  return `http://localhost:${PROXY_PORT}/api/gps`;
+function isVercelDeployment(): boolean {
+  if (typeof window === 'undefined') return false;
+  const origin = window.location.origin;
+  return (
+    origin.includes('vercel.app') ||
+    origin.includes('onfleet') ||
+    (!origin.includes('localhost') &&
+    !origin.includes('127.0.0.1') &&
+    !origin.includes('192.168.'))
+  );
 }
 
-function resolveDefaultBaseUrl(): string {
+/**
+ * Get the GPS API base URL based on environment:
+ * - Vercel deployment: empty string (use relative path)
+ * - Local development: http://localhost:3001
+ */
+function getBaseUrl(): string {
   if (!IS_WEB) {
     return 'https://console.onefleet.hk';
   }
-  // For Web, dynamically determine proxy URL from current origin
-  return getProxyUrlFromOrigin();
+  
+  if (isVercelDeployment()) {
+    // Use relative path - will be resolved using window.location.origin
+    return '';
+  }
+  
+  // Local development - use local proxy
+  return 'http://localhost:3001';
 }
-
-const DEFAULT_BASE_URL = resolveDefaultBaseUrl();
 
 const JSESSION_KEY = 'gps808_jsession';
 export const SERVER_URL_KEY = 'gps808_server_url';
 
-/** Returns the effective base URL: env server URL > proxy URL. */
+/** Returns the effective base URL (synchronous). */
 async function getEffectiveBaseUrl(): Promise<string> {
-  return DEFAULT_BASE_URL;
+  return getBaseUrl();
 }
 
 export async function setServerUrl(url: string): Promise<void> {
@@ -211,9 +212,21 @@ async function httpRequest(
   params: Record<string, string | number> = {},
   method: 'GET' | 'POST' = 'GET',
 ): Promise<Response> {
-  const base = await getEffectiveBaseUrl();
-  const url = new URL(`${base}${endpoint}`);
+  const base = getBaseUrl();
+  // API prefix: /api/gps
+  const apiPrefix = '/api/gps';
+  
+  // Build URL
+  let fullUrl: string;
+  if (!base) {
+    // Vercel or no base - use relative path
+    fullUrl = `${apiPrefix}${endpoint}`;
+  } else {
+    fullUrl = `${base}${apiPrefix}${endpoint}`;
+  }
+  
   const isGet = method === 'GET';
+  const url = new URL(fullUrl, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
 
   if (isGet) {
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
@@ -275,7 +288,7 @@ export const gps808Api = {
    * Web 端特別處理：從 proxy 返回的 JSON 中提取 _proxySession
    */
   async login(account: string, password: string): Promise<Gps808LoginResult> {
-    const base = await getEffectiveBaseUrl();
+    const base = getBaseUrl();
     try {
       const headers: Record<string, string> = {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -284,8 +297,14 @@ export const gps808Api = {
       // 808GPS API requires MD5 encrypted password via password parameter
       const encryptedPassword = md5(password);
 
-      const url = `${base}/StandardApiAction_login.action`;
-      const res = await fetch(url, {
+      // Build URL: /api/gps prefix + endpoint
+      const apiPrefix = '/api/gps';
+      const fullPath = `${apiPrefix}/StandardApiAction_login.action`;
+      const loginUrl = base
+        ? `${base}${fullPath}`
+        : fullPath;
+
+      const res = await fetch(loginUrl, {
         method: 'POST',
         headers,
         body: new URLSearchParams({ account, password: encryptedPassword }).toString(),
@@ -481,17 +500,17 @@ export const gps808Api = {
     const jsession = await storage.getItem(JSESSION_KEY);
     if (!jsession) return false;
     try {
-      const base = await getEffectiveBaseUrl();
+      const base = getBaseUrl();
       const headers: Record<string, string> = { Accept: 'application/json' };
       if (IS_WEB) {
         headers['x-gps-jsession'] = jsession;
       } else {
         headers['Cookie'] = `JSESSIONID=${jsession}`;
       }
-      const res = await fetch(
-        `${base}/StandardApiAction_queryVehicleList.action?currentPage=1&pageRecords=1`,
-        { headers },
-      );
+      const apiPrefix = '/api/gps';
+      const fullPath = `${apiPrefix}/StandardApiAction_queryVehicleList.action?currentPage=1&pageRecords=1`;
+      const pingUrl = base ? `${base}${fullPath}` : fullPath;
+      const res = await fetch(pingUrl, { headers });
       if (!res.ok) return false;
       const json = await res.json() as Gps808ApiResponse<unknown>;
       return json.result === 0;

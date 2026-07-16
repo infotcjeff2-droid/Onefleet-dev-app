@@ -272,7 +272,7 @@ export const en = {
     latitude: 'Lat',
     longitude: 'Lng',
     trackHistory: 'Track History',
-    last24h: '24H',
+    last24h: 'Yesterday',
     last7d: '7D',
     customDate: 'Date',
     selectDate: 'Select Date',
