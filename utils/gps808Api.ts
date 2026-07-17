@@ -20,10 +20,29 @@ const IS_WEB = Platform.OS === 'web';
 const PROXY_PORT = 3001; // GPS Proxy Server port
 
 /**
+ * 雲端 Proxy URL：優先讀取環境變數。
+ * 本地開發：留空 → fallback 到 window.location.origin + :3001/api/gps
+ * Vercel 部署：需設定 EXPO_PUBLIC_GPS_PROXY_URL 指向 Railway/Render 等雲端 Proxy
+ *   例如：https://my-gps-proxy.up.railway.app/api/gps
+ */
+const CLOUD_PROXY_URL = process.env.EXPO_PUBLIC_GPS_PROXY_URL ?? null;
+
+/**
  * Dynamically determines the proxy URL based on current page origin.
  * This ensures mobile devices can reach the proxy on the development machine.
+ *
+ * Priority:
+ * 1. EXPO_PUBLIC_GPS_PROXY_URL (env variable, for Vercel/production)
+ * 2. window.location.origin (dynamic origin, for local dev)
+ * 3. localhost:3001 (fallback)
  */
 function getProxyUrlFromOrigin(): string {
+  // 1. 雲端 URL（Vercel 部署優先）
+  if (CLOUD_PROXY_URL) {
+    return CLOUD_PROXY_URL.replace(/\/$/, '');
+  }
+
+  // 2. 動態 origin（本地 / LAN 開發）
   if (typeof window !== 'undefined' && window.location?.origin) {
     const origin = window.location.origin;
     try {
@@ -36,6 +55,8 @@ function getProxyUrlFromOrigin(): string {
       // Fallback
     }
   }
+
+  // 3. Fallback：localhost（純本地無網路的情況）
   return `http://localhost:${PROXY_PORT}/api/gps`;
 }
 

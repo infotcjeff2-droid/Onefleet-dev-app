@@ -224,6 +224,13 @@ async function handleRequest(req, res) {
 
   console.log(`[Proxy] 收到請求: ${req.method} ${fullPath}`);
 
+  // Railway 健康檢查端點
+  if (pathname === '/' || pathname === '/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ok', service: 'fleetpro-gps-proxy' }));
+    return;
+  }
+
   // 只處理 /api/gps 路徑
   if (!pathname.startsWith('/api/gps')) {
     res.writeHead(404, { 'Content-Type': 'application/json' });

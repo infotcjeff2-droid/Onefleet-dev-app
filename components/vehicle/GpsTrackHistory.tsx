@@ -317,9 +317,8 @@ function buildTrackMapHtml(opts: {
   locale: string;
   startLabel: string;
   endLabel: string;
-  currentLabel: string;
 }): string {
-  const { points, label, locale: currentLang, startLabel, endLabel, currentLabel } = opts;
+  const { points, label, locale: currentLang, startLabel, endLabel } = opts;
 
   if (points.length === 0) {
     return `<!DOCTYPE html>
@@ -400,15 +399,6 @@ function buildTrackMapHtml(opts: {
     })
   `;
 
-  const carIcon = `
-    L.divIcon({
-      html: '<div class="car-icon"><div class="car-icon-inner"></div></div>',
-      className: '',
-      iconSize: [32, 32],
-      iconAnchor: [16, 16],
-    })
-  `;
-
   const polylineOptions = `
     color: '#3B82F6',
     weight: 4,
@@ -418,7 +408,6 @@ function buildTrackMapHtml(opts: {
   const safeLabel = label.replace(/'/g, "\\'");
   const safeStartLabel = startLabel.replace(/'/g, "\\'");
   const safeEndLabel = endLabel.replace(/'/g, "\\'");
-  const safeCurrentLabel = currentLabel.replace(/'/g, "\\'");
   const safeStartAddr = startAddr.replace(/'/g, "\\'");
   const safeEndAddr = endAddr.replace(/'/g, "\\'");
 
@@ -482,7 +471,6 @@ function buildTrackMapHtml(opts: {
   <div class="info-badge">${safeLabel} - ${points.length} points</div>
   <div class="legend">
     <div class="legend-item"><div class="legend-dot" style="background:#22C55E"></div> ${safeStartLabel}</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#3B82F6"></div> ${safeCurrentLabel}</div>
     <div class="legend-item"><div class="legend-dot" style="background:#EF4444"></div> ${safeEndLabel}</div>
   </div>
   <button class="center-btn" id="centerBtn" title="Center">
@@ -515,9 +503,6 @@ function buildTrackMapHtml(opts: {
 
     const endMarker = L.marker([${endPoint.lat}, ${endPoint.lng}], { icon: ${endIcon} }).addTo(map);
     endMarker.bindPopup('<b>${safeEndLabel}</b><br/><span style="word-break:break-all;font-size:12px">${safeEndAddr}</span>');
-
-    const carMarker = L.marker([${endPoint.lat}, ${endPoint.lng}], { icon: ${carIcon}, title: '${safeLabel}' }).addTo(map);
-    carMarker.bindPopup('<b>${safeCurrentLabel} - ${safeLabel}</b><br/><span style="word-break:break-all;font-size:12px">${safeEndAddr}</span>').openPopup();
 
     map.fitBounds(latLngPoints, { padding: [50, 50] });
 
@@ -770,7 +755,6 @@ export function GpsTrackHistory({ devIdno, plateNumber, bare = false }: GpsTrack
     locale,
     startLabel: t('vehicles.trackStart'),
     endLabel: t('vehicles.trackEnd'),
-    currentLabel: t('vehicles.currentPosition'),
   });
 
   const handleQuickRange = (range: QuickRange) => {

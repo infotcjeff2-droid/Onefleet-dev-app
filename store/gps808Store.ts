@@ -39,6 +39,24 @@ const WEB_ENV_CONFIG: Gps808Config = {
 };
 const WEB_AUTO_CONNECT = process.env.EXPO_PUBLIC_GPS808_AUTO_CONNECT === 'true';
 
+// 與 gps808Api.ts 保持一致的 proxy URL 解析邏輯
+function getWebProxyUrl(): string {
+  const envUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL;
+  if (envUrl) return envUrl.replace(/\/$/, '');
+
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    try {
+      const url = new URL(window.location.origin);
+      url.port = '3001';
+      url.pathname = 'api/gps';
+      return url.toString().replace(/\/$/, '');
+    } catch {
+      // fallback
+    }
+  }
+  return 'http://localhost:3001/api/gps';
+}
+
 function getInitialConfig(): Gps808Config {
   if (Platform.OS === 'web' && WEB_AUTO_CONNECT && WEB_ENV_CONFIG.account) {
     return WEB_ENV_CONFIG;
@@ -66,7 +84,7 @@ export const useGps808Store = create<Gps808State>((set, get) => ({
         if (Platform.OS === 'web' && WEB_AUTO_CONNECT && WEB_ENV_CONFIG.account) {
           console.log('[GPS808] loadConfig: attempting env-based auto-connect...');
           // Web 端：使用 proxy URL 避免 CORS 問題
-          const proxyUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL || 'http://localhost:3001/api/gps';
+          const proxyUrl = getWebProxyUrl();
           await setServerUrl(proxyUrl);
           const result = await gps808Api.login(WEB_ENV_CONFIG.account, WEB_ENV_CONFIG.password);
           console.log('[GPS808] loadConfig: login result =', result);
@@ -84,7 +102,7 @@ export const useGps808Store = create<Gps808State>((set, get) => ({
       const parsed = JSON.parse(stored) as Gps808Config;
       // Web 端：使用 proxy URL 避免 CORS 問題
       if (IS_WEB) {
-        const proxyUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL || 'http://localhost:3001/api/gps';
+        const proxyUrl = getWebProxyUrl();
         await setServerUrl(proxyUrl);
       } else {
         await setServerUrl(parsed.serverUrl);
@@ -140,9 +158,7 @@ export const useGps808Store = create<Gps808State>((set, get) => ({
     try {
       // Web 端：使用 proxy URL 避免 CORS 問題
       // 只有移動端可以直接請求 console.onefleet.hk
-      const effectiveServerUrl = IS_WEB
-        ? (process.env.EXPO_PUBLIC_GPS_PROXY_URL || 'http://localhost:3001/api/gps')
-        : config.serverUrl;
+      const effectiveServerUrl = IS_WEB ? getWebProxyUrl() : config.serverUrl;
 
       await setServerUrl(effectiveServerUrl);
       const result = await gps808Api.login(config.account, config.password);
