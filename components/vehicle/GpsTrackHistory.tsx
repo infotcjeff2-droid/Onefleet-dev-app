@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, Pressable, Platform, ScrollView, Modal, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Platform, ScrollView, Modal, TouchableOpacity, TextInput } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Calendar, Clock, MapPin, Navigation, X, RotateCcw, ChevronDown, ChevronRight } from 'lucide-react-native';
@@ -80,59 +80,81 @@ function parseCoord(val: unknown): number {
 /**
  * Fetch all pages of track history for a given time range.
  * Handles GPS devices that may have multiple on/off cycles per day.
+ * 
+ * OPTIMIZATION: Uses larger page size and parallel fetching for speed.
  */
 async function fetchAllTrackPages(
   devIdno: string,
   begintime: string,
   endtime: string,
-  maxPages: number = 100,
+  maxPages: number = 20, // Reduced from 100 - most use cases need <10k points
+  pageSize: number = 1000, // Increased from 500 for fewer round trips
 ): Promise<TrackPoint[]> {
   const allPoints: TrackPoint[] = [];
   let currentPage = 1;
   let totalPages = 1;
-  const pageSize = 500;
+
+  // Fetch pages in parallel batches for speed
+  const BATCH_SIZE = 3; // Parallel requests per batch
 
   while (currentPage <= totalPages && currentPage <= maxPages) {
-    const response = await gps808Api.getTrackHistory(devIdno, begintime, endtime, {
-      distance: 0,
-      parkTime: 0,
-      currentPage,
-      pageRecords: pageSize,
-      toMap: 1,
-    });
-
-    // Handle tracks array (from Gps808TrackHistoryResponse)
-    if (response.result === 0 && response.tracks) {
-      for (const raw of response.tracks) {
-        const point = parseGpsInfoItem(raw as unknown as Gps808InfoItem);
-        if (point) {
-          allPoints.push(point);
-        }
-      }
+    // Create batch of requests
+    const batchPromises: Promise<{ points: TrackPoint[]; totalPages: number }>[] = [];
+    
+    for (let i = 0; i < BATCH_SIZE && currentPage + i <= totalPages && currentPage + i <= maxPages; i++) {
+      const pageNum = currentPage + i;
+      batchPromises.push(
+        gps808Api.getTrackHistory(devIdno, begintime, endtime, {
+          distance: 0,
+          parkTime: 0,
+          currentPage: pageNum,
+          pageRecords: pageSize,
+          toMap: 1,
+        }).then(response => {
+          const points: TrackPoint[] = [];
+          
+          // Handle tracks array
+          if (response.result === 0 && response.tracks) {
+            for (const raw of response.tracks) {
+              const point = parseGpsInfoItem(raw as unknown as Gps808InfoItem);
+              if (point) points.push(point);
+            }
+          }
+          
+          // Handle infos array (alternative response format)
+          const infos = (response as unknown as { infos?: Gps808InfoItem[] }).infos;
+          if (response.result === 0 && infos) {
+            for (const raw of infos) {
+              const point = parseGpsInfoItem(raw);
+              if (point) points.push(point);
+            }
+          }
+          
+          // Check pagination
+          let respTotalPages = 1;
+          if (response.pagination) {
+            respTotalPages = response.pagination.totalPages;
+          }
+          
+          return { points, totalPages: respTotalPages };
+        })
+      );
     }
-
-    // Handle infos array (alternative response format)
-    const infos = (response as unknown as { infos?: Gps808InfoItem[] }).infos;
-    if (response.result === 0 && infos) {
-      for (const raw of infos) {
-        const point = parseGpsInfoItem(raw);
-        if (point) {
-          allPoints.push(point);
-        }
-      }
+    
+    // Wait for batch to complete
+    const results = await Promise.all(batchPromises);
+    
+    // Update totalPages from first result (they should all be the same)
+    if (results.length > 0) {
+      totalPages = results[0].totalPages;
     }
-
-    // Check pagination info
-    if (response.pagination) {
-      totalPages = response.pagination.totalPages;
+    
+    // Collect points from batch
+    for (const result of results) {
+      allPoints.push(...result.points);
     }
-
-    // If no pagination info, assume we're done after first page
-    if (!response.pagination) {
-      break;
-    }
-
-    currentPage++;
+    
+    currentPage += BATCH_SIZE;
   }
 
   return allPoints;
@@ -437,7 +459,7 @@ function buildTrackMapHtml(opts: {
       transform: translateY(-2px);
     }
     .info-badge {
-      position: absolute; top: 8px; left: 8px; z-index: 1000;
+      position: absolute; top: 8px; right: 8px; z-index: 1000;
       background: rgba(30, 41, 59, 0.95);
       color: #fff; padding: 8px 12px; border-radius: 8px;
       font-family: -apple-system, BlinkMacSystemFont, sans-serif;
@@ -468,7 +490,7 @@ function buildTrackMapHtml(opts: {
 </head>
 <body>
   <div id="map"></div>
-  <div class="info-badge">${safeLabel} - ${points.length} points</div>
+  <div class="info-badge">${safeLabel}</div>
   <div class="legend">
     <div class="legend-item"><div class="legend-dot" style="background:#22C55E"></div> ${safeStartLabel}</div>
     <div class="legend-item"><div class="legend-dot" style="background:#EF4444"></div> ${safeEndLabel}</div>
@@ -573,6 +595,9 @@ export function GpsTrackHistory({ devIdno, plateNumber, bare = false }: GpsTrack
   const [selectedDayTimeRange, setSelectedDayTimeRange] = useState<{ start: number; end: number }>({ start: 0, end: 23 });
   // Expanded parking location index
   const [expandedParkIndex, setExpandedParkIndex] = useState<number | null>(null);
+  
+  // Time input mode: true = use hour range slider, false = use direct time input
+  const [useTimeSlider, setUseTimeSlider] = useState(true);
 
   const fetchTrackHistory = useCallback(async (forceRange?: QuickRange, forceDate?: Date, forceStartTime?: { hour: number; minute: number }, forceEndTime?: { hour: number; minute: number }) => {
     if (!devIdno) return;
@@ -664,8 +689,9 @@ export function GpsTrackHistory({ devIdno, plateNumber, bare = false }: GpsTrack
     setError(null);
 
     try {
-      // Fetch full day data first to get device on/off times (S/E) - with pagination support
+      // Fetch full day data to get device on/off times (S/E) - with pagination support
       // For '1d' mode, use yesterday's date for full day data
+      // For 'custom' mode, use the selected date
       const is1dMode = range === '1d';
       const fullDayDate = is1dMode ? new Date(Date.now() - 24 * 60 * 60 * 1000) : new Date(date);
       const fullDayStart = new Date(fullDayDate);
@@ -675,29 +701,51 @@ export function GpsTrackHistory({ devIdno, plateNumber, bare = false }: GpsTrack
       const fullDayStartStr = `${formatDate(fullDayStart)} ${formatTime(fullDayStart)}`;
       const fullDayEndStr = `${formatDate(fullDayEnd)} ${formatTime(fullDayEnd)}`;
 
-      const fullDayInfos = await fetchAllTrackPages(devIdno, fullDayStartStr, fullDayEndStr);
+      // OPTIMIZATION: For '1d' mode, getQuickRangeDates already returns yesterday's full day
+      // So we only need ONE API call instead of two
+      const { begintime, endtime } = getQuickRangeDates(range, date, forceStartTime, forceEndTime);
+      
+      // Check if the time ranges are identical (1d mode) to avoid duplicate API call
+      const isSameTimeRange = begintime === fullDayStartStr && endtime === fullDayEndStr;
+      
+      // Fetch data once - reuse for both S/E points and map display
+      const allPoints = await fetchAllTrackPages(devIdno, 
+        isSameTimeRange ? fullDayStartStr : begintime, 
+        isSameTimeRange ? fullDayEndStr : endtime
+      );
 
       let fullDayStartPoint: TrackPoint | null = null;
       let fullDayEndPoint: TrackPoint | null = null;
+      let parsedPoints: TrackPoint[] = allPoints;
 
-      if (fullDayInfos.length > 0) {
-        console.log('[GPS] Full day infos count:', fullDayInfos.length);
+      if (allPoints.length > 0) {
+        console.log('[GPS] Full day infos count:', allPoints.length);
         
         // 第一筆是最早的，最後一筆是最晚的
-        const firstPoint = fullDayInfos[0];
-        const lastPoint = fullDayInfos[fullDayInfos.length - 1];
+        const firstPoint = allPoints[0];
+        const lastPoint = allPoints[allPoints.length - 1];
         console.log('[GPS] First info parsed:', JSON.stringify(firstPoint));
         console.log('[GPS] Last info parsed:', JSON.stringify(lastPoint));
         
         fullDayStartPoint = firstPoint;
         fullDayEndPoint = lastPoint;
+        
+        // For 1d mode, S/E are the same as first/last points
+        // For custom mode, S/E are from full day, but we filter for display
+        if (!isSameTimeRange && range === 'custom') {
+          // Custom mode: full day for S/E, but filter by selected time range
+          // Note: we already fetched the custom range, so filter in-memory
+          const filterStartHour = forceStartTime?.hour ?? startHour;
+          const filterEndHour = forceEndTime?.hour ?? endHour;
+          
+          parsedPoints = allPoints.filter((p) => {
+            const hour = new Date(p.gpsTime).getHours();
+            return hour >= filterStartHour && hour <= filterEndHour;
+          });
+        }
       }
       setDayStartPoint(fullDayStartPoint);
       setDayEndPoint(fullDayEndPoint);
-
-      // Now fetch the requested time range (for map display) - with pagination support
-      const { begintime, endtime } = getQuickRangeDates(range, date, forceStartTime, forceEndTime);
-      const parsedPoints = await fetchAllTrackPages(devIdno, begintime, endtime);
 
       if (parsedPoints.length > 0) {
         // Calculate distance from parsed points using Haversine formula
@@ -986,9 +1034,6 @@ export function GpsTrackHistory({ devIdno, plateNumber, bare = false }: GpsTrack
                     <Text style={[styles.dailyRouteDate, selectedDayIndex === index && styles.dailyRouteDateActive]}>
                       {route.date.slice(5)}
                     </Text>
-                    <Text style={[styles.dailyRoutePoints, selectedDayIndex === index && styles.dailyRoutePointsActive]}>
-                      {route.points.length > 0 ? `${route.points.length} pts` : 'No data'}
-                    </Text>
                     <Text style={[styles.dailyRouteDistance, selectedDayIndex === index && styles.dailyRouteDistanceActive]}>
                       {route.distance > 0 ? `${route.distance.toFixed(1)}km` : ''}
                     </Text>
@@ -1120,9 +1165,24 @@ export function GpsTrackHistory({ devIdno, plateNumber, bare = false }: GpsTrack
                 ? `${dailyRoutes[selectedDayIndex]?.date || ''} - ${t('vehicles.selectTime')}`
                 : t('vehicles.selectTime')}
             </Text>
+            <View style={styles.timeModeToggle}>
+              <Pressable
+                style={[styles.timeModeBtn, useTimeSlider && styles.timeModeBtnActive]}
+                onPress={() => setUseTimeSlider(true)}
+              >
+                <Text style={[styles.timeModeBtnText, useTimeSlider && styles.timeModeBtnTextActive]}>時段</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.timeModeBtn, !useTimeSlider && styles.timeModeBtnActive]}
+                onPress={() => setUseTimeSlider(false)}
+              >
+                <Text style={[styles.timeModeBtnText, !useTimeSlider && styles.timeModeBtnTextActive]}>時間</Text>
+              </Pressable>
+            </View>
           </View>
           
-          {/* Simple Range Bar - 24 hour slider with drag */}
+          {useTimeSlider ? (
+          /* Simple Range Bar - 24 hour slider with drag */
           <View style={styles.rangeBarContainer}>
             <View style={styles.rangeBarLabels}>
               <Text style={styles.rangeBarTime}>
@@ -1201,6 +1261,91 @@ export function GpsTrackHistory({ devIdno, plateNumber, bare = false }: GpsTrack
               ))}
             </View>
           </View>
+          ) : (
+          /* Direct Time Input Mode */
+          <View style={styles.timeInputContainer}>
+            <View style={styles.timeInputRow}>
+              <Text style={styles.timeInputLabel}>開始時間</Text>
+              <TextInput
+                style={styles.timeInputField}
+                value={String(selectedRange === '7d' ? selectedDayTimeRange.start : startHour).padStart(2, '0')}
+                onChangeText={(text) => {
+                  const hour = parseInt(text, 10);
+                  if (!isNaN(hour) && hour >= 0 && hour <= 23) {
+                    if (selectedRange === '7d') {
+                      setSelectedDayTimeRange(prev => ({ ...prev, start: hour }));
+                    } else {
+                      setStartHour(hour);
+                    }
+                  }
+                }}
+                keyboardType="numeric"
+                maxLength={2}
+                selectTextOnFocus
+              />
+              <Text style={styles.timeInputColon}>:</Text>
+              <TextInput
+                style={styles.timeInputField}
+                value={String(selectedRange === '7d' ? 0 : startMinute).padStart(2, '0')}
+                onChangeText={(text) => {
+                  const minute = parseInt(text, 10);
+                  if (!isNaN(minute) && minute >= 0 && minute <= 59) {
+                    setStartMinute(minute);
+                  }
+                }}
+                keyboardType="numeric"
+                maxLength={2}
+                selectTextOnFocus
+              />
+            </View>
+            <View style={styles.timeInputRow}>
+              <Text style={styles.timeInputLabel}>結束時間</Text>
+              <TextInput
+                style={styles.timeInputField}
+                value={String(selectedRange === '7d' ? selectedDayTimeRange.end : endHour).padStart(2, '0')}
+                onChangeText={(text) => {
+                  const hour = parseInt(text, 10);
+                  if (!isNaN(hour) && hour >= 0 && hour <= 23) {
+                    if (selectedRange === '7d') {
+                      setSelectedDayTimeRange(prev => ({ ...prev, end: hour }));
+                    } else {
+                      setEndHour(hour);
+                    }
+                  }
+                }}
+                keyboardType="numeric"
+                maxLength={2}
+                selectTextOnFocus
+              />
+              <Text style={styles.timeInputColon}>:</Text>
+              <TextInput
+                style={styles.timeInputField}
+                value={String(selectedRange === '7d' ? 59 : endMinute).padStart(2, '0')}
+                onChangeText={(text) => {
+                  const minute = parseInt(text, 10);
+                  if (!isNaN(minute) && minute >= 0 && minute <= 59) {
+                    setEndMinute(minute);
+                  }
+                }}
+                keyboardType="numeric"
+                maxLength={2}
+                selectTextOnFocus
+              />
+            </View>
+            <Pressable 
+              style={styles.timeInputApplyBtn}
+              onPress={() => {
+                if (selectedRange === '7d') {
+                  handle7DayTimeRangeApply(false);
+                } else {
+                  handleTimeRangeApply();
+                }
+              }}
+            >
+              <Text style={styles.timeInputApplyText}>套用</Text>
+            </Pressable>
+          </View>
+          )}
         </View>
       )}
 
@@ -1568,6 +1713,74 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     fontWeight: '600',
     color: colors.textPrimary,
+  },
+  timeModeToggle: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  timeModeBtn: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  timeModeBtnActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  timeModeBtnText: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: '600',
+    color: colors.textTertiary,
+  },
+  timeModeBtnTextActive: {
+    color: '#fff',
+  },
+  timeInputContainer: {
+    marginVertical: spacing.sm,
+  },
+  timeInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginBottom: spacing.sm,
+  },
+  timeInputLabel: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+    marginRight: spacing.sm,
+  },
+  timeInputField: {
+    width: 40,
+    height: 36,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.surface,
+    textAlign: 'center',
+    fontSize: typography.fontSize.md,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  timeInputColon: {
+    fontSize: typography.fontSize.md,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginHorizontal: spacing.xs,
+  },
+  timeInputApplyBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    marginTop: spacing.xs,
+  },
+  timeInputApplyText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    color: '#fff',
   },
   rangeBarContainer: {
     marginVertical: spacing.sm,

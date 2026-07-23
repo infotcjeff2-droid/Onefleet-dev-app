@@ -3,6 +3,7 @@ import { Alert } from 'react-native';
 import { DeliveryOrder, DeliveryStatus, SignatureStroke, DeliveryPhoto } from '@/types';
 import { storage } from '@/utils/storage';
 import { fetchFleetSnapshot, hasSupabaseEnv, pushFleetSnapshot } from '@/utils/fleetSync';
+import { uploadDeliveryPhoto } from '@/utils/supabaseStorage';
 
 const STORAGE_KEY = 'deliveries';
 const DELIVERY_FLOW: DeliveryStatus[] = ['pending', 'assigned', 'in_transit', 'delivered', 'signed'];
@@ -231,9 +232,21 @@ export const useDeliveryStore = create<DeliveryState>((set, get) => ({
 
   addSignature: async (deliveryId, signatureData, signatureStrokes) => {
     const now = new Date().toISOString();
+    let finalSignatureData = signatureData;
+
+    // Web 平台：將 base64 簽名上傳到 Supabase Storage
+    if (typeof window !== 'undefined' && signatureData.startsWith('data:')) {
+      try {
+        finalSignatureData = await uploadDeliveryPhoto(signatureData, `sig-${deliveryId}`);
+      } catch (err) {
+        console.error('Failed to upload signature:', err);
+        // 如果上傳失敗，仍然使用本地 base64
+      }
+    }
+
     const updated = get().deliveries.map((delivery) =>
       delivery.id === deliveryId
-        ? normalizeDelivery({ ...delivery, signatureData, signedAt: now, status: 'signed', signatureStrokes })
+        ? normalizeDelivery({ ...delivery, signatureData: finalSignatureData, signedAt: now, status: 'signed', signatureStrokes })
         : delivery
     );
     set({ deliveries: updated });
@@ -242,9 +255,24 @@ export const useDeliveryStore = create<DeliveryState>((set, get) => ({
   },
 
   addPhoto: async (deliveryId, photoUri) => {
+    let finalUri = photoUri;
+
+    // Web 平台：blob URL 或 base64 需要先上傳到 Supabase Storage
+    if (typeof window !== 'undefined' && (photoUri.startsWith('blob:') || photoUri.startsWith('data:'))) {
+      try {
+        finalUri = await uploadDeliveryPhoto(photoUri, deliveryId);
+      } catch (err) {
+        console.error('Failed to upload photo to Supabase:', err);
+        Alert.alert(
+          '上傳失敗',
+          `無法上傳圖片到雲端: ${err instanceof Error ? err.message : '未知錯誤'}\n\n圖片將以本地形式保存，F5 後可能消失。`
+        );
+      }
+    }
+
     const newPhoto: DeliveryPhoto = {
       id: `photo-${Date.now()}`,
-      uri: photoUri,
+      uri: finalUri,
       takenAt: new Date().toISOString(),
     };
     const updated = get().deliveries.map((delivery) =>

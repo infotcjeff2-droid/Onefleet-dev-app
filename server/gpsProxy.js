@@ -73,7 +73,18 @@ function proxyRequest(req, res, path, method, body, extraHeaders = {}) {
     };
 
     // 優先使用請求中的 x-gps-jsession header
-    const clientJsession = req.headers['x-gps-jsession'];
+    // 或者從 query string 中讀取 jsessionId（用於嵌入 WebView/iframe 的影片頁面，
+    // 因為瀏覽器原生 fetch 沒辦法帶自定義 header 到第三方）
+    const queryJsessionId = (() => {
+      try {
+        const url = new URL(req.url, `http://localhost:${PORT}`);
+        return url.searchParams.get('jsessionId') || url.searchParams.get('JSESSIONID') || '';
+      } catch {
+        return '';
+      }
+    })();
+
+    const clientJsession = req.headers['x-gps-jsession'] || queryJsessionId;
     if (clientJsession) {
       // 客戶端提供了 session，使用客戶端的
       options.headers['Cookie'] = `JSESSIONID=${clientJsession}`;

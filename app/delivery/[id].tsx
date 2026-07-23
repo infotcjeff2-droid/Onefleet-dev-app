@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Alert,
   Dimensions,
   Image,
+  Platform,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
@@ -170,30 +171,76 @@ function SignatureModal({
   const [lines, setLines] = useState<{ x: number; y: number; id: number }[][]>([]);
   const [currentLine, setCurrentLine] = useState<{ x: number; y: number; id: number }[]>([]);
   const lineIdRef = useRef(0);
+  const isDrawingRef = useRef(false);
+  const currentLineRef = useRef<{ x: number; y: number; id: number }[]>([]);
+  const linesRef = useRef<{ x: number; y: number; id: number }[][]>([]);
 
-  const handleTouch = (x: number, y: number) => {
-    setCurrentLine((prev) => [...prev, { x, y, id: lineIdRef.current++ }]);
-  };
+  const handleTouch = useCallback((x: number, y: number) => {
+    const newPoint = { x, y, id: lineIdRef.current++ };
+    currentLineRef.current = [...currentLineRef.current, newPoint];
+    setCurrentLine([...currentLineRef.current]);
+  }, []);
 
-  const handleEndLine = () => {
-    if (currentLine.length > 0) {
-      setLines((prev) => [...prev, currentLine]);
+  const handleEndLine = useCallback(() => {
+    if (currentLineRef.current.length > 0) {
+      linesRef.current = [...linesRef.current, [...currentLineRef.current]];
+      setLines([...linesRef.current]);
+      currentLineRef.current = [];
       setCurrentLine([]);
     }
-  };
+    isDrawingRef.current = false;
+  }, []);
 
-  const handleClear = () => {
+  const handleClear = useCallback(() => {
+    linesRef.current = [];
+    currentLineRef.current = [];
     setLines([]);
     setCurrentLine([]);
-  };
+  }, []);
 
   const handleConfirm = () => {
-    onConfirm(`signed-${Date.now()}`, lines);
+    const finalLines = linesRef.current;
+    onConfirm(`signed-${Date.now()}`, finalLines);
     handleClear();
     onClose();
   };
 
-  const hasSignature = lines.length > 0;
+  const hasSignature = lines.length > 0 || currentLine.length > 0;
+
+  const isWeb = Platform.OS === 'web';
+
+  const handlePointerDown = (e: any) => {
+    isDrawingRef.current = true;
+    currentLineRef.current = [];
+    let x: number, y: number;
+    if (isWeb) {
+      x = e.clientX - (e.currentTarget?.getBoundingClientRect?.().left ?? 0);
+      y = e.clientY - (e.currentTarget?.getBoundingClientRect?.().top ?? 0);
+    } else {
+      x = e.nativeEvent?.locationX ?? 0;
+      y = e.nativeEvent?.locationY ?? 0;
+    }
+    handleTouch(x, y);
+  };
+
+  const handlePointerMove = (e: any) => {
+    if (!isDrawingRef.current) return;
+    let x: number, y: number;
+    if (isWeb) {
+      x = e.clientX - (e.currentTarget?.getBoundingClientRect?.().left ?? 0);
+      y = e.clientY - (e.currentTarget?.getBoundingClientRect?.().top ?? 0);
+    } else {
+      x = e.nativeEvent?.locationX ?? 0;
+      y = e.nativeEvent?.locationY ?? 0;
+    }
+    handleTouch(x, y);
+  };
+
+  const handlePointerUp = () => {
+    handleEndLine();
+  };
+
+  const signaturePadWebStyle = isWeb ? { touchAction: 'none' as const } : {};
 
   return (
     <Modal visible={visible} transparent animationType="slide">
@@ -204,60 +251,55 @@ function SignatureModal({
             <Pressable onPress={onClose} hitSlop={12}><X size={20} color={colors.textSecondary} /></Pressable>
           </View>
           <Text style={styles.signatureHint}>{t('delivery.signBelowConfirm')}</Text>
-            <Pressable
-              style={styles.signaturePad}
-              onPressIn={(e) => {
-                const { locationX, locationY } = e.nativeEvent;
-                handleTouch(locationX, locationY);
-              }}
-              onTouchMove={(e) => {
-                const { locationX, locationY } = e.nativeEvent;
-                handleTouch(locationX, locationY);
-              }}
-              onPressOut={handleEndLine}
-            >
-              <View style={styles.signaturePadInner}>
-                <Svg style={StyleSheet.absoluteFill}>
-                  {lines.map((stroke) =>
-                    stroke.length > 1
-                      ? stroke.slice(1).map((pt, i) => (
-                          <Line
-                            key={`l-${stroke[0].id}-${i}`}
-                            x1={stroke[i].x}
-                            y1={stroke[i].y}
-                            x2={pt.x}
-                            y2={pt.y}
-                            stroke={colors.textPrimary}
-                            strokeWidth={2.5}
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        ))
-                      : null
-                  )}
-                  {currentLine.length > 1 &&
-                    currentLine.slice(1).map((pt, i) => (
-                      <Line
-                        key={`c-${i}`}
-                        x1={currentLine[i].x}
-                        y1={currentLine[i].y}
-                        x2={pt.x}
-                        y2={pt.y}
-                        stroke={colors.textPrimary}
-                        strokeWidth={2.5}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    ))}
-                </Svg>
-                {!hasSignature && (
-                  <Text style={styles.signaturePlaceholder}>{t('delivery.drawSignatureHere')}</Text>
+          <Pressable
+            style={[styles.signaturePad, signaturePadWebStyle]}
+            onPointerDown={isWeb ? handlePointerDown : undefined}
+            onPointerMove={isWeb ? handlePointerMove : undefined}
+            onPointerUp={isWeb ? handlePointerUp : undefined}
+            onPointerLeave={isWeb ? handlePointerUp : undefined}
+          >
+            <View style={styles.signaturePadInner}>
+              <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
+                {lines.map((stroke) =>
+                  stroke.length > 1
+                    ? stroke.slice(1).map((pt, i) => (
+                        <Line
+                          key={`l-${stroke[0].id}-${i}`}
+                          x1={stroke[i].x}
+                          y1={stroke[i].y}
+                          x2={pt.x}
+                          y2={pt.y}
+                          stroke={colors.textPrimary}
+                          strokeWidth={2.5}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      ))
+                    : null
                 )}
-              </View>
-            </Pressable>
-            <Pressable style={styles.clearSignatureBtn} onPress={handleClear}>
-              <Text style={styles.clearSignatureBtnText}>{t('delivery.clearSignature')}</Text>
-            </Pressable>
+                {currentLine.length > 1 &&
+                  currentLine.slice(1).map((pt, i) => (
+                    <Line
+                      key={`c-${i}`}
+                      x1={currentLine[i].x}
+                      y1={currentLine[i].y}
+                      x2={pt.x}
+                      y2={pt.y}
+                      stroke={colors.textPrimary}
+                      strokeWidth={2.5}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  ))}
+              </Svg>
+              {!hasSignature && (
+                <Text style={styles.signaturePlaceholder}>{t('delivery.drawSignatureHere')}</Text>
+              )}
+            </View>
+          </Pressable>
+          <Pressable style={styles.clearSignatureBtn} onPress={handleClear}>
+            <Text style={styles.clearSignatureBtnText}>{t('delivery.clearSignature')}</Text>
+          </Pressable>
           <View style={styles.modalActions}>
             <Button
               title={t('common.cancel')}
@@ -297,6 +339,8 @@ export default function DeliveryDetailScreen() {
   const [signatureModalVisible, setSignatureModalVisible] = useState(false);
   const [lightboxVisible, setLightboxVisible] = useState(false);
   const [lightboxUri, setLightboxUri] = useState('');
+  const [pendingPhotos, setPendingPhotos] = useState<{ uri: string }[]>([]);
+  const [photoPreviewVisible, setPhotoPreviewVisible] = useState(false);
 
   useEffect(() => {
     const found = deliveries.find((delivery) => delivery.id === id);
@@ -304,6 +348,7 @@ export default function DeliveryDetailScreen() {
   }, [id, deliveries]);
 
   useEffect(() => {
+    useDeliveryStore.getState().loadDeliveries();
     loadDrivers();
     loadUsers();
   }, [loadDrivers, loadUsers]);
@@ -357,29 +402,45 @@ export default function DeliveryDetailScreen() {
   };
 
   const handleStartTransit = () => {
-    Alert.alert(t('delivery.startTransit'), t('delivery.markInTransitConfirm'), [
-      { text: t('common.cancel'), style: 'cancel' },
-      {
-        text: t('common.confirm'),
-        onPress: () => {
-          updateStatus(order.id, 'in_transit');
-          router.replace({ pathname: '/delivery/[id]', params: { id: order.id } });
+    if (Platform.OS === 'web') {
+      if (!window.confirm(t('delivery.markInTransitConfirm'))) return;
+      updateStatus(order.id, 'in_transit').then(() => {
+        router.replace({ pathname: '/delivery/[id]', params: { id: order.id } });
+      });
+    } else {
+      Alert.alert(t('delivery.startTransit'), t('delivery.markInTransitConfirm'), [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('common.confirm'),
+          onPress: () => {
+            updateStatus(order.id, 'in_transit').then(() => {
+              router.replace({ pathname: '/delivery/[id]', params: { id: order.id } });
+            });
+          },
         },
-      },
-    ]);
+      ]);
+    }
   };
 
   const handleMarkDelivered = () => {
-    Alert.alert(t('delivery.markDelivered'), t('delivery.confirmDeliveryComplete'), [
-      { text: t('common.cancel'), style: 'cancel' },
-      {
-        text: t('common.confirm'),
-        onPress: async () => {
-          await updateStatus(order.id, 'delivered');
-          router.replace({ pathname: '/delivery/[id]', params: { id: order.id } });
+    if (Platform.OS === 'web') {
+      if (!window.confirm(t('delivery.confirmDeliveryComplete'))) return;
+      updateStatus(order.id, 'delivered').then(() => {
+        router.replace({ pathname: '/delivery/[id]', params: { id: order.id } });
+      });
+    } else {
+      Alert.alert(t('delivery.markDelivered'), t('delivery.confirmDeliveryComplete'), [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('common.confirm'),
+          onPress: () => {
+            updateStatus(order.id, 'delivered').then(() => {
+              router.replace({ pathname: '/delivery/[id]', params: { id: order.id } });
+            });
+          },
         },
-      },
-    ]);
+      ]);
+    }
   };
 
   const handleSign = () => setSignatureModalVisible(true);
@@ -397,37 +458,62 @@ export default function DeliveryDetailScreen() {
       selectionLimit: 5,
     });
     if (!result.canceled && result.assets.length > 0) {
-      for (const asset of result.assets) {
-        await addPhoto(order.id, asset.uri);
-      }
+      setPendingPhotos(result.assets);
+      setPhotoPreviewVisible(true);
     }
   };
 
-  const handleSignatureConfirm = (
+  const handleConfirmPhotos = async () => {
+    const photosToUpload = [...pendingPhotos];
+    const orderId = order.id;
+
+    // 先關閉 Modal
+    setPendingPhotos([]);
+    setPhotoPreviewVisible(false);
+
+    // 上傳所有照片
+    for (const photo of photosToUpload) {
+      await addPhoto(orderId, photo.uri);
+    }
+
+    // 等待狀態更新後刷新頁面
+    setTimeout(() => {
+      // 使用 location.reload 在 web 上確保頁面完全刷新
+      if (typeof window !== 'undefined' && Platform.OS === 'web') {
+        window.location.reload();
+      } else {
+        router.replace({ pathname: '/delivery/[id]', params: { id: orderId } });
+      }
+    }, 100);
+  };
+
+  const handleCancelPhotos = () => {
+    setPendingPhotos([]);
+    setPhotoPreviewVisible(false);
+  };
+
+  const handleSignatureConfirm = async (
     signatureData: string,
     strokes: { x: number; y: number; id: number }[][]
   ) => {
-    addSignature(order.id, signatureData, strokes);
+    await addSignature(order.id, signatureData, strokes);
     setSignatureModalVisible(false);
     router.replace({ pathname: '/delivery/[id]', params: { id: order.id } });
   };
 
   const actionButtons: { label: string; onPress: () => void; variant?: 'primary' | 'secondary'; icon?: React.ReactNode }[] = [];
 
-  const rawOrder = deliveries.find((d) => d.id === id);
-  const rawStatus = rawOrder?.status ?? order.status;
-
   if (!isExpired) {
-    if (isAdmin && rawStatus === 'pending') {
+    if (isAdmin && order.status === 'pending') {
       actionButtons.push({ label: t('delivery.assignDriver'), onPress: handleAssign, variant: 'primary', icon: <Truck size={16} color="#fff" /> });
     }
-    if (!isAdmin && rawStatus === 'assigned') {
+    if (!isAdmin && order.status === 'assigned') {
       actionButtons.push({ label: t('delivery.startTransit'), onPress: handleStartTransit, variant: 'primary', icon: <Truck size={16} color="#fff" /> });
     }
-    if (!isAdmin && rawStatus === 'in_transit') {
+    if (!isAdmin && order.status === 'in_transit') {
       actionButtons.push({ label: t('delivery.markDelivered'), onPress: handleMarkDelivered, variant: 'secondary', icon: <CheckCircle size={16} color={colors.primary} /> });
     }
-    if (!isAdmin && rawStatus === 'delivered') {
+    if (!isAdmin && order.status === 'delivered') {
       actionButtons.push({ label: t('delivery.signDelivery'), onPress: handleSign, variant: 'secondary', icon: <CheckCircle size={16} color={colors.primary} /> });
     }
   }
@@ -574,7 +660,7 @@ export default function DeliveryDetailScreen() {
           </Animated.View>
         )}
 
-        {((!isAdmin && (rawStatus === 'in_transit' || rawStatus === 'delivered' || rawStatus === 'signed')) || (order.photos && order.photos.length > 0)) && (
+        {((!isAdmin && (order.status === 'in_transit' || order.status === 'delivered' || order.status === 'signed')) || (order.photos && order.photos.length > 0)) && (
           <Animated.View entering={FadeInDown.delay(220).springify()}>
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>{t('delivery.photos')}</Text>
@@ -592,19 +678,29 @@ export default function DeliveryDetailScreen() {
                       <Image source={{ uri: photo.uri }} style={styles.photoImage} resizeMode="cover" />
                       <Pressable
                         style={styles.photoDeleteBtn}
-                        onPress={() => {
-                          Alert.alert(
-                            t('delivery.deletePhotoTitle'),
-                            t('delivery.deletePhotoMessage'),
-                            [
-                              { text: t('common.cancel'), style: 'cancel' },
-                              {
-                                text: t('common.delete'),
-                                style: 'destructive',
-                                onPress: () => removePhoto(order.id, photo.id),
-                              },
-                            ]
-                          );
+                        onPress={async () => {
+                          const confirmed = Platform.OS === 'web'
+                            ? window.confirm(t('delivery.deletePhotoMessage'))
+                            : null;
+                          if (Platform.OS === 'web' && confirmed) {
+                            await removePhoto(order.id, photo.id);
+                            window.location.reload();
+                          } else if (Platform.OS !== 'web') {
+                            Alert.alert(
+                              t('delivery.deletePhotoTitle'),
+                              t('delivery.deletePhotoMessage'),
+                              [
+                                { text: t('common.cancel'), style: 'cancel' },
+                                {
+                                  text: t('common.delete'),
+                                  style: 'destructive',
+                                  onPress: async () => {
+                                    await removePhoto(order.id, photo.id);
+                                  },
+                                },
+                              ]
+                            );
+                          }
                         }}
                         hitSlop={8}
                       >
@@ -719,6 +815,40 @@ export default function DeliveryDetailScreen() {
         onClose={() => setSignatureModalVisible(false)}
         onConfirm={handleSignatureConfirm}
       />
+
+      <Modal visible={photoPreviewVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <Animated.View entering={FadeInUp.springify()} style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t('delivery.photoPreview')}</Text>
+              <Pressable onPress={handleCancelPhotos} hitSlop={12}><X size={20} color={colors.textSecondary} /></Pressable>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.previewScrollView}>
+              {pendingPhotos.map((photo, index) => (
+                <View key={index} style={styles.previewPhotoItem}>
+                  <Image source={{ uri: photo.uri }} style={styles.previewPhotoImage} resizeMode="cover" />
+                </View>
+              ))}
+            </ScrollView>
+            <Text style={styles.previewCountText}>
+              {pendingPhotos.length} {t('delivery.photosSelected')}
+            </Text>
+            <View style={styles.modalActions}>
+              <Button
+                title={t('common.cancel')}
+                variant="ghost"
+                onPress={handleCancelPhotos}
+                style={{ flex: 1 }}
+              />
+              <Button
+                title={t('common.confirm')}
+                onPress={handleConfirmPhotos}
+                style={{ flex: 1 }}
+              />
+            </View>
+          </Animated.View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -930,4 +1060,20 @@ const styles = StyleSheet.create({
   },
   notFound: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md, paddingHorizontal: spacing.xl },
   notFoundText: { fontSize: typography.fontSize.base, color: colors.textSecondary },
+  previewScrollView: { paddingHorizontal: spacing.lg, maxHeight: 300 },
+  previewPhotoItem: {
+    width: 200,
+    height: 200,
+    marginRight: spacing.md,
+    borderRadius: borderRadius.md,
+    overflow: 'hidden',
+  },
+  previewPhotoImage: { width: '100%', height: '100%' },
+  previewCountText: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
 });

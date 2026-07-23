@@ -98,7 +98,7 @@ export default function VehicleDetailScreen() {
           </Pressable>
           <Animated.View style={[styles.compactTitle, compactTitleStyle]}>
             <Text style={styles.compactTitleText} numberOfLines={1}>
-              {vehicle.make} {vehicle.model}
+              {vehicle.make} · {vehicle.plateNumber}
             </Text>
           </Animated.View>
         </View>
@@ -191,7 +191,7 @@ const styles = StyleSheet.create({
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     paddingHorizontal: spacing.lg,
     height: layout.headerHeight,
   },
@@ -203,6 +203,8 @@ const styles = StyleSheet.create({
     zIndex: 100,
   },
   backBtn: {
+    position: 'absolute',
+    left: spacing.lg,
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -215,11 +217,16 @@ const styles = StyleSheet.create({
   compactTitle: {
     flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   compactTitleText: {
     fontSize: typography.fontSize.base,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#FFFFFF',
+    textAlign: 'center',
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   topBarActions: {
     flexDirection: 'row',

@@ -1,0 +1,9 @@
+# 明確告訴 Railway/Nixpacks：這是純 Node.js 專案
+# 不要被 package.json 中的 expo 依賴誤導
+# 只會用到 server/ 目錄下的 Node.js 腳本
+
+[node]
+version = "18"
+
+[start]
+cmd = "node server/gpsProxy.js"

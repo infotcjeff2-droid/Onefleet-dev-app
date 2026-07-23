@@ -10,6 +10,7 @@ import {
   Dimensions,
   TextInput as RNTextInput,
   Image,
+  Platform,
 } from 'react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import Svg, { Line } from 'react-native-svg';
@@ -293,30 +294,75 @@ function SignatureModal({
   const [lines, setLines] = useState<{ x: number; y: number; id: number }[][]>([]);
   const [currentLine, setCurrentLine] = useState<{ x: number; y: number; id: number }[]>([]);
   const lineIdRef = useRef(0);
+  const isDrawingRef = useRef(false);
+  const currentLineRef = useRef<{ x: number; y: number; id: number }[]>([]);
+  const linesRef = useRef<{ x: number; y: number; id: number }[][]>([]);
+
+  const isWeb = Platform.OS === 'web';
 
   const handleTouch = (x: number, y: number) => {
-    setCurrentLine((prev) => [...prev, { x, y, id: lineIdRef.current++ }]);
+    const newPoint = { x, y, id: lineIdRef.current++ };
+    currentLineRef.current = [...currentLineRef.current, newPoint];
+    setCurrentLine([...currentLineRef.current]);
   };
 
   const handleEndLine = () => {
-    if (currentLine.length > 0) {
-      setLines((prev) => [...prev, currentLine]);
+    if (currentLineRef.current.length > 0) {
+      linesRef.current = [...linesRef.current, [...currentLineRef.current]];
+      setLines([...linesRef.current]);
+      currentLineRef.current = [];
       setCurrentLine([]);
     }
+    isDrawingRef.current = false;
   };
 
   const handleClear = () => {
+    linesRef.current = [];
+    currentLineRef.current = [];
     setLines([]);
     setCurrentLine([]);
   };
 
   const handleConfirm = () => {
-    onConfirm(`signed-${Date.now()}`, lines);
+    onConfirm(`signed-${Date.now()}`, linesRef.current);
     handleClear();
     onClose();
   };
 
-  const hasSignature = lines.length > 0;
+  const hasSignature = lines.length > 0 || currentLine.length > 0;
+
+  const handlePointerDown = (e: any) => {
+    isDrawingRef.current = true;
+    currentLineRef.current = [];
+    let x: number, y: number;
+    if (isWeb) {
+      x = e.clientX - (e.currentTarget?.getBoundingClientRect?.().left ?? 0);
+      y = e.clientY - (e.currentTarget?.getBoundingClientRect?.().top ?? 0);
+    } else {
+      x = e.nativeEvent?.locationX ?? 0;
+      y = e.nativeEvent?.locationY ?? 0;
+    }
+    handleTouch(x, y);
+  };
+
+  const handlePointerMove = (e: any) => {
+    if (!isDrawingRef.current) return;
+    let x: number, y: number;
+    if (isWeb) {
+      x = e.clientX - (e.currentTarget?.getBoundingClientRect?.().left ?? 0);
+      y = e.clientY - (e.currentTarget?.getBoundingClientRect?.().top ?? 0);
+    } else {
+      x = e.nativeEvent?.locationX ?? 0;
+      y = e.nativeEvent?.locationY ?? 0;
+    }
+    handleTouch(x, y);
+  };
+
+  const handlePointerUp = () => {
+    handleEndLine();
+  };
+
+  const signaturePadWebStyle = isWeb ? { touchAction: 'none' as const } : {};
 
   return (
     <Modal visible={visible} transparent animationType="slide">
@@ -328,19 +374,14 @@ function SignatureModal({
           </View>
           <Text style={styles.signatureHint}>{t('delivery.signBelowConfirm')}</Text>
           <Pressable
-            style={styles.signaturePad}
-            onPressIn={(e) => {
-              const { locationX, locationY } = e.nativeEvent;
-              handleTouch(locationX, locationY);
-            }}
-            onTouchMove={(e) => {
-              const { locationX, locationY } = e.nativeEvent;
-              handleTouch(locationX, locationY);
-            }}
-            onPressOut={handleEndLine}
+            style={[styles.signaturePad, signaturePadWebStyle]}
+            onPointerDown={isWeb ? handlePointerDown : undefined}
+            onPointerMove={isWeb ? handlePointerMove : undefined}
+            onPointerUp={isWeb ? handlePointerUp : undefined}
+            onPointerLeave={isWeb ? handlePointerUp : undefined}
           >
             <View style={styles.signaturePadInner}>
-              <Svg style={StyleSheet.absoluteFill}>
+              <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
                 {lines.map((stroke) =>
                   stroke.length > 1
                     ? stroke.slice(1).map((pt, i) => (
@@ -516,6 +557,7 @@ export default function DeliveryScreen() {
   const loadUsers = useUserManagementStore((state) => state.loadUsers);
 
   useEffect(() => {
+    useDeliveryStore.getState().loadDeliveries();
     loadDrivers();
     loadUsers();
   }, [loadDrivers, loadUsers]);
@@ -579,9 +621,9 @@ export default function DeliveryScreen() {
     setSignatureModalVisible(true);
   };
 
-  const handleSignatureConfirm = (signatureData: string, strokes: { x: number; y: number; id: number }[][]) => {
+  const handleSignatureConfirm = async (signatureData: string, strokes: { x: number; y: number; id: number }[][]) => {
     if (signingDeliveryId) {
-      addSignature(signingDeliveryId, signatureData, strokes);
+      await addSignature(signingDeliveryId, signatureData, strokes);
       router.replace('/(tabs)/delivery');
     }
   };

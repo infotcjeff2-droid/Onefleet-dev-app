@@ -557,4 +557,84 @@ export const gps808Api = {
     };
     return apiCall<Gps808TrackPoint>('/StandardApiAction_queryTrackDetail.action', params);
   },
+
+  /**
+   * 即時影像 URL（PC/mobile 直接嵌入用）
+   * 用於 WebView / iframe 嵌入即時影像串流。
+   *
+   * Live Video (PC/mobile URL) — sec-video-live-html
+   * 文件：`https://console.onefleet.hk/StandardApiAction_getVideoUrl.action`
+   *
+   * @param devIdno 設備號（devIdno）
+   * @param options.channel 通道號（預設 0）
+   * @param options.stream 碼流（預設 0=主碼流）
+   * @param options.type 類型（預設 1=即時影像）
+   * @param options.ip 伺服器 IP（可選，若留空則由後端解析）
+   * @param options.port 伺服器 Port（可選，若留空則由後端解析）
+   */
+  getLiveVideoUrl(
+    devIdno: string,
+    options?: {
+      channel?: number;
+      stream?: number;
+      type?: number;
+      ip?: string;
+      port?: string;
+    },
+  ): Promise<{ result: number; videoUrl?: string; error?: string }> {
+    const params: Record<string, string | number> = {
+      devIdno,
+      channel: options?.channel ?? 0,
+      stream: options?.stream ?? 0,
+      type: options?.type ?? 1,
+    };
+    if (options?.ip) params.ip = options.ip;
+    if (options?.port) params.port = options.port;
+
+    // 此 API 直接返回 HTML 頁面 URL（非 JSON），必須嵌入 WebView/iframe。
+    // 因此需要把 jsessionId 帶在 URL 上（Next.js proxy / Node.js proxy 都會讀 query string 來認證）。
+    const base = DEFAULT_BASE_URL;
+
+    const searchParams = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => searchParams.set(k, String(v)));
+    return storage
+      .getItem(JSESSION_KEY)
+      .then((jsession) => {
+        if (jsession) searchParams.set('jsessionId', jsession);
+        return {
+          result: 0 as number,
+          videoUrl: `${base}/StandardApiAction_getVideoUrl.action?${searchParams.toString()}`,
+        };
+      });
+  },
+
+  /**
+   * 截圖（影像快照）
+   * 即時向設備發送截圖指令，返回截圖圖片 URL。
+   *
+   * @param devIdno 設備號
+   * @param options.channel 通道號（預設 0）
+   * @param options.resolution 解析度（預設 1）
+   */
+  capturePicture(
+    devIdno: string,
+    options?: { channel?: number; resolution?: number },
+  ): Promise<{ result: number; pictureUrl?: string; error?: string }> {
+    return apiCall<{ Picture_Path?: string }>(
+      '/StandardApiAction_capturePicture.action',
+      {
+        devIdno,
+        channel: options?.channel ?? 0,
+        resolution: options?.resolution ?? 1,
+      },
+    ).then((res) => {
+      if (res.result === 0) {
+        return {
+          result: 0,
+          pictureUrl: res.infos?.[0]?.Picture_Path,
+        };
+      }
+      return { result: res.result, error: res.error };
+    });
+  },
 };

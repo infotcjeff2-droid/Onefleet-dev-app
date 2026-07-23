@@ -220,6 +220,7 @@ export function BentoGrid({ vehicle }: BentoGridProps) {
       <VehicleTrackingSection
         devIdno={vehicle.devIdno ?? ''}
         plateNumber={vehicle.plateNumber}
+        vehicleId={vehicle.id}
         onStatusUpdate={handleGpsStatusUpdate}
       />
 
