@@ -65,6 +65,8 @@ export interface Driver {
   assignedVehicleId?: string;
   /** 所屬公司 ID */
   companyId?: string;
+  /** 所屬用戶 ID（用於跨設備同步） */
+  userId?: string;
 }
 
 export type DeliveryStatus = 'pending' | 'assigned' | 'in_transit' | 'delivered' | 'signed' | 'expired';
@@ -103,6 +105,8 @@ export interface DeliveryOrder {
   createdAt: string;
   /** 配送的物品列表 */
   cargoItems?: DeliveryCargoItem[];
+  /** 所屬用戶 ID（用於跨設備同步） */
+  userId?: string;
 }
 
 /** 配送物品 - 包含從庫存選擇的物品 */
@@ -155,6 +159,8 @@ export interface Warehouse {
   internalCoords?: { lat: number; lng: number };
   createdAt: string;
   updatedAt: string;
+  /** 所屬用戶 ID（用於跨設備同步） */
+  userId?: string;
 }
 
 export interface InventoryItem {
@@ -172,6 +178,8 @@ export interface InventoryItem {
   category?: string;
   createdAt: string;
   updatedAt: string;
+  /** 所屬用戶 ID（用於跨設備同步） */
+  userId?: string;
 }
 
 export interface WarehouseStock {
@@ -180,6 +188,8 @@ export interface WarehouseStock {
   itemId: string;
   quantity: number;
   updatedAt: string;
+  /** 所屬用戶 ID */
+  userId?: string;
 }
 
 // ============ Fleet & Truck Types ============
@@ -195,6 +205,8 @@ export interface Truck {
   assignedDriverName?: string;
   createdAt: string;
   updatedAt: string;
+  /** 所屬用戶 ID */
+  userId?: string;
 }
 
 // ============ Replenishment Order Types ============
@@ -210,6 +222,8 @@ export interface ReplenishmentOrder {
   status: ReplenishmentStatus;
   createdAt: string;
   updatedAt: string;
+  /** 所屬用戶 ID */
+  userId?: string;
 }
 
 // ============ Dispatch & Route Types ============
@@ -231,6 +245,8 @@ export interface DispatchOrder {
   estimatedDuration: number; // minutes
   status: 'pending' | 'in_progress' | 'completed';
   createdAt: string;
+  /** 所屬用戶 ID */
+  userId?: string;
 }
 
 // ============ Stock Alert Types ============
@@ -246,6 +262,8 @@ export interface StockAlert {
   deliveryId: string;
   isResolved: boolean;
   createdAt: string;
+  /** 所屬用戶 ID */
+  userId?: string;
 }
 
 export type AuthStackParamList = {

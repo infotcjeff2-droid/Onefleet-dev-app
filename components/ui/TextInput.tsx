@@ -126,14 +126,15 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: typography.fontSize.sm,
     fontWeight: '500',
-    marginBottom: spacing.sm,
+    marginBottom: spacing.xs,
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface,
     borderRadius: borderRadius.md,
     borderWidth: 1.5,
+    borderColor: colors.border,
     overflow: 'hidden',
   },
   iconLeft: {

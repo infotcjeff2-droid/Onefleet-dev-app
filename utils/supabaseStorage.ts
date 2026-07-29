@@ -25,25 +25,26 @@ export async function checkBucketAccess(type: BucketType = 'vehicle'): Promise<{
   const bucketName = getBucketName(type);
 
   try {
-    const { data: buckets, error } = await supabase.storage.listBuckets();
-    if (error) {
-      return { exists: false, hasPublicAccess: false, error: `無法列出 buckets: ${error.message}` };
+    // 嘗試列出 buckets
+    const { data: buckets, error: listBucketsError } = await supabase.storage.listBuckets();
+    
+    // 如果能列出 buckets，檢查是否存在
+    if (!listBucketsError && buckets && buckets.length > 0) {
+      const bucket = buckets.find((b) => b.id === bucketName);
+      if (bucket) {
+        // bucket 存在，測試讀取權限
+        const { error: listError } = await supabase.storage.from(bucketName).list('', { limit: 1 });
+        return { exists: true, hasPublicAccess: !listError, error: listError?.message };
+      }
     }
-
-    const bucket = buckets?.find((b) => b.id === bucketName);
-    if (!bucket) {
-      return { exists: false, hasPublicAccess: false, error: `Bucket '${bucketName}' 不存在，請在 Supabase Dashboard 建立` };
-    }
-
-    // 檢查 public bucket 的 policy
-    const { data: files, error: listError } = await supabase.storage.from(bucketName).list('', { limit: 1 });
-    if (listError) {
-      return { exists: true, hasPublicAccess: false, error: `無法訪問 bucket: ${listError.message}` };
-    }
-
+    
+    // 無法確認 bucket 是否存在（常見於 anon key），假設存在直接嘗試上傳
+    console.log('[Bucket] Cannot confirm bucket via listBuckets, will attempt upload directly');
     return { exists: true, hasPublicAccess: true };
   } catch (err) {
-    return { exists: false, hasPublicAccess: false, error: `檢查失敗: ${err instanceof Error ? err.message : String(err)}` };
+    console.error('[Bucket] Check failed:', err);
+    // 檢查失敗時，假設 bucket 存在，讓上傳邏輯處理
+    return { exists: true, hasPublicAccess: true };
   }
 }
 
@@ -124,19 +125,26 @@ function blobUrlToDataUrl(blobUrl: string): Promise<string> {
     img.crossOrigin = 'anonymous';
     img.onload = () => {
       try {
+        console.log('[Upload] Image loaded, size:', img.naturalWidth, 'x', img.naturalHeight);
         const canvas = document.createElement('canvas');
         canvas.width = img.naturalWidth;
         canvas.height = img.naturalHeight;
         const ctx = canvas.getContext('2d');
         if (!ctx) { reject(new Error('Canvas context failed')); return; }
         ctx.drawImage(img, 0, 0);
-        const ext = canvas.width > 0 && canvas.height > 0 ? 'png' : 'jpeg';
-        resolve(canvas.toDataURL(`image/${ext}`, 0.85));
-      } catch {
+        console.log('[Upload] Canvas drawn, converting to dataURL...');
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        console.log('[Upload] DataURL generated, length:', dataUrl.length);
+        resolve(dataUrl);
+      } catch (err) {
+        console.error('[Upload] Canvas toDataURL failed:', err);
         reject(new Error('Canvas toDataURL failed'));
       }
     };
-    img.onerror = () => reject(new Error(`Image load failed for: ${blobUrl}`));
+    img.onerror = (e) => {
+      console.error('[Upload] Image load failed for:', blobUrl, e);
+      reject(new Error(`Image load failed for: ${blobUrl}`));
+    };
     img.src = blobUrl;
   });
 }
@@ -158,15 +166,23 @@ export async function uploadImage(
 
   const bucketName = getBucketName(type);
 
+  console.log('[Upload] Checking bucket access for:', bucketName);
+
   // 確保 bucket 存在
   const bucketCheck = await checkBucketAccess(type);
+  console.log('[Upload] Bucket check result:', bucketCheck);
+
   if (!bucketCheck.exists) {
+    console.log('[Upload] Bucket does not exist, attempting to create...');
     const createResult = await ensureBucketExists(type);
+    console.log('[Upload] Create result:', createResult);
     if (!createResult.success) {
-      throw new Error(`無法建立 Storage bucket '${bucketName}': ${createResult.error}`);
+      throw new Error(`Storage bucket '${bucketName}' 不存在且無法自動建立: ${createResult.error}`);
     }
   } else if (!bucketCheck.hasPublicAccess) {
     throw new Error(`Storage bucket '${bucketName}' 權限不足: ${bucketCheck.error || '請確認 bucket 設為 public'}`);
+  } else {
+    console.log('[Upload] Bucket exists and has public access');
   }
 
   const timestamp = Date.now();
@@ -176,25 +192,33 @@ export async function uploadImage(
   // blob: URL 無法 fetch → 用 canvas 轉成 base64 再處理
   if (uri.startsWith('blob:')) {
     try {
+      console.log('[Upload] Starting blob URL upload:', uri);
       const dataUrl = await blobUrlToDataUrl(uri);
       contentType = 'image/jpeg';
       const base64 = dataUrl.split(',')[1];
+      console.log('[Upload] Base64 length:', base64.length);
       const binary = atob(base64);
       const bytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
       const arrayBuffer = bytes.buffer;
 
+      console.log('[Upload] Uploading to Supabase bucket:', bucketName, 'filename:', filename);
       const { error } = await supabase.storage
         .from(bucketName)
         .upload(filename, arrayBuffer, { contentType, upsert: true });
 
       if (error) {
+        console.error('[Upload] Upload error:', error);
         throw new Error(`上傳失敗: ${error.message}`);
       }
+      console.log('[Upload] Upload successful!');
 
       const { data: urlData } = supabase.storage.from(bucketName).getPublicUrl(filename);
-      return urlData.publicUrl;
+      const cleanUrl = urlData.publicUrl.split('?')[0];
+      console.log('[Upload] Public URL:', cleanUrl);
+      return cleanUrl;
     } catch (err) {
+      console.error('[Upload] Catch error:', err);
       if (err instanceof Error && err.message.includes('bucket')) {
         throw err;
       }
@@ -215,7 +239,8 @@ export async function uploadImage(
     }
 
     const { data: urlData } = supabase.storage.from(bucketName).getPublicUrl(filename);
-    return urlData.publicUrl;
+    const cleanUrl = urlData.publicUrl.split('?')[0];
+    return cleanUrl;
   } catch (err) {
     if (err instanceof Error && err.message.includes('bucket')) {
       throw err;

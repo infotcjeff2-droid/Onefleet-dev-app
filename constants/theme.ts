@@ -10,9 +10,9 @@ export const colors = {
   borderActive: '#C8CAD6',
 
   // Primary
-  primary: '#00A87A',
-  primaryDark: '#008F68',
-  primaryGlow: 'rgba(0, 200, 150, 0.15)',
+  primary: '#2563eb',
+  primaryDark: '#1d4ed8',
+  primaryGlow: 'rgba(37, 99, 235, 0.15)',
 
   // Secondary
   secondary: '#2B7FD4',
@@ -87,7 +87,7 @@ export const shadows = {
   card: '0 4px 12px rgba(0, 0, 0, 0.08)',
   cardHover: '0 8px 24px rgba(0, 0, 0, 0.12)',
   glow: (color: string) => `0 0 20px ${color}`,
-  button: '0 2px 8px rgba(0, 168, 122, 0.25)',
+  button: '0 2px 8px rgba(37, 99, 235, 0.25)',
 } as const;
 
 export const animation = {
@@ -111,7 +111,7 @@ export const layout = {
 } as const;
 
 export const statusColors = {
-  active: { bg: 'rgba(0, 168, 122, 0.12)', text: '#00A87A', dot: '#00A87A' },
+  active: { bg: 'rgba(37, 99, 235, 0.12)', text: '#2563eb', dot: '#2563eb' },
   maintenance: { bg: 'rgba(230, 149, 0, 0.12)', text: '#E69500', dot: '#E69500' },
   inactive: { bg: 'rgba(90, 97, 120, 0.12)', text: '#5A6178', dot: '#5A6178' },
   danger: { bg: 'rgba(217, 63, 74, 0.12)', text: '#D93F4A', dot: '#D93F4A' },

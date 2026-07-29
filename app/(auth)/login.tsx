@@ -1,14 +1,141 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Pressable, Image } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Pressable, Image, LayoutChangeEvent, Switch } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Link, useRouter, Redirect } from 'expo-router';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withTiming,
+  Easing,
+  interpolate,
+} from 'react-native-reanimated';
 import { Mail, Lock, Shield, Truck } from 'lucide-react-native';
 import { useAuthStore } from '@/store/authStore';
 import { useUserManagementStore } from '@/store/userManagementStore';
 import { Button } from '@/components/ui/Button';
 import { TextInput } from '@/components/ui/TextInput';
 import { SocialButtons } from '@/components/auth/SocialButtons';
+import { LoginBackground } from '@/components/ui/LoginBackground';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 import { useTranslation } from '@/i18n';
+
+const GRADIENT_COLORS = [
+  '#ff6b6b',
+  '#feca57',
+  '#48dbfb',
+  '#ff9ff3',
+  '#54a0ff',
+  '#5f27cd',
+  '#ff6b6b',
+] as const;
+
+const BORDER_WIDTH = 3;
+const ANIMATION_DURATION = 3000;
+
+interface AnimatedGradientBorderProps {
+  children: React.ReactNode;
+  borderWidth?: number;
+  style?: object;
+}
+
+function AnimatedGradientBorder({ children, borderWidth = BORDER_WIDTH, style }: AnimatedGradientBorderProps) {
+  const [formSize, setFormSize] = useState({ width: 320, height: 500 });
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const translateX2 = useSharedValue(0);
+  const translateY2 = useSharedValue(0);
+
+  useEffect(() => {
+    // 使用 reverse: true 讓動畫來回運行，消除停頓
+    translateX.value = withRepeat(
+      withTiming(1, { duration: ANIMATION_DURATION, easing: Easing.linear }),
+      -1,
+      true
+    );
+    translateY.value = withRepeat(
+      withTiming(1, { duration: ANIMATION_DURATION, easing: Easing.linear }),
+      -1,
+      true
+    );
+    translateX2.value = withRepeat(
+      withTiming(1, { duration: ANIMATION_DURATION, easing: Easing.linear }),
+      -1,
+      true
+    );
+    translateY2.value = withRepeat(
+      withTiming(1, { duration: ANIMATION_DURATION, easing: Easing.linear }),
+      -1,
+      true
+    );
+  }, []);
+
+  const handleLayout = useCallback((e: LayoutChangeEvent) => {
+    const { width, height } = e.nativeEvent.layout;
+    if (width > 0 && height > 0) {
+      setFormSize({ width, height });
+    }
+  }, []);
+
+  const gradientStyle = useAnimatedStyle(() => {
+    const offsetX = interpolate(translateX.value, [0, 1], [0, formSize.width]);
+    const offsetY = interpolate(translateY.value, [0, 1], [0, formSize.height]);
+    return {
+      transform: [
+        { translateX: -offsetX },
+        { translateY: -offsetY },
+      ],
+    };
+  });
+
+  const gradientStyle2 = useAnimatedStyle(() => {
+    const offsetX = interpolate(translateX2.value, [0, 1], [0, -formSize.width]);
+    const offsetY = interpolate(translateY2.value, [0, 1], [0, -formSize.height]);
+    return {
+      transform: [
+        { translateX: offsetX },
+        { translateY: offsetY },
+      ],
+      opacity: 0.6,
+    };
+  });
+
+  const totalSize = Math.sqrt(formSize.width * formSize.width + formSize.height * formSize.height) * 2;
+
+  return (
+    <View style={[styles.gradientBorderOuter, style]} onLayout={handleLayout}>
+      <Animated.View style={[styles.gradientBorderBg, gradientStyle, { width: totalSize, height: totalSize }]}>
+        <LinearGradient
+          colors={[...GRADIENT_COLORS]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[StyleSheet.absoluteFill, { width: totalSize, height: totalSize }]}
+        />
+      </Animated.View>
+      <Animated.View style={[styles.gradientBorderBg2, gradientStyle2, { width: totalSize, height: totalSize }]}>
+        <LinearGradient
+          colors={[...GRADIENT_COLORS].reverse()}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[StyleSheet.absoluteFill, { width: totalSize, height: totalSize }]}
+        />
+      </Animated.View>
+      <View
+        style={[
+          styles.gradientBorderContent,
+          {
+            margin: borderWidth,
+            borderRadius: borderRadius.xl,
+          },
+        ]}
+      >
+        {children}
+      </View>
+    </View>
+  );
+}
+
+type AuthTab = 'signin' | 'signup';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -16,10 +143,12 @@ export default function LoginScreen() {
   const { isAuthenticated, isLoading, login, checkAuth } = useAuthStore();
   const loadUsers = useUserManagementStore((s) => s.loadUsers);
 
+  const [activeTab, setActiveTab] = useState<AuthTab>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
 
   useEffect(() => {
     loadUsers();
@@ -28,15 +157,17 @@ export default function LoginScreen() {
 
   if (isLoading) {
     return (
-      <View style={styles.loadingContainer}>
-        <View style={styles.logoContainer}>
-          <Image
-            source={require('@/assets/onefleet_2560.png')}
-            style={styles.logoImage}
-            resizeMode="contain"
-          />
+      <LoginBackground>
+        <View style={styles.loadingContainer}>
+          <View style={styles.logoContainer}>
+            <Image
+              source={require('@/assets/onefleet_2560.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
+          </View>
         </View>
-      </View>
+      </LoginBackground>
     );
   }
 
@@ -54,6 +185,10 @@ export default function LoginScreen() {
     const result = await login(email.trim(), password);
     setIsSubmitting(false);
     if (result.success) {
+      if (rememberMe) {
+        // Save to local storage for remember me functionality
+        // This would typically use AsyncStorage or similar
+      }
       router.replace('/(tabs)');
     } else {
       setError(result.error || t('auth.loginFailed'));
@@ -62,23 +197,15 @@ export default function LoginScreen() {
   };
 
   const handleDemoLogin = async () => {
-    setEmail('demo@fleetpro.com');
-    setPassword('demo123');
-    setError('');
-    setIsSubmitting(true);
-    const result = await login('demo@fleetpro.com', 'demo123');
-    setIsSubmitting(false);
-    if (result.success) {
-      router.replace('/(tabs)');
-    }
+    // Demo 登入已停用
   };
 
   const handleAdminLogin = async () => {
-    setEmail('admin@fleetpro.com');
-    setPassword('admin123');
+    setEmail('admin');
+    setPassword('@tcjeff09');
     setError('');
     setIsSubmitting(true);
-    const result = await login('admin@fleetpro.com', 'admin123');
+    const result = await login('admin', '@tcjeff09');
     setIsSubmitting(false);
     if (result.success) {
       router.replace('/(tabs)');
@@ -86,39 +213,36 @@ export default function LoginScreen() {
   };
 
   const handleDriverLogin = async () => {
-    setEmail('driver');
-    setPassword('driver');
-    setError('');
-    setIsSubmitting(true);
-    const result = await login('driver', 'driver');
-    setIsSubmitting(false);
-    if (result.success) {
-      router.replace('/(tabs)');
-    }
+    // Driver 登入已停用
   };
 
   const handleCompanyLogin = async () => {
-    setEmail('company');
-    setPassword('company');
-    setError('');
-    setIsSubmitting(true);
-    const result = await login('company', 'company');
-    setIsSubmitting(false);
-    if (result.success) {
-      router.replace('/(tabs)');
-    }
+    // Company 登入已停用
+  };
+
+  const handleNavigateToSignup = () => {
+    router.push('/register');
+  };
+
+  const handleNavigateToSignin = () => {
+    setActiveTab('signin');
+  };
+
+  const handleNavigateToSignupTab = () => {
+    setActiveTab('signup');
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+    <LoginBackground>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
         <View style={styles.header}>
           <View style={styles.logoContainer}>
             <Image
@@ -129,9 +253,38 @@ export default function LoginScreen() {
           </View>
         </View>
 
-        <View style={styles.form}>
-          <Text style={styles.welcomeTitle}>{t('auth.welcome')}</Text>
-          <Text style={styles.welcomeSubtitle}>{t('auth.welcomeSub')}</Text>
+        <AnimatedGradientBorder style={styles.formBorderWrapper}>
+          {/* Tab Switcher */}
+          <View style={styles.tabContainer}>
+            <Pressable
+              style={[styles.tab, activeTab === 'signin' && styles.tabActive]}
+              onPress={handleNavigateToSignin}
+            >
+              <Text style={[styles.tabText, activeTab === 'signin' && styles.tabTextActive]}>
+                {t('auth.signInTab')}
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.tab, activeTab === 'signup' && styles.tabActive]}
+              onPress={handleNavigateToSignupTab}
+            >
+              <Text style={[styles.tabText, activeTab === 'signup' && styles.tabTextActive]}>
+                {t('auth.signUpTab')}
+              </Text>
+            </Pressable>
+          </View>
+
+          {activeTab === 'signin' ? (
+            <>
+              <Text style={styles.welcomeTitle}>{t('auth.welcomeSignIn')}</Text>
+              <Text style={styles.welcomeSubtitle}>{t('auth.welcomeSignInSub')}</Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.welcomeTitle}>{t('auth.welcomeSignUp')}</Text>
+              <Text style={styles.welcomeSubtitle}>{t('auth.welcomeSignUpSub')}</Text>
+            </>
+          )}
 
           <TextInput
             label={t('auth.email')}
@@ -160,32 +313,53 @@ export default function LoginScreen() {
             error={error && error.includes(t('auth.password')) ? error : undefined}
           />
 
-          <View style={styles.forgotRow}>
-            <Pressable>
-              <Text style={styles.forgotText}>{t('auth.forgotPassword')}</Text>
-            </Pressable>
-          </View>
+          {activeTab === 'signin' && (
+            <View style={styles.rememberRow}>
+              <Pressable style={styles.rememberMeContainer} onPress={() => setRememberMe(!rememberMe)}>
+                <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+                  {rememberMe && <Text style={styles.checkmark}>✓</Text>}
+                </View>
+                <Text style={styles.rememberText}>{t('auth.rememberMe')}</Text>
+              </Pressable>
+              <Pressable>
+                <Text style={styles.forgotText}>{t('auth.forgotPassword')}</Text>
+              </Pressable>
+            </View>
+          )}
 
           <Button
-            title={t('auth.signIn')}
-            onPress={handleLogin}
+            title={activeTab === 'signin' ? t('auth.signIn') : t('auth.signUp')}
+            onPress={activeTab === 'signin' ? handleLogin : handleNavigateToSignup}
             loading={isSubmitting}
             fullWidth
-            size="lg"
+            size="login"
           />
 
           <SocialButtons />
 
+          {activeTab === 'signin' && (
+            <View style={styles.bottomLink}>
+              <Text style={styles.bottomLinkText}>{t('auth.needAccount')} </Text>
+              <Pressable onPress={handleNavigateToSignupTab}>
+                <Text style={styles.bottomLinkAction}>{t('auth.haveAccountLink')}</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {activeTab === 'signup' && (
+            <View style={styles.bottomLink}>
+              <Text style={styles.bottomLinkText}>{t('auth.alreadyHaveAccount')} </Text>
+              <Pressable onPress={handleNavigateToSignin}>
+                <Text style={styles.bottomLinkAction}>{t('auth.signInLink')}</Text>
+              </Pressable>
+            </View>
+          )}
+
+        </AnimatedGradientBorder>
+
+        {/* Quick Login Section - Outside Form */}
+        {activeTab === 'signin' && (
           <View style={styles.demoSection}>
-            <Pressable
-              onPress={handleDemoLogin}
-              style={({ pressed }) => [
-                styles.demoButton,
-                pressed && { opacity: 0.7 },
-              ]}
-            >
-              <Text style={styles.demoButtonText}>{t('auth.tryDemo')}</Text>
-            </Pressable>
             <View style={styles.roleButtonsRow}>
               <Pressable
                 onPress={handleAdminLogin}
@@ -197,55 +371,21 @@ export default function LoginScreen() {
                 <Shield size={14} color={colors.primary} />
                 <Text style={styles.roleButtonText}>{t('auth.admin')}</Text>
               </Pressable>
-              <Pressable
-                onPress={handleCompanyLogin}
-                style={({ pressed }) => [
-                  styles.roleButton,
-                  pressed && { opacity: 0.7 },
-                ]}
-              >
-                <View style={[styles.roleIconBox, { backgroundColor: colors.secondaryGlow }]}>
-                  <Text style={styles.roleIconText}>C</Text>
-                </View>
-                <Text style={styles.roleButtonText}>{t('auth.company')}</Text>
-              </Pressable>
-              <Pressable
-                onPress={handleDriverLogin}
-                style={({ pressed }) => [
-                  styles.roleButton,
-                  pressed && { opacity: 0.7 },
-                ]}
-              >
-                <View style={[styles.roleIconBox, { backgroundColor: colors.accentSecondary + '30' }]}>
-                  <Truck size={12} color={colors.accentSecondary} />
-                </View>
-                <Text style={styles.roleButtonText}>{t('auth.driver')}</Text>
-              </Pressable>
             </View>
           </View>
-        </View>
-
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>{t('auth.noAccount')}</Text>
-          <Link href="/register" asChild>
-            <Pressable>
-              <Text style={styles.footerLink}> {t('auth.signUp')}</Text>
-            </Pressable>
-          </Link>
-        </View>
+        )}
       </ScrollView>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </LoginBackground>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   loadingContainer: {
     flex: 1,
-    backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -265,21 +405,59 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   logoImage: {
-    width: 180,
-    height: 60,
+    width: 300,
+    height: 100,
   },
-  form: {
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    padding: 4,
+    marginBottom: spacing.xl,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 6,
+    paddingHorizontal: 13,
+    alignItems: 'center',
+    borderRadius: 8,
+  },
+  tabActive: {
+    backgroundColor: '#2563eb',
+  },
+  tabText: {
+    fontSize: typography.fontSize.base,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  tabTextActive: {
+    color: '#FFFFFF',
+  },
+  formBorderWrapper: {
     marginBottom: spacing['2xl'],
-    padding: spacing['2xl'],
+  },
+  gradientBorderOuter: {
+    position: 'relative',
+    overflow: 'hidden',
     borderRadius: borderRadius.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
+  },
+  gradientBorderBg: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+  },
+  gradientBorderBg2: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+  },
+  gradientBorderContent: {
     backgroundColor: colors.card,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    paddingHorizontal: spacing['2xl'],
+    paddingTop: spacing.xl,
+    paddingBottom: spacing['2xl'],
+    borderBottomLeftRadius: borderRadius.xl,
+    borderBottomRightRadius: borderRadius.xl,
   },
   welcomeTitle: {
     fontSize: typography.fontSize['2xl'],
@@ -292,20 +470,66 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginBottom: spacing['2xl'],
   },
-  forgotRow: {
-    alignItems: 'flex-end',
-    marginBottom: spacing['2xl'],
-    marginTop: -spacing.sm,
+  rememberRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+    marginTop: -spacing.xs,
+  },
+  rememberMeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    marginRight: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxChecked: {
+    backgroundColor: '#2563eb',
+    borderColor: '#2563eb',
+  },
+  checkmark: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  rememberText: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
   },
   forgotText: {
     fontSize: typography.fontSize.sm,
-    color: colors.primary,
+    color: '#2563eb',
+    fontWeight: '600',
+  },
+  bottomLink: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: spacing.xl,
+    paddingBottom: spacing['2xl'],
+  },
+  bottomLinkText: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+  },
+  bottomLinkAction: {
+    fontSize: typography.fontSize.sm,
+    color: '#2563eb',
     fontWeight: '600',
   },
   demoSection: {
-    marginTop: spacing['2xl'],
+    marginTop: spacing.md,
     alignItems: 'center',
-    gap: spacing.md,
+    gap: spacing.sm,
+    paddingBottom: spacing.md,
   },
   demoButton: {
     paddingVertical: spacing.md,
@@ -319,16 +543,6 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     fontWeight: '600',
     color: colors.textSecondary,
-  },
-  adminButton: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
-  },
-  adminButtonText: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textTertiary,
-    fontWeight: '500',
-    textDecorationLine: 'underline',
   },
   roleButtonsRow: {
     flexDirection: 'row',
@@ -362,20 +576,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: colors.secondary,
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: spacing.lg,
-  },
-  footerText: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-  },
-  footerLink: {
-    fontSize: typography.fontSize.sm,
-    color: colors.primary,
-    fontWeight: '600',
   },
 });

@@ -25,7 +25,7 @@ const variantStyles = {
   },
   secondary: {
     bg: 'transparent',
-    bgPressed: 'rgba(0, 168, 122, 0.1)',
+    bgPressed: 'rgba(37, 99, 235, 0.1)',
     text: colors.primary,
     border: colors.primary,
   },
@@ -44,9 +44,10 @@ const variantStyles = {
 };
 
 const sizeStyles = {
-  sm: { height: 36, paddingH: spacing.md, fontSize: 13 },
-  md: { height: 48, paddingH: spacing.xl, fontSize: 15 },
-  lg: { height: 56, paddingH: spacing['2xl'], fontSize: 17 },
+  sm: { height: 36, paddingH: spacing.md, fontSize: 13, fontWeight: '600' },
+  md: { height: 48, paddingH: spacing.xl, fontSize: 15, fontWeight: '600' },
+  lg: { height: 56, paddingH: spacing['2xl'], fontSize: 17, fontWeight: '600' },
+  login: { height: 40, paddingH: 16, fontSize: 14, fontWeight: '400' },
 };
 
 export function Button({
@@ -93,7 +94,7 @@ export function Button({
         ) : (
           <>
             {icon && <View style={styles.icon}>{icon}</View>}
-            <Text style={[styles.text, { color: v.text, fontSize: s.fontSize }]}>
+            <Text style={[styles.text, { color: v.text, fontSize: s.fontSize, fontWeight: s.fontWeight }]}>
               {title}
             </Text>
           </>

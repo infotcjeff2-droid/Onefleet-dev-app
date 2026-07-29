@@ -13,6 +13,7 @@ import {
 } from '@/types';
 import { storage } from '@/utils/storage';
 import { getWarehouseCoords } from '@/utils/warehouseCoords';
+import { useAuthStore } from './authStore';
 
 const STORAGE_KEYS = {
   warehouses: 'inventories_warehouses',
@@ -23,6 +24,14 @@ const STORAGE_KEYS = {
   alerts: 'inventories_alerts',
   dispatches: 'inventories_dispatches',
 };
+
+function getCurrentUserId(): string {
+  return useAuthStore.getState().user?.id ?? 'guest';
+}
+
+function userKey(base: string): string {
+  return `${base}_${getCurrentUserId()}`;
+}
 
 // ============ Helper Functions ============
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -142,31 +151,31 @@ interface InventoryState {
 
 // ============ Persistence Functions ============
 async function persistWarehouses(warehouses: Warehouse[]) {
-  await storage.setItem(STORAGE_KEYS.warehouses, JSON.stringify(warehouses));
+  await storage.setItem(userKey(STORAGE_KEYS.warehouses), JSON.stringify(warehouses));
 }
 
 async function persistItems(items: InventoryItem[]) {
-  await storage.setItem(STORAGE_KEYS.items, JSON.stringify(items));
+  await storage.setItem(userKey(STORAGE_KEYS.items), JSON.stringify(items));
 }
 
 async function persistStocks(stocks: WarehouseStock[]) {
-  await storage.setItem(STORAGE_KEYS.stocks, JSON.stringify(stocks));
+  await storage.setItem(userKey(STORAGE_KEYS.stocks), JSON.stringify(stocks));
 }
 
 async function persistTrucks(trucks: Truck[]) {
-  await storage.setItem(STORAGE_KEYS.trucks, JSON.stringify(trucks));
+  await storage.setItem(userKey(STORAGE_KEYS.trucks), JSON.stringify(trucks));
 }
 
 async function persistReplenishment(orders: ReplenishmentOrder[]) {
-  await storage.setItem(STORAGE_KEYS.replenishment, JSON.stringify(orders));
+  await storage.setItem(userKey(STORAGE_KEYS.replenishment), JSON.stringify(orders));
 }
 
 async function persistAlerts(alerts: StockAlert[]) {
-  await storage.setItem(STORAGE_KEYS.alerts, JSON.stringify(alerts));
+  await storage.setItem(userKey(STORAGE_KEYS.alerts), JSON.stringify(alerts));
 }
 
 async function persistDispatches(dispatches: DispatchOrder[]) {
-  await storage.setItem(STORAGE_KEYS.dispatches, JSON.stringify(dispatches));
+  await storage.setItem(userKey(STORAGE_KEYS.dispatches), JSON.stringify(dispatches));
 }
 
 // ============ Store Implementation ============
@@ -184,9 +193,12 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
   // ============ Warehouse Actions ============
   loadWarehouses: async () => {
     try {
-      const stored = await storage.getItem(STORAGE_KEYS.warehouses);
+      const stored = await storage.getItem(userKey(STORAGE_KEYS.warehouses));
       if (stored) {
-        set({ warehouses: JSON.parse(stored) });
+        const parsed = JSON.parse(stored) as Warehouse[];
+        const userId = getCurrentUserId();
+        const filtered = parsed.filter((wh) => !wh.userId || wh.userId === userId);
+        set({ warehouses: filtered });
       }
     } catch {
       set({ warehouses: [] });
@@ -195,16 +207,15 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
 
   addWarehouse: async (data) => {
     const now = new Date().toISOString();
-    // 從地址產生內部座標（用於距離演算法，不暴露給使用者）
     const { addressToCoords } = await import('@/utils/warehouseCoords');
     const newWarehouse: Warehouse = {
       ...data,
       id: data.id || `wh-${Date.now()}`,
-      // 若已有 internalCoords（mock 載入）則沿用，否則由地址生成
       internalCoords:
         data.internalCoords ?? addressToCoords(data.address ?? ''),
       createdAt: data.createdAt ?? now,
       updatedAt: data.updatedAt ?? now,
+      userId: getCurrentUserId(),
     };
     const updated = [...get().warehouses, newWarehouse];
     set({ warehouses: updated });
@@ -237,9 +248,12 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
   // ============ Inventory Item Actions ============
   loadItems: async () => {
     try {
-      const stored = await storage.getItem(STORAGE_KEYS.items);
+      const stored = await storage.getItem(userKey(STORAGE_KEYS.items));
       if (stored) {
-        set({ items: JSON.parse(stored) });
+        const parsed = JSON.parse(stored) as InventoryItem[];
+        const userId = getCurrentUserId();
+        const filtered = parsed.filter((item) => !item.userId || item.userId === userId);
+        set({ items: filtered });
       }
     } catch {
       set({ items: [] });
@@ -248,12 +262,12 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
 
   addItem: async (data) => {
     const now = new Date().toISOString();
-    // 若呼叫端有提供 id（mock 載入情境），沿用；否則自動生成
     const newItem: InventoryItem = {
       ...data,
       id: data.id || `item-${Date.now()}`,
       createdAt: data.createdAt ?? now,
       updatedAt: data.updatedAt ?? now,
+      userId: getCurrentUserId(),
     };
     const updated = [...get().items, newItem];
     set({ items: updated });
@@ -304,9 +318,12 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
   // ============ Stock Actions ============
   loadStocks: async () => {
     try {
-      const stored = await storage.getItem(STORAGE_KEYS.stocks);
+      const stored = await storage.getItem(userKey(STORAGE_KEYS.stocks));
       if (stored) {
-        set({ warehouseStocks: JSON.parse(stored) });
+        const parsed = JSON.parse(stored) as WarehouseStock[];
+        const userId = getCurrentUserId();
+        const filtered = parsed.filter((s) => !s.userId || s.userId === userId);
+        set({ warehouseStocks: filtered });
       }
     } catch {
       set({ warehouseStocks: [] });
@@ -371,6 +388,7 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
         itemId,
         quantity,
         updatedAt: new Date().toISOString(),
+        userId: getCurrentUserId(),
       };
       const updated = [...stocks, newStock];
       set({ warehouseStocks: updated });
@@ -389,9 +407,12 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
   // ============ Truck Actions ============
   loadTrucks: async () => {
     try {
-      const stored = await storage.getItem(STORAGE_KEYS.trucks);
+      const stored = await storage.getItem(userKey(STORAGE_KEYS.trucks));
       if (stored) {
-        set({ trucks: JSON.parse(stored) });
+        const parsed = JSON.parse(stored) as Truck[];
+        const userId = getCurrentUserId();
+        const filtered = parsed.filter((t) => !t.userId || t.userId === userId);
+        set({ trucks: filtered });
       }
     } catch {
       set({ trucks: [] });
@@ -405,6 +426,7 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
       id: `truck-${Date.now()}`,
       createdAt: now,
       updatedAt: now,
+      userId: getCurrentUserId(),
     };
     const updated = [...get().trucks, newTruck];
     set({ trucks: updated });
@@ -441,9 +463,12 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
   // ============ Stock Alert Actions ============
   loadAlerts: async () => {
     try {
-      const stored = await storage.getItem(STORAGE_KEYS.alerts);
+      const stored = await storage.getItem(userKey(STORAGE_KEYS.alerts));
       if (stored) {
-        set({ stockAlerts: JSON.parse(stored) });
+        const parsed = JSON.parse(stored) as StockAlert[];
+        const userId = getCurrentUserId();
+        const filtered = parsed.filter((a) => !a.userId || a.userId === userId);
+        set({ stockAlerts: filtered });
       }
     } catch {
       set({ stockAlerts: [] });
@@ -473,6 +498,7 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
         deliveryId: '',
         isResolved: false,
         createdAt: new Date().toISOString(),
+        userId: getCurrentUserId(),
       };
       return alert;
     }
@@ -498,9 +524,12 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
   // ============ Replenishment Actions ============
   loadReplenishment: async () => {
     try {
-      const stored = await storage.getItem(STORAGE_KEYS.replenishment);
+      const stored = await storage.getItem(userKey(STORAGE_KEYS.replenishment));
       if (stored) {
-        set({ replenishmentOrders: JSON.parse(stored) });
+        const parsed = JSON.parse(stored) as ReplenishmentOrder[];
+        const userId = getCurrentUserId();
+        const filtered = parsed.filter((r) => !r.userId || r.userId === userId);
+        set({ replenishmentOrders: filtered });
       }
     } catch {
       set({ replenishmentOrders: [] });
@@ -518,6 +547,7 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
       status: 'pending',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      userId: getCurrentUserId(),
     };
 
     const updated = [...get().replenishmentOrders, order];
@@ -545,6 +575,7 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
       status: 'pending',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      userId: getCurrentUserId(),
     };
 
     const updated = [...get().replenishmentOrders, order];
@@ -556,9 +587,12 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
   // ============ AI Dispatch Logic ============
   loadDispatches: async () => {
     try {
-      const stored = await storage.getItem(STORAGE_KEYS.dispatches);
+      const stored = await storage.getItem(userKey(STORAGE_KEYS.dispatches));
       if (stored) {
-        set({ dispatchOrders: JSON.parse(stored) });
+        const parsed = JSON.parse(stored) as DispatchOrder[];
+        const userId = getCurrentUserId();
+        const filtered = parsed.filter((d) => !d.userId || d.userId === userId);
+        set({ dispatchOrders: filtered });
       }
     } catch {
       set({ dispatchOrders: [] });
@@ -679,6 +713,7 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
       ...data,
       id: `dispatch-${Date.now()}`,
       createdAt: new Date().toISOString(),
+      userId: getCurrentUserId(),
     };
 
     const updated = [...get().dispatchOrders, dispatch];
@@ -731,81 +766,9 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
     ]);
   },
 
-  // ============ Initialize with Dummy Data ============
+  // ============ Initialize ============
   initWithDummyData: async () => {
-    const {
-      DUMMY_WAREHOUSES,
-      DUMMY_ITEMS,
-      DUMMY_WAREHOUSE_STOCKS,
-      DUMMY_REPLENISHMENT_ORDERS,
-      DUMMY_STOCK_ALERTS,
-    } = await import('@/constants/mockInventoryData');
-
-    // 保留現有卡車資料（車隊管理由用戶自訂，不使用 mock 卡車）
-    const existingTrucks = get().trucks;
-
-    // 清除非卡車的所有資料（倉庫、物品、庫存、補貨、警示）
-    set({
-      warehouses: [],
-      items: [],
-      warehouseStocks: [],
-      replenishmentOrders: [],
-      stockAlerts: [],
-      dispatchOrders: [],
-    });
-    await Promise.all([
-      persistWarehouses([]),
-      persistItems([]),
-      persistStocks([]),
-      persistReplenishment([]),
-      persistAlerts([]),
-      persistDispatches([]),
-    ]);
-
-    // 確保卡車資料保留（不被清空）
-    if (existingTrucks.length > 0) {
-      set({ trucks: existingTrucks });
-      await persistTrucks(existingTrucks);
-    } else {
-      set({ trucks: [] });
-      await persistTrucks([]);
-    }
-
-    // 載入倉庫
-    for (const warehouse of DUMMY_WAREHOUSES) {
-      await get().addWarehouse(warehouse);
-    }
-
-    // 載入物品
-    for (const item of DUMMY_ITEMS) {
-      await get().addItem(item);
-    }
-
-    // 載入庫存
-    for (const stock of DUMMY_WAREHOUSE_STOCKS) {
-      await get().addStock(stock.warehouseId, stock.itemId, stock.quantity);
-    }
-
-    // 載入補貨訂單
-    for (const order of DUMMY_REPLENISHMENT_ORDERS) {
-      await get().createReplenishmentOrder({
-        id: order.id,
-        itemId: order.itemId,
-        itemName: order.itemName,
-        warehouseId: order.warehouseId,
-        warehouseName: order.warehouseName,
-        deficitQuantity: order.deficitQuantity,
-        status: order.status,
-        deliveryId: '',
-        isResolved: false,
-        createdAt: order.createdAt,
-      });
-    }
-
-    // 載入庫存警示
-    set({ stockAlerts: DUMMY_STOCK_ALERTS });
-    await persistAlerts(DUMMY_STOCK_ALERTS);
-
-    console.log(`✅ 假資料初始化完成（保留 ${existingTrucks.length} 部車輛資料）`);
+    // 不再使用 mock 資料，初始化為空
+    console.log('✅ 初始化完成（空資料）');
   },
 }));

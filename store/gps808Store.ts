@@ -1,9 +1,11 @@
 import { create } from 'zustand';
 import { storage } from '@/utils/storage';
-import { gps808Api, setServerUrl, Gps808Vehicle } from '@/utils/gps808Api';
+import { gps808Api, setServerUrl, Gps808Vehicle, resetServerUrlCache } from '@/utils/gps808Api';
 import { Platform } from 'react-native';
+import { useAuthStore } from './authStore';
 
 const IS_WEB = Platform.OS === 'web';
+const JSESSION_STORAGE_KEY = 'gps808_jsession';
 
 interface Gps808Config {
   serverUrl: string;
@@ -24,7 +26,10 @@ interface Gps808State {
   clearError: () => void;
 }
 
-const STORAGE_KEY = 'gps808_config';
+function getStorageKey(): string {
+  const userId = useAuthStore.getState().user?.id ?? 'guest';
+  return `gps808_config_${userId}`;
+}
 const DEFAULT_CONFIG: Gps808Config = {
   serverUrl: 'https://console.onefleet.hk',
   account: '',
@@ -64,80 +69,135 @@ function getInitialConfig(): Gps808Config {
   return DEFAULT_CONFIG;
 }
 
-export const useGps808Store = create<Gps808State>((set, get) => ({
-  config: getInitialConfig(),
-  isConnected: false,
-  isLoading: true,
-  isSaving: false,
-  error: null,
+/**
+ * 預載：從 storage 讀取「上次連線狀態」，避免刷新頁面後 isConnected 閃成 false。
+ * 此函式在 store 建立時立即同步執行（不透過 useEffect）。
+ * 注意：Web Storage 是同步的，但為了介面一致仍用 async。
+ */
+async function loadInitialConnectionState(): Promise<boolean> {
+  if (!IS_WEB) return false;
+  try {
+    const jsession = await storage.getItem(JSESSION_STORAGE_KEY);
+    return !!jsession;
+  } catch {
+    return false;
+  }
+}
+
+export const useGps808Store = create<Gps808State>((set, get) => {
+  // 在 store 初始化時把 isConnected 設定為「與 storage 一致」的樂觀值，
+  // 避免初次 render 顯示為 false，refresh 之後使用者必須重新設定的錯覺。
+  // 同步初始化為 false（storage 為 async），實際正確值在 AppContent useEffect → loadConfig() 之後更新。
+  const initialState: Pick<Gps808State, 'config' | 'isConnected' | 'isLoading' | 'isSaving' | 'error'> = {
+    config: getInitialConfig(),
+    isConnected: false,
+    isLoading: true,
+    isSaving: false,
+    error: null,
+  };
+
+  // Fire-and-forget：非同步把正確的初始連線狀態寫回 store
+  if (IS_WEB) {
+    void loadInitialConnectionState().then((wasConnected) => {
+      if (wasConnected && !useGps808Store.getState().isConnected) {
+        // 只在 store 還沒被外部 update 時才覆蓋（避免 race）
+        useGps808Store.setState({ isConnected: true });
+      }
+    });
+    // Reload 之後 module 重新執行，把 runtimeServerUrl cache 清掉以重新計算
+    resetServerUrlCache();
+  }
+
+  return {
+    ...initialState,
 
   loadConfig: async () => {
     set({ isLoading: true, error: null });
     try {
-      const stored = await storage.getItem(STORAGE_KEY);
+      // Web 端：先確保 serverUrl 是 proxy URL（CORS 必要）
+      if (IS_WEB) {
+        const proxyUrl = getWebProxyUrl();
+        await setServerUrl(proxyUrl);
+      }
+
+      const stored = await storage.getItem(getStorageKey());
       console.log('[GPS808] loadConfig: stored =', stored);
       console.log('[GPS808] loadConfig: Platform.OS =', Platform.OS);
       console.log('[GPS808] loadConfig: WEB_AUTO_CONNECT =', WEB_AUTO_CONNECT);
       console.log('[GPS808] loadConfig: WEB_ENV_CONFIG =', WEB_ENV_CONFIG);
-      if (!stored) {
-        // No stored config — try env-based auto-connect on web
-        if (Platform.OS === 'web' && WEB_AUTO_CONNECT && WEB_ENV_CONFIG.account) {
-          console.log('[GPS808] loadConfig: attempting env-based auto-connect...');
-          // Web 端：使用 proxy URL 避免 CORS 問題
-          const proxyUrl = getWebProxyUrl();
-          await setServerUrl(proxyUrl);
-          const result = await gps808Api.login(WEB_ENV_CONFIG.account, WEB_ENV_CONFIG.password);
-          console.log('[GPS808] loadConfig: login result =', result);
-          if (result.success) {
-            set({ config: WEB_ENV_CONFIG, isConnected: true, isLoading: false });
-          } else {
-            set({ config: WEB_ENV_CONFIG, isLoading: false, error: result.error || null });
-          }
-        } else {
-          console.log('[GPS808] loadConfig: skipping auto-connect');
-          set({ isLoading: false });
-        }
-        return;
-      }
-      const parsed = JSON.parse(stored) as Gps808Config;
-      // Web 端：使用 proxy URL 避免 CORS 問題
-      if (IS_WEB) {
-        const proxyUrl = getWebProxyUrl();
-        await setServerUrl(proxyUrl);
-      } else {
-        await setServerUrl(parsed.serverUrl);
-      }
-      set({ config: parsed });
 
-      // Try restoring session with stored jsession first
-      const valid = await gps808Api.ping();
-      if (valid) {
-        set({ isConnected: true, isLoading: false });
-        return;
-      }
-
-      // No valid jsession — auto-relogin with stored credentials.
-      // Web loses cookies on reload; APK loses in-memory cookies on cold start.
-      if (parsed.account && parsed.password) {
-        console.log('[GPS808] loadConfig: stored config found, attempting relogin with parsed.account =', parsed.account);
+      // Case 1: 有 stored config → 直接 relogin/ping
+      if (stored) {
+        const parsed = JSON.parse(stored) as Gps808Config;
         // Web 端：使用 proxy URL 避免 CORS 問題
         if (IS_WEB) {
-          const proxyUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL || 'http://localhost:3001/api/gps';
+          const proxyUrl = getWebProxyUrl();
           await setServerUrl(proxyUrl);
         } else {
           await setServerUrl(parsed.serverUrl);
         }
-        const result = await gps808Api.login(parsed.account, parsed.password);
-        console.log('[GPS808] loadConfig: relogin result =', result);
-        if (result.success) {
+        set({ config: parsed });
+
+        // Try ping first (有 stored jsession 才能 ping 過)
+        const valid = await gps808Api.ping();
+        if (valid) {
           set({ isConnected: true, isLoading: false });
-        } else {
-          set({ isConnected: false, isLoading: false, error: result.error || null });
+          return;
         }
-      } else {
-        set({ isLoading: false });
+
+        // ping 失敗：用 stored 帳密 relogin
+        if (parsed.account && parsed.password) {
+          console.log('[GPS808] loadConfig: stored config found, attempting relogin with parsed.account =', parsed.account);
+          if (IS_WEB) {
+            const proxyUrl = getWebProxyUrl();
+            await setServerUrl(proxyUrl);
+          } else {
+            await setServerUrl(parsed.serverUrl);
+          }
+          const result = await gps808Api.login(parsed.account, parsed.password);
+          console.log('[GPS808] loadConfig: relogin result =', result);
+          if (result.success) {
+            set({ isConnected: true, isLoading: false });
+          } else {
+            set({ isConnected: false, isLoading: false, error: result.error || null });
+          }
+        } else {
+          set({ isLoading: false });
+        }
+        return;
       }
-    } catch {
+
+      // Case 2: 沒有 stored config → 但 user 之前已登入（storage 還有 jsession）
+      // 重新整理後這種情況很常見：用戶手動登入後 stored config 若被清掉，
+      // 但 jsession 還在，這時用 stored jsession 試 ping，ping 不過也沒關係，
+      // 至少可以提示 UI「曾連線」並在背景嘗試 relogin。
+      if (IS_WEB) {
+        const jsessionStill = await storage.getItem(JSESSION_STORAGE_KEY);
+        if (jsessionStill) {
+          // 有 jsession 就標記為已連線並繼續
+          set({ isConnected: true });
+        }
+      }
+
+      // Case 3: 既無 stored config 也無 jsession，但有 env 自動連線
+      if (Platform.OS === 'web' && WEB_AUTO_CONNECT && WEB_ENV_CONFIG.account) {
+        console.log('[GPS808] loadConfig: attempting env-based auto-connect...');
+        const proxyUrl = getWebProxyUrl();
+        await setServerUrl(proxyUrl);
+        const result = await gps808Api.login(WEB_ENV_CONFIG.account, WEB_ENV_CONFIG.password);
+        console.log('[GPS808] loadConfig: login result =', result);
+        if (result.success) {
+          set({ config: WEB_ENV_CONFIG, isConnected: true, isLoading: false });
+        } else {
+          set({ config: WEB_ENV_CONFIG, isLoading: false, error: result.error || null });
+        }
+        return;
+      }
+
+      console.log('[GPS808] loadConfig: no stored config, no jsession, no env auto-connect');
+      set({ isLoading: false });
+    } catch (err) {
+      console.error('[GPS808] loadConfig: error =', err);
       set({ isLoading: false });
     }
   },
@@ -146,7 +206,7 @@ export const useGps808Store = create<Gps808State>((set, get) => ({
     set({ isSaving: true, error: null });
     try {
       await setServerUrl(config.serverUrl);
-      await storage.setItem(STORAGE_KEY, JSON.stringify(config));
+      await storage.setItem(getStorageKey(), JSON.stringify(config));
       set({ config, isSaving: false });
     } catch {
       set({ isSaving: false, error: 'Failed to save configuration' });
@@ -163,8 +223,8 @@ export const useGps808Store = create<Gps808State>((set, get) => ({
       await setServerUrl(effectiveServerUrl);
       const result = await gps808Api.login(config.account, config.password);
       if (result.success) {
-        await storage.setItem(STORAGE_KEY, JSON.stringify({ ...config }));
-        set({ config, isConnected: true, isSaving: false });
+      await storage.setItem(getStorageKey(), JSON.stringify({ ...config }));
+      set({ config, isConnected: true, isSaving: false });
         return true;
       } else {
         set({ error: result.error || 'Connection failed', isSaving: false });
@@ -179,12 +239,13 @@ export const useGps808Store = create<Gps808State>((set, get) => ({
 
   disconnect: async () => {
     await gps808Api.logout();
-    await storage.removeItem(STORAGE_KEY);
+    await storage.removeItem(getStorageKey());
     set({ config: DEFAULT_CONFIG, isConnected: false, error: null });
   },
 
   clearError: () => set({ error: null }),
-}));
+  };
+});
 
 // 從 GPS 808 系統獲取車輛列表
 export async function fetchGpsVehicles(): Promise<Gps808Vehicle[]> {

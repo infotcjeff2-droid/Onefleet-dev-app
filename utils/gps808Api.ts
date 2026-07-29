@@ -19,67 +19,76 @@ import { md5 } from 'js-md5';
 const IS_WEB = Platform.OS === 'web';
 const PROXY_PORT = 3001; // GPS Proxy Server port
 
-/**
- * 雲端 Proxy URL：優先讀取環境變數。
- * 本地開發：留空 → fallback 到 window.location.origin + :3001/api/gps
- * Vercel 部署：需設定 EXPO_PUBLIC_GPS_PROXY_URL 指向 Railway/Render 等雲端 Proxy
- *   例如：https://my-gps-proxy.up.railway.app/api/gps
- */
-const CLOUD_PROXY_URL = process.env.EXPO_PUBLIC_GPS_PROXY_URL ?? null;
+const JSESSION_KEY = 'gps808_jsession';
+export const SERVER_URL_KEY = 'gps808_server_url';
+// 注意：必須在 getWebBaseUrl 之前宣告，因為函式宣告會被 hoisting 而 let 不會
+let runtimeServerUrl: string | null = null;
 
 /**
- * Dynamically determines the proxy URL based on current page origin.
- * This ensures mobile devices can reach the proxy on the development machine.
- *
- * Priority:
- * 1. EXPO_PUBLIC_GPS_PROXY_URL (env variable, for Vercel/production)
- * 2. window.location.origin (dynamic origin, for local dev)
- * 3. localhost:3001 (fallback)
+ * 動態讀取 base URL（每次呼叫皆重新計算，避免 reload/route 切換後使用過期值）。
+ * 優先順序：
+ *   1. storage 中先前 setServerUrl() 設定的值（per-user 持久化）
+ *   2. EXPO_PUBLIC_GPS_PROXY_URL（雲端部署）
+ *   3. window.location.origin 動態 origin（本機 / LAN 開發）
+ *   4. http://localhost:3001/api/gps（本機 fallback）
+ *   5. 非 Web：https://console.onefleet.hk
  */
-function getProxyUrlFromOrigin(): string {
+
+/** 記憶體快取：避免每次 API 呼叫都做字串處理 */
+function getWebBaseUrl(): string {
+  if (runtimeServerUrl) return runtimeServerUrl;
   // 1. 雲端 URL（Vercel 部署優先）
-  if (CLOUD_PROXY_URL) {
-    return CLOUD_PROXY_URL.replace(/\/$/, '');
+  const envUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL;
+  if (envUrl) {
+    runtimeServerUrl = envUrl.replace(/\/$/, '');
+    return runtimeServerUrl;
   }
 
   // 2. 動態 origin（本地 / LAN 開發）
   if (typeof window !== 'undefined' && window.location?.origin) {
-    const origin = window.location.origin;
     try {
-      const url = new URL(origin);
-      // Replace the port with proxy port
+      const url = new URL(window.location.origin);
       url.port = String(PROXY_PORT);
       url.pathname = 'api/gps';
-      return url.toString().replace(/\/$/, '');
+      runtimeServerUrl = url.toString().replace(/\/$/, '');
+      return runtimeServerUrl;
     } catch {
       // Fallback
     }
   }
 
   // 3. Fallback：localhost（純本地無網路的情況）
-  return `http://localhost:${PROXY_PORT}/api/gps`;
+  runtimeServerUrl = `http://localhost:${PROXY_PORT}/api/gps`;
+  return runtimeServerUrl;
 }
 
-function resolveDefaultBaseUrl(): string {
+/** 清除 runtime cache — 切換 user 或 reload 之後使用 */
+export function resetServerUrlCache(): void {
+  runtimeServerUrl = null;
+}
+
+async function getWebStoredServerUrl(): Promise<string | null> {
+  try {
+    return await storage.getItem(SERVER_URL_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Returns the effective base URL: stored URL > env/proxy URL > default. */
+async function getEffectiveBaseUrl(): Promise<string> {
   if (!IS_WEB) {
     return 'https://console.onefleet.hk';
   }
-  // For Web, dynamically determine proxy URL from current origin
-  return getProxyUrlFromOrigin();
-}
-
-const DEFAULT_BASE_URL = resolveDefaultBaseUrl();
-
-const JSESSION_KEY = 'gps808_jsession';
-export const SERVER_URL_KEY = 'gps808_server_url';
-
-/** Returns the effective base URL: env server URL > proxy URL. */
-async function getEffectiveBaseUrl(): Promise<string> {
-  return DEFAULT_BASE_URL;
+  // 優先使用上次呼叫 setServerUrl() 寫入的值，確保 login/ping 一定走一致的路徑
+  const stored = await getWebStoredServerUrl();
+  if (stored) return stored.replace(/\/$/, '');
+  return getWebBaseUrl();
 }
 
 export async function setServerUrl(url: string): Promise<void> {
-  await storage.setItem(SERVER_URL_KEY, url);
+  runtimeServerUrl = url.replace(/\/$/, '');
+  await storage.setItem(SERVER_URL_KEY, runtimeServerUrl);
 }
 
 export interface Gps808LoginResult {
@@ -395,6 +404,7 @@ export const gps808Api = {
       await httpRequest('/StandardApiAction_logout.action', {}, 'POST');
     } finally {
       await storage.removeItem(JSESSION_KEY);
+      resetServerUrlCache();
     }
   },
 
@@ -591,9 +601,9 @@ export const gps808Api = {
     if (options?.ip) params.ip = options.ip;
     if (options?.port) params.port = options.port;
 
-    // 此 API 直接返回 HTML 頁面 URL（非 JSON），必須嵌入 WebView/iframe。
-    // 因此需要把 jsessionId 帶在 URL 上（Next.js proxy / Node.js proxy 都會讀 query string 來認證）。
-    const base = DEFAULT_BASE_URL;
+    // 影像串流 URL 必須直接指向 808GPS 伺服器（不使用 proxy）
+    // 因為瀏覽器的 CORS 限制和影像串流特性，需要直接連線到影片伺服器
+    const videoBaseUrl = 'https://console.onefleet.hk';
 
     const searchParams = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => searchParams.set(k, String(v)));
@@ -603,7 +613,7 @@ export const gps808Api = {
         if (jsession) searchParams.set('jsessionId', jsession);
         return {
           result: 0 as number,
-          videoUrl: `${base}/StandardApiAction_getVideoUrl.action?${searchParams.toString()}`,
+          videoUrl: `${videoBaseUrl}/StandardApiAction_getVideoUrl.action?${searchParams.toString()}`,
         };
       });
   },

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { storage } from '@/utils/storage';
 import { hashApiKey, maskApiKey, verifyApiKey } from '@/utils/secureHash';
+import { useAuthStore } from './authStore';
 
 interface GoogleMapsConfig {
   apiKeyHash: string;
@@ -19,12 +20,16 @@ interface GoogleMapsState {
   verifyApiKey: (apiKey: string) => boolean;
 }
 
-const STORAGE_KEY = 'google_maps_config';
 const DEFAULT_CONFIG: GoogleMapsConfig = {
   apiKeyHash: '',
   apiKeyMasked: '',
   hasApiKey: false,
 };
+
+function getStorageKey(): string {
+  const userId = useAuthStore.getState().user?.id ?? 'guest';
+  return `google_maps_config_${userId}`;
+}
 
 export const useGoogleMapsStore = create<GoogleMapsState>((set, get) => ({
   config: DEFAULT_CONFIG,
@@ -35,7 +40,7 @@ export const useGoogleMapsStore = create<GoogleMapsState>((set, get) => ({
   loadConfig: async () => {
     set({ isLoading: true });
     try {
-      const stored = await storage.getItem(STORAGE_KEY);
+      const stored = await storage.getItem(getStorageKey());
       if (stored) {
         const parsed = JSON.parse(stored) as GoogleMapsConfig;
         set({ config: parsed, isConfigured: parsed.hasApiKey, isLoading: false });
@@ -57,7 +62,7 @@ export const useGoogleMapsStore = create<GoogleMapsState>((set, get) => ({
         apiKeyMasked: masked,
         hasApiKey: true,
       };
-      await storage.setItem(STORAGE_KEY, JSON.stringify(config));
+      await storage.setItem(getStorageKey(), JSON.stringify(config));
       set({ config, isConfigured: true, isSaving: false });
     } catch {
       set({ isSaving: false });
@@ -65,7 +70,7 @@ export const useGoogleMapsStore = create<GoogleMapsState>((set, get) => ({
   },
 
   clearConfig: async () => {
-    await storage.removeItem(STORAGE_KEY);
+    await storage.removeItem(getStorageKey());
     set({ config: DEFAULT_CONFIG, isConfigured: false });
   },
 

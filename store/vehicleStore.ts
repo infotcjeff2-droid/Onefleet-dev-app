@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import { Vehicle } from '@/types';
 import { storage } from '@/utils/storage';
 import { fetchFleetSnapshot, hasSupabaseEnv, pushFleetSnapshot } from '@/utils/fleetSync';
-import { mockVehicles } from '@/constants/mockData';
 import { useGps808Store } from './gps808Store';
 import { fetchGpsVehicles } from './gps808Store';
 import { useAuthStore } from './authStore';
@@ -30,7 +29,12 @@ interface VehicleState {
 const generateId = () => `v${Date.now()}`;
 
 async function persistVehicles(vehicles: Vehicle[]) {
-  await storage.setItem(STORAGE_KEY, JSON.stringify(vehicles));
+  await storage.setItem(getStorageKey(), JSON.stringify(vehicles));
+}
+
+function getStorageKey(): string {
+  const userId = useAuthStore.getState().user?.id ?? 'guest';
+  return `${STORAGE_KEY}_${userId}`;
 }
 
 function pushVehiclesInBackground(vehicles: Vehicle[], onError: (message: string) => void) {
@@ -85,24 +89,18 @@ export const useVehicleStore = create<VehicleState>((set, get) => ({
 
       // 否則從本地存儲讀取，並根據 userId 過濾
       const currentUser = useAuthStore.getState().user;
-      const stored = await storage.getItem(STORAGE_KEY);
+      const stored = await storage.getItem(getStorageKey());
       if (stored) {
         const parsed = JSON.parse(stored);
-        // 如果有 userId，過濾顯示該用戶的車輛
+        // 嚴格過濾：只顯示目前使用者的車輛
+        // 沒有 userId 的歷史車輛仍顯示（遷移期寬容），但有 userId 的車輛必須完全匹配
         const userVehicles = currentUser?.id
           ? parsed.filter((v: Vehicle) => !v.userId || v.userId === currentUser.id)
-          : parsed;
-        // 如果存儲的數據為空或車輛數為0，使用 mockVehicles
-        if (userVehicles.length === 0) {
-          set({ vehicles: mockVehicles, isLoading: false });
-          await persistVehicles(mockVehicles);
-        } else {
-          set({ vehicles: userVehicles, isLoading: false });
-        }
+          : parsed.filter((v: Vehicle) => !v.userId);
+        set({ vehicles: userVehicles, isLoading: false });
       } else {
-        // 首次載入，使用 mockVehicles
-        set({ vehicles: mockVehicles, isLoading: false });
-        await persistVehicles(mockVehicles);
+        // 首次載入，車輛列表為空
+        set({ vehicles: [], isLoading: false });
       }
     } catch {
       set({ vehicles: [], isLoading: false });
@@ -119,10 +117,10 @@ export const useVehicleStore = create<VehicleState>((set, get) => ({
       const remote = await fetchFleetSnapshot();
       const currentUser = useAuthStore.getState().user;
       if (remote) {
-        // 只同步該用戶的車輛
+        // 只同步該用戶的車輛（沒有 userId 的歷史資料保留不刪）
         const userVehicles = currentUser?.id
           ? remote.vehicles.filter((v) => !v.userId || v.userId === currentUser.id)
-          : remote.vehicles;
+          : remote.vehicles.filter((v) => !v.userId);
         set({ vehicles: userVehicles });
         await persistVehicles(userVehicles);
       } else {

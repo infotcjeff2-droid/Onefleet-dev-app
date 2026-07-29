@@ -16,8 +16,14 @@ import { I18nProvider, useTranslation } from '@/i18n';
 import { FontScaleProvider } from '@/contexts/FontScaleContext';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useEffect } from 'react';
+import { ClerkProvider } from '@clerk/expo';
+import { tokenCache } from '@/utils/tokenCache';
+import { useSyncClerkToSupabase } from '@/hooks/useSyncClerkToSupabase';
 
 function AppContent() {
+  // 同步 Clerk session → Supabase auth（讓子 auth.uid() 能識別 Clerk user ID）
+  useSyncClerkToSupabase();
+
   const checkAuth = useAuthStore((s) => s.checkAuth);
   const authLoading = useAuthStore((s) => s.isLoading);
   const loadUsers = useUserManagementStore((s) => s.loadUsers);
@@ -82,15 +88,22 @@ function AppContent() {
 }
 
 export default function RootLayout() {
+  const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY || '';
+
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
-      <SafeAreaProvider>
-        <I18nProvider>
-          <FontScaleProvider>
-            <AppContent />
-          </FontScaleProvider>
-        </I18nProvider>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <ClerkProvider
+      tokenCache={tokenCache}
+      publishableKey={clerkPublishableKey}
+    >
+      <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
+        <SafeAreaProvider>
+          <I18nProvider>
+            <FontScaleProvider>
+              <AppContent />
+            </FontScaleProvider>
+          </I18nProvider>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    </ClerkProvider>
   );
 }

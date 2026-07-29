@@ -277,7 +277,7 @@ function AccountEditModal({
   const updateCurrentUser = useAuthStore((state) => state.updateCurrentUser);
   const updateUser = useUserManagementStore((state) => state.updateUser);
   const updateDriver = useDriverStore((state) => state.updateDriver);
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [name, setName] = useState(user?.name || '');
   const [email, setEmail] = useState(user?.email || '');
   const [avatar, setAvatar] = useState(user?.avatar || '');
@@ -328,9 +328,26 @@ function AccountEditModal({
 
       onClose();
       await onSaved();
-      Alert.alert(t('common.success'), '更新成功');
-    } catch {
-      setError(t('error.unknownError'));
+      onClose();
+      if (isWeb) {
+        window.alert('✅ 儲存成功\n\n帳戶資料已更新。');
+      } else {
+        Alert.alert(
+          locale === 'zh-TW' ? '✅ 儲存成功' : '✅ Saved',
+          locale === 'zh-TW' ? '帳戶資料已更新。' : 'Your account info has been updated.'
+        );
+      }
+    } catch (err) {
+      setLoading(false);
+      const msg = err instanceof Error ? err.message : (locale === 'zh-TW' ? '未知錯誤' : 'Unknown error');
+      if (isWeb) {
+        window.alert(`❌ 儲存失敗\n\n${msg}\n\n請稍後再試。`);
+      } else {
+        Alert.alert(
+          locale === 'zh-TW' ? '❌ 儲存失敗' : '❌ Save Failed',
+          locale === 'zh-TW' ? `錯誤：${msg}\n\n請稍後再試。` : `Error: ${msg}\n\nPlease try again.`
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -398,7 +415,7 @@ function AddUserModal({ visible, onClose, onAdded }: { visible: boolean; onClose
   const addUser = useUserManagementStore((state) => state.addUser);
   const addDriver = useDriverStore((state) => state.addDriver);
   const { getCompanies } = useUserManagementStore();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -444,10 +461,24 @@ function AddUserModal({ visible, onClose, onAdded }: { visible: boolean; onClose
       reset();
       onClose();
       await onAdded();
-      Alert.alert(t('common.success'), '新增成功');
+      if (isWeb) {
+        window.alert('✅ 新增成功\n\n使用者已新增至系統。');
+      } else {
+        Alert.alert(
+          locale === 'zh-TW' ? '✅ 新增成功' : '✅ Added',
+          locale === 'zh-TW' ? '使用者已新增至系統。' : 'User has been added to the system.'
+        );
+      }
     } else {
       setLoading(false);
-      setError(result.error || t('error.unknownError'));
+      if (isWeb) {
+        window.alert(`❌ 新增失敗\n\n${result.error || '未知錯誤'}\n\n請稍後再試。`);
+      } else {
+        Alert.alert(
+          locale === 'zh-TW' ? '❌ 新增失敗' : '❌ Add Failed',
+          result.error || (locale === 'zh-TW' ? '未知錯誤' : 'Unknown error')
+        );
+      }
     }
   };
 
@@ -607,7 +638,7 @@ function EditUserModal({
   const updateUser = useUserManagementStore((state) => state.updateUser);
   const updateDriver = useDriverStore((state) => state.updateDriver);
   const { getCompanies } = useUserManagementStore();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [name, setName] = useState(user.name);
   const [email, setEmail] = useState(user.email);
   const [phone, setPhone] = useState(user.phone || '');
@@ -653,9 +684,25 @@ function EditUserModal({
       }
       onClose();
       await onSaved();
-      Alert.alert(t('common.success'), '更新成功');
-    } catch {
-      setError(t('error.unknownError'));
+      if (isWeb) {
+        window.alert('✅ 儲存成功\n\n使用者資料已更新。');
+      } else {
+        Alert.alert(
+          locale === 'zh-TW' ? '✅ 儲存成功' : '✅ Saved',
+          locale === 'zh-TW' ? '使用者資料已更新。' : 'User info has been updated.'
+        );
+      }
+    } catch (err) {
+      setLoading(false);
+      const msg = err instanceof Error ? err.message : (locale === 'zh-TW' ? '未知錯誤' : 'Unknown error');
+      if (isWeb) {
+        window.alert(`❌ 儲存失敗\n\n${msg}\n\n請稍後再試。`);
+      } else {
+        Alert.alert(
+          locale === 'zh-TW' ? '❌ 儲存失敗' : '❌ Save Failed',
+          locale === 'zh-TW' ? `錯誤：${msg}\n\n請稍後再試。` : `Error: ${msg}\n\nPlease try again.`
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -778,7 +825,7 @@ function DriverEditModal({
   const updateUser = useUserManagementStore((state) => state.updateUser);
   const updateDriver = useDriverStore((state) => state.updateDriver);
   const { getCompanies } = useUserManagementStore();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [name, setName] = useState(driver.name);
   const [email, setEmail] = useState(driver.email);
   const [phone, setPhone] = useState(driver.phone || '');
@@ -820,17 +867,27 @@ function DriverEditModal({
         avatar: avatar.trim() || undefined,
         companyId: companyId || undefined,
       });
-      onClose();
       await onSaved();
+      onClose();
       if (isWeb) {
-        window.alert('更新成功');
+        window.alert('✅ 儲存成功\n\n司機資料已更新。');
       } else {
-        Alert.alert(t('common.success'), '更新成功');
+        Alert.alert(
+          locale === 'zh-TW' ? '✅ 儲存成功' : '✅ Saved',
+          locale === 'zh-TW' ? '司機資料已更新。' : 'Driver info has been updated.'
+        );
       }
-    } catch {
-      setError(t('error.unknownError'));
-    } finally {
+    } catch (err) {
       setLoading(false);
+      const msg = err instanceof Error ? err.message : (locale === 'zh-TW' ? '未知錯誤' : 'Unknown error');
+      if (isWeb) {
+        window.alert(`❌ 儲存失敗\n\n${msg}\n\n請稍後再試。`);
+      } else {
+        Alert.alert(
+          locale === 'zh-TW' ? '❌ 儲存失敗' : '❌ Save Failed',
+          locale === 'zh-TW' ? `錯誤：${msg}\n\n請稍後再試。` : `Error: ${msg}\n\nPlease try again.`
+        );
+      }
     }
   };
 
@@ -990,7 +1047,12 @@ export default function ProfileScreen() {
     });
 
     if (confirmed) {
-      await logout();
+      try {
+        await logout();
+      } catch (e) {
+        // 即使 logout 失敗也強制跳轉
+      }
+      // 直接跳到 login，避開 index.tsx 的 checkAuth 時序問題
       router.replace('/(auth)/login');
     }
   };

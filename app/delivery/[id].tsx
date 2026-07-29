@@ -341,6 +341,23 @@ export default function DeliveryDetailScreen() {
   const [lightboxUri, setLightboxUri] = useState('');
   const [pendingPhotos, setPendingPhotos] = useState<{ uri: string }[]>([]);
   const [photoPreviewVisible, setPhotoPreviewVisible] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  // 解決 React Native Web 圖片快取問題
+  const [photoUriCache, setPhotoUriCache] = useState<Record<string, string>>({});
+
+  // 首次 mount 時初始化 photo URI cache
+  useEffect(() => {
+    if (order?.photos) {
+      const cache: Record<string, string> = {};
+      order.photos.forEach((photo) => {
+        if (!cache[photo.uri]) {
+          const separator = photo.uri.includes('?') ? '&' : '?';
+          cache[photo.uri] = `${photo.uri}${separator}nocache=${Date.now()}`;
+        }
+      });
+      setPhotoUriCache(cache);
+    }
+  }, [order?.id]); // 只在 order.id 改變時更新
 
   useEffect(() => {
     const found = deliveries.find((delivery) => delivery.id === id);
@@ -388,6 +405,16 @@ export default function DeliveryDetailScreen() {
       .filter((managedUser) => managedUser.role === 'driver' && !drivers.some((driver) => driver.id === managedUser.id))
       .map((driver) => ({ id: driver.id, name: driver.name, phone: '', vehiclePlate: '' })),
   ];
+
+  const getPhotoUri = (uri: string) => {
+    if (photoUriCache[uri]) {
+      return photoUriCache[uri];
+    }
+    const separator = uri.includes('?') ? '&' : '?';
+    const newUri = `${uri}${separator}nocache=${Date.now()}`;
+    setPhotoUriCache((prev) => ({ ...prev, [uri]: newUri }));
+    return newUri;
+  };
 
   const handleAssign = () => {
     if (isExpired) {
@@ -467,7 +494,8 @@ export default function DeliveryDetailScreen() {
     const photosToUpload = [...pendingPhotos];
     const orderId = order.id;
 
-    // 先關閉 Modal
+    // 開始同步，禁用所有操作
+    setIsSyncing(true);
     setPendingPhotos([]);
     setPhotoPreviewVisible(false);
 
@@ -476,15 +504,14 @@ export default function DeliveryDetailScreen() {
       await addPhoto(orderId, photo.uri);
     }
 
-    // 等待狀態更新後刷新頁面
-    setTimeout(() => {
-      // 使用 location.reload 在 web 上確保頁面完全刷新
-      if (typeof window !== 'undefined' && Platform.OS === 'web') {
-        window.location.reload();
-      } else {
-        router.replace({ pathname: '/delivery/[id]', params: { id: orderId } });
-      }
-    }, 100);
+    // 等待同步完成後刷新頁面
+    if (typeof window !== 'undefined' && Platform.OS === 'web') {
+      await new Promise<void>((resolve) => setTimeout(resolve, 800));
+      window.location.reload();
+    } else {
+      setIsSyncing(false);
+      router.replace({ pathname: '/delivery/[id]', params: { id: orderId } });
+    }
   };
 
   const handleCancelPhotos = () => {
@@ -530,7 +557,17 @@ export default function DeliveryDetailScreen() {
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      {/* 同步中的載入提示 */}
+      {isSyncing && (
+        <View style={styles.syncingOverlay}>
+          <View style={styles.syncingBox}>
+            <Text style={styles.syncingText}>上傳中...</Text>
+            <Text style={styles.syncingSubtext}>請稍候</Text>
+          </View>
+        </View>
+      )}
+
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} pointerEvents={isSyncing ? 'none' : 'auto'}>
         <Animated.View entering={FadeInDown.springify()}>
           <Card style={styles.headerCard}>
             <View style={styles.headerTop}>
@@ -675,7 +712,11 @@ export default function DeliveryDetailScreen() {
                     }}
                   >
                     <View style={styles.photoImageWrapper}>
-                      <Image source={{ uri: photo.uri }} style={styles.photoImage} resizeMode="cover" />
+                      <Image
+                        source={{ uri: getPhotoUri(photo.uri) }}
+                        style={styles.photoImage}
+                        resizeMode="cover"
+                      />
                       <Pressable
                         style={styles.photoDeleteBtn}
                         onPress={async () => {
@@ -683,7 +724,9 @@ export default function DeliveryDetailScreen() {
                             ? window.confirm(t('delivery.deletePhotoMessage'))
                             : null;
                           if (Platform.OS === 'web' && confirmed) {
+                            setIsSyncing(true);
                             await removePhoto(order.id, photo.id);
+                            await new Promise<void>((resolve) => setTimeout(resolve, 500));
                             window.location.reload();
                           } else if (Platform.OS !== 'web') {
                             Alert.alert(
@@ -856,6 +899,29 @@ export default function DeliveryDetailScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   scrollView: { flex: 1 },
+  syncingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999,
+  },
+  syncingBox: {
+    backgroundColor: colors.card,
+    padding: spacing.xl,
+    borderRadius: borderRadius.lg,
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  syncingText: {
+    fontSize: typography.fontSize.lg,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  syncingSubtext: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+  },
   topBar: {
     height: 56,
     flexDirection: 'row',
@@ -941,7 +1007,7 @@ const styles = StyleSheet.create({
   },
   photoImage: { width: '100%', aspectRatio: 1 },
   photoMeta: { fontSize: typography.fontSize.xs, color: colors.textTertiary, padding: spacing.sm, textAlign: 'center' },
-  photoImageWrapper: { width: '100%', aspectRatio: 1, position: 'relative' },
+  photoImageWrapper: { width: '100%', aspectRatio: 1, position: 'relative', backgroundColor: colors.surface },
   photoDeleteBtn: { position: 'absolute', top: 6, right: 6, width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' },
   photoDeleteIcon: { color: '#fff', fontSize: 12, fontWeight: '700' },
   addPhotoPlaceholder: { backgroundColor: colors.card, borderWidth: 2, borderColor: colors.border, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' },

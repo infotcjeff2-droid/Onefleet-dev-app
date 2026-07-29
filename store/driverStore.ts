@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { storage } from '@/utils/storage';
 import { hasSupabaseEnv, pushFleetSnapshot } from '@/utils/fleetSync';
+import { useAuthStore } from './authStore';
 
 export interface Driver {
   id: string;
@@ -36,6 +37,7 @@ interface StoredDriver {
   avatar?: string;
   assignedVehicleId?: string;
   companyId?: string;
+  userId?: string;
 }
 
 interface StoredUser {
@@ -51,7 +53,7 @@ interface StoredUser {
 interface DriverState {
   drivers: Driver[];
   loadDrivers: () => Promise<void>;
-  addDriver: (name: string, phone: string, email: string, vehiclePlate?: string, avatar?: string, companyId?: string) => Promise<Driver>;
+  addDriver: (name: string, phone: string, email: string, vehiclePlate?: string, avatar?: string, companyId?: string, userId?: string) => Promise<Driver>;
   updateDriver: (id: string, updates: Partial<Driver>) => Promise<void>;
   deleteDriver: (id: string) => Promise<void>;
   getDriverById: (id: string) => Driver | undefined;
@@ -78,6 +80,7 @@ export const useDriverStore = create<DriverState>((set, get) => ({
       // 從 managed_users 同步 driver 角色（已新增但尚未出現在 managed_drivers 的）
       // 同時也更新已存在司機的 companyId（用戶可能在其他地方編輯了司機的公司歸屬）
       let merged: Driver[] = [...filtered];
+      const currentUser = useAuthStore.getState().user;
       if (storedUsers) {
         const parsedUsers: StoredUser[] = JSON.parse(storedUsers);
         const userDrivers: Driver[] = parsedUsers
@@ -91,6 +94,7 @@ export const useDriverStore = create<DriverState>((set, get) => ({
             status: 'available' as const,
             avatar: user.avatar,
             companyId: user.companyId,
+            userId: currentUser?.id,
           }));
 
         for (const userDriver of userDrivers) {
@@ -123,7 +127,14 @@ export const useDriverStore = create<DriverState>((set, get) => ({
         }
       }
 
-      set({ drivers: deduped });
+      // 只保留屬於目前使用者的司機（同時過濾啞資料）
+      const userDrivers = deduped.filter(
+        (d) =>
+          !defaultDriverIds.has(d.id) &&
+          (!currentUser?.id || !d.userId || d.userId === currentUser.id)
+      );
+
+      set({ drivers: userDrivers });
       await storage.setItem(DRIVER_STORAGE_KEY, JSON.stringify(deduped));
     } catch {
       set({ drivers: defaultDrivers });
@@ -132,6 +143,7 @@ export const useDriverStore = create<DriverState>((set, get) => ({
 
   addDriver: async (name, phone, email, vehiclePlate, avatar, companyId) => {
     const id = `d${String(Date.now()).slice(-6)}`;
+    const currentUser = useAuthStore.getState().user;
     const newDriver: Driver = {
       id,
       name,
@@ -141,6 +153,7 @@ export const useDriverStore = create<DriverState>((set, get) => ({
       status: 'available',
       avatar,
       companyId,
+      userId: currentUser?.id,
     };
     const updated = [...get().drivers, newDriver];
     set({ drivers: updated });

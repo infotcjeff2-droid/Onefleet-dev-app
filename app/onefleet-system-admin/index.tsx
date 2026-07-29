@@ -185,6 +185,14 @@ export default function OneFleetSystemAdminScreen() {
                 <ChevronRight size={18} color={colors.textSecondary} />
               </Pressable>
               <View style={[styles.divider, { backgroundColor: colors.border }]} />
+              <Pressable style={styles.settingRow} onPress={() => router.push('/onefleet-system-admin/user-management')}>
+                <View style={styles.settingLeft}>
+                  <Text style={{ fontSize: 16 }}>👤</Text>
+                  <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>使用者管理</Text>
+                </View>
+                <ChevronRight size={18} color={colors.textSecondary} />
+              </Pressable>
+              <View style={[styles.divider, { backgroundColor: colors.border }]} />
               <Pressable style={styles.settingRow} onPress={() => router.push('/onefleet-system-admin/trash')}>
                 <View style={styles.settingLeft}>
                   <Text style={{ fontSize: 16 }}>🗑️</Text>

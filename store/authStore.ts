@@ -2,16 +2,22 @@ import { create } from 'zustand';
 import { User, UserRole } from '@/types';
 import { adminCredentials, demoCredentials, driverCredentials, companyCredentials } from '@/constants/mockData';
 import { storage } from '@/utils/storage';
+import { getClerkInstance } from '@clerk/expo';
 
 interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
   role: UserRole | null;
   isLoading: boolean;
+  isLoggingOut: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
   updateCurrentUser: (updates: Partial<Pick<User, 'name' | 'email' | 'phone' | 'avatar'>>) => Promise<void>;
+  setUser: (user: User | null) => void;
+  setIsAuthenticated: (isAuth: boolean) => void;
+  setRole: (role: UserRole | null) => void;
+  setLoggingOut: (val: boolean) => void;
 }
 
 async function persistUser(user: User | null) {
@@ -27,6 +33,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isAuthenticated: false,
   role: null,
   isLoading: true,
+  isLoggingOut: false,
 
   login: async (email: string, password: string) => {
     await new Promise((resolve) => setTimeout(resolve, 800));
@@ -60,7 +67,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     const { users } = await import('./userManagementStore').then((module) => module.useUserManagementStore.getState());
-    const managedUser = users.find((item) => item.email.toLowerCase() === email.toLowerCase() && item.password === password);
+    const normalizedEmail = email.toLowerCase();
+    const managedUser = users.find(
+      (item) => typeof item?.email === 'string' && item.email.toLowerCase() === normalizedEmail && item.password === password
+    );
     if (managedUser) {
       const { password: _password, ...userWithoutPassword } = managedUser;
       set({ user: userWithoutPassword, isAuthenticated: true, role: userWithoutPassword.role });
@@ -72,8 +82,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: async () => {
-    set({ user: null, isAuthenticated: false, role: null });
+    set({ isLoggingOut: true });
+    try {
+      const clerk = getClerkInstance();
+      await clerk.signOut();
+    } catch {
+      // Ignore Clerk sign-out errors (e.g. no active session)
+    }
+    set({ user: null, isAuthenticated: false, role: null, isLoading: false });
     await persistUser(null);
+    set({ isLoggingOut: false });
   },
 
   checkAuth: async () => {
@@ -99,5 +117,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const user = { ...currentUser, ...updates };
     set({ user, role: user.role });
     await persistUser(user);
+  },
+
+  setUser: (user) => {
+    set({ user });
+    persistUser(user);
+  },
+
+  setIsAuthenticated: (isAuth) => {
+    set({ isAuthenticated: isAuth });
+  },
+
+  setRole: (role) => {
+    set({ role });
+  },
+
+  setLoggingOut: (val: boolean) => {
+    set({ isLoggingOut: val });
   },
 }));

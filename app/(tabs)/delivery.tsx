@@ -37,6 +37,7 @@ import {
   Plus,
   ChevronRight,
   AlertTriangle,
+  Image as ImageIcon,
 } from 'lucide-react-native';
 import { useTranslation } from '@/i18n';
 import { router } from 'expo-router';
@@ -141,6 +142,13 @@ function DeliveryCard({
             <Button title={t('delivery.signDelivery')} size="sm" onPress={onSign} fullWidth variant="secondary" icon={<CheckCircle size={14} color={colors.primary} />} />
           )}
         </View>
+
+        {item.photos && item.photos.length > 0 && (
+          <View style={styles.photoIndicator}>
+            <ImageIcon size={14} color={colors.accent} />
+            <Text style={styles.photoIndicatorText}>{item.photos.length} 張圖片</Text>
+          </View>
+        )}
 
         {item.signatureData && (
           <View style={styles.signedIndicator}>
@@ -815,6 +823,14 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
   },
   expiredNoticeText: { flex: 1, fontSize: typography.fontSize.xs, color: colors.danger, fontWeight: '600' },
+  photoIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
+  photoIndicatorText: { fontSize: typography.fontSize.xs, color: colors.accent, fontWeight: '600' },
   cardActions: { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg, gap: spacing.sm },
   signedIndicator: {
     flexDirection: 'row',

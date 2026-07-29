@@ -17,6 +17,7 @@ interface UserManagementState {
   syncUsers: () => Promise<void>;
   addUser: (name: string, email: string, password: string, role: 'driver' | 'company', phone?: string, avatar?: string, nameZh?: string, nameEn?: string, address?: string, companyId?: string) => Promise<{ success: boolean; error?: string }>;
   updateUser: (id: string, updates: Partial<Pick<ManagedUser, 'name' | 'email' | 'phone' | 'role' | 'avatar' | 'nameZh' | 'nameEn' | 'address' | 'companyId'>>) => Promise<void>;
+  updateUserPassword: (id: string, password: string) => Promise<void>;
   deleteUser: (id: string) => Promise<void>;
   getUserByEmail: (email: string) => ManagedUser | undefined;
   getCompanies: () => ManagedUser[];
@@ -31,6 +32,18 @@ const generateId = (role: UserRole) => {
 
 async function persistUsers(users: ManagedUser[]) {
   await storage.setItem(STORAGE_KEY, JSON.stringify(users));
+}
+
+/**
+ * 清掉結構不完整的 user 物件：必須具備非空字串的 id 與 email。
+ * 用於 loadUsers/syncUsers/addUser/updateUser 等所有寫入路徑，
+ * 避免從本地 storage 讀出的舊資料、或從 Supabase 同步下來的髒資料，
+ * 污染記憶體內的 users 陣列，導致後續 .email.toLowerCase() 等操作崩潰。
+ */
+function sanitizeUsers(users: ManagedUser[]): ManagedUser[] {
+  return users.filter(
+    (u) => u && typeof u.id === 'string' && u.id.length > 0 && typeof u.email === 'string' && u.email.length > 0
+  );
 }
 
 async function pushUsers(users: ManagedUser[]) {
@@ -62,13 +75,18 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
       const defaultDriverIds = ['d001', 'd002', 'd003', 'd004'];
       const migrated = users.filter((u) => !defaultDriverIds.includes(u.id));
 
-      if (migrated.length < users.length) {
-        // 有清理動作，才需要重新寫入 storage
-        users = migrated;
+      // 再消毒一次：把缺 id / email 的結構不完整資料清掉，避免後續登入比對崩潰
+      const sanitized = sanitizeUsers(migrated);
+
+      if (sanitized.length < users.length) {
+        users = sanitized;
+        await persistUsers(users);
+      } else if (migrated.length < users.length) {
+        users = sanitized;
         await persistUsers(users);
       }
 
-      set({ users });
+      set({ users: sanitized });
     } catch {
       set({ users: [] });
     }
@@ -82,26 +100,25 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
     set({ isSyncing: true, syncError: null });
     try {
       const remote = await fetchFleetSnapshot();
-      const localUsers = get().users;
+      const localUsers = sanitizeUsers(get().users);
 
       if (remote && Array.isArray(remote.users) && remote.users.length > 0) {
-        // 採聯集合並（以 email 為唯一鍵），避免遠端空陣列覆蓋本地、也避免本地剛新增被遠端舊版覆蓋
+        // 先把遠端資料也消毒，避免漏欄位的髒資料混入合併結果
+        const sanitizedRemoteUsers = sanitizeUsers(remote.users as ManagedUser[]);
+
+        // 採聯集合併（以 email 為唯一鍵），避免遠端空陣列覆蓋本地、也避免本地剛新增被遠端舊版覆蓋
         const mergedMap = new Map<string, ManagedUser>();
-        for (const user of remote.users as ManagedUser[]) {
-          if (user?.email) mergedMap.set(user.email.toLowerCase(), user);
+        for (const user of sanitizedRemoteUsers) {
+          mergedMap.set(user.email.toLowerCase(), user);
         }
         for (const user of localUsers) {
-          if (user?.email) mergedMap.set(user.email.toLowerCase(), user);
+          mergedMap.set(user.email.toLowerCase(), user);
         }
         const merged = Array.from(mergedMap.values());
 
         // 若本地比遠端多（剛新增但同步失敗），回寫遠端
-        const remoteEmails = new Set(
-          (remote.users as ManagedUser[])
-            .filter((u) => u?.email)
-            .map((u) => u.email.toLowerCase())
-        );
-        const hasNewLocal = localUsers.some((u) => u.email && !remoteEmails.has(u.email.toLowerCase()));
+        const remoteEmails = new Set(sanitizedRemoteUsers.map((u) => u.email.toLowerCase()));
+        const hasNewLocal = localUsers.some((u) => !remoteEmails.has(u.email.toLowerCase()));
 
         set({ users: merged });
         await persistUsers(merged);
@@ -140,7 +157,7 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
       companyId,
     };
 
-    const updated = [...get().users, newUser];
+    const updated = sanitizeUsers([...get().users, newUser]);
     set({ users: updated });
     await persistUsers(updated);
     pushUsersInBackground(updated, (message) => set({ syncError: message }));
@@ -148,7 +165,18 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
   },
 
   updateUser: async (id, updates) => {
-    const updated = get().users.map((user) => (user.id === id ? { ...user, ...updates } : user));
+    const updated = sanitizeUsers(
+      get().users.map((user) => (user.id === id ? { ...user, ...updates } : user))
+    );
+    set({ users: updated });
+    await persistUsers(updated);
+    pushUsersInBackground(updated, (message) => set({ syncError: message }));
+  },
+
+  updateUserPassword: async (id, password) => {
+    const updated = sanitizeUsers(
+      get().users.map((user) => (user.id === id ? { ...user, password } : user))
+    );
     set({ users: updated });
     await persistUsers(updated);
     pushUsersInBackground(updated, (message) => set({ syncError: message }));
@@ -161,7 +189,7 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
   softDeleteUser: async (id) => {
     const target = get().users.find((u) => u.id === id);
     if (!target) return null;
-    const updated = get().users.filter((user) => user.id !== id);
+    const updated = sanitizeUsers(get().users.filter((user) => user.id !== id));
     set({ users: updated, syncError: null, isSyncing: hasSupabaseEnv });
     await persistUsers(updated);
     try {
@@ -184,7 +212,7 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
     const { useTrashStore } = await import('@/store/trashStore');
     const target = get().users.find((u) => u.id === id);
     if (!target) return;
-    const updated = get().users.filter((user) => user.id !== id);
+    const updated = sanitizeUsers(get().users.filter((user) => user.id !== id));
     set({ users: updated, syncError: null, isSyncing: hasSupabaseEnv });
     await persistUsers(updated);
     try {
