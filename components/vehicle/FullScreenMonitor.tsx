@@ -11,7 +11,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { X, RefreshCw, MapPin, Navigation, Gauge, Clock, AlertCircle, Maximize2 } from 'lucide-react-native';
+import { X, RefreshCw, MapPin, Navigation, Gauge, Clock, AlertCircle, Maximize2, ChevronDown } from 'lucide-react-native';
 import { CameraFeed, type CameraFeedItem } from './CameraFeed';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useGps808Store } from '@/store/gps808Store';
@@ -29,6 +29,9 @@ const REFRESH_INTERVAL = 10_000;
 const DEFAULT_MAP_LAT = 22.3193;
 const DEFAULT_MAP_LNG = 114.1694;
 
+// 808GPS 設備的默認通道標籤配置
+const DEFAULT_CHANNEL_LABELS = ['通道 1', '通道 2', '通道 3', '通道 4', '通道 5', '通道 6'];
+
 interface GpsData {
   lat: number;
   lng: number;
@@ -37,6 +40,13 @@ interface GpsData {
   gpsTime: number;
   onlineStatus: number;
   address?: string;
+  /** 設備的通道數量（從設備狀態獲取） */
+  channelCount?: number;
+  /**
+   * 是否為「即時」GPS 訊號（lat/lng 都 > 0）。
+   * false 表示失去 GPS 定位，僅有「最後已知位置」。
+   */
+  isRealTime: boolean;
 }
 
 interface FullScreenMonitorProps {
@@ -47,7 +57,7 @@ interface FullScreenMonitorProps {
   /** 當前車輛車牌 */
   currentPlateNumber?: string;
   /** 要顯示影像的四台車輛（最多4台） */
-  cameraFeeds: CameraFeedItem[];
+  cameraFeeds?: CameraFeedItem[];
 }
 
 function parseCoord(val: unknown): number {
@@ -260,7 +270,36 @@ export function FullScreenMonitor({
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const webViewRef = useRef<WebView>(null);
 
-  const hasValidGps = gpsData !== null && gpsData.lat !== 0;
+  // 設備的總通道數（從設備狀態獲取，默認為 4）
+  const deviceChannelCount = gpsData?.channelCount || 4;
+  
+  // 用戶選擇要顯示的通道數（預設為 1）
+  const [visibleChannelCount, setVisibleChannelCount] = useState(1);
+
+  // 當設備通道數變化時，更新 visibleChannelCount
+  useEffect(() => {
+    if (deviceChannelCount > 0 && visibleChannelCount > deviceChannelCount) {
+      setVisibleChannelCount(deviceChannelCount);
+    }
+  }, [deviceChannelCount, visibleChannelCount]);
+
+  // 根據設備通道數生成默認的 cameraFeeds
+  const defaultCameraFeeds: CameraFeedItem[] = Array.from({ length: deviceChannelCount }, (_, index) => ({
+    id: `${currentDevIdno}-ch${index}`,
+    devIdno: currentDevIdno,
+    channel: index,
+    plateNumber: currentPlateNumber || currentDevIdno,
+    vehicleName: DEFAULT_CHANNEL_LABELS[index] || `通道 ${index + 1}`,
+  }));
+
+  // 使用傳入的 cameraFeeds 或默認配置
+  const allFeeds = cameraFeeds && cameraFeeds.length > 0 ? cameraFeeds : defaultCameraFeeds;
+  
+  // 根據 visibleChannelCount 過濾要顯示的頻道
+  const displayFeeds = allFeeds.slice(0, visibleChannelCount);
+
+  const hasValidGps = gpsData !== null && (gpsData.lat !== 0 || gpsData.lng !== 0);
+  const isRealTimeGps = gpsData?.isRealTime ?? false;
   const displayLat = hasValidGps ? gpsData.lat : DEFAULT_MAP_LAT;
   const displayLng = hasValidGps ? gpsData.lng : DEFAULT_MAP_LNG;
   const mapZoom = hasValidGps ? 18 : 12;
@@ -271,11 +310,24 @@ export function FullScreenMonitor({
     label: currentPlateNumber || currentDevIdno,
     zoom: mapZoom,
     showMarker: true,
-    noSignal: !hasValidGps,
-    noGpsSignalText: t('vehicles.noGpsSignal'),
+    noSignal: !isRealTimeGps,
+    noGpsSignalText: hasValidGps
+      ? t('vehicles.noGpsSignalLastKnown')
+      : t('vehicles.noGpsSignal'),
     address: hasValidGps ? gpsData.address : undefined,
     currentLang: locale,
   });
+
+  // 根據顯示的通道數計算網格佈局
+  const getGridLayout = (count: number): { rows: number; cols: number } => {
+    if (count <= 1) return { rows: 1, cols: 1 };
+    if (count <= 2) return { rows: 1, cols: 2 };
+    if (count <= 4) return { rows: 2, cols: 2 };
+    if (count <= 6) return { rows: 2, cols: 3 };
+    return { rows: Math.ceil(count / 3), cols: 3 };
+  };
+
+  const gridLayout = getGridLayout(displayFeeds.length);
 
   const fetchGps = useCallback(async () => {
     if (!currentDevIdno || !isConnected) return;
@@ -290,34 +342,54 @@ export function FullScreenMonitor({
 
       let lat = 0;
       let lng = 0;
+      let lastKnownLat = 0;
+      let lastKnownLng = 0;
+      let hasRealTimeFix = false;
       let speed = 0;
       let direction = 0;
       let gpsTime = Date.now();
       let onlineStatus = 0;
       let gpsDataAddress = '';
+      let channelCount = 4; // 默認 4 通道
 
       if (res.result === 0 && res.status) {
         const s = res.status as unknown as Record<string, unknown>;
 
+        // 解析通道數量
+        const pt = parseCoord(s.pt);
+        if (pt > 0 && pt <= 16) {
+          channelCount = pt;
+        }
+
+        // 解析即時 GPS 座標（status.lng / status.lat）
+        // 格式：1e6 整數（例如 114157293 = 114.157293）
         let rawLat = parseCoord(s.lat);
         let rawLng = parseCoord(s.lng);
         if (rawLat !== 0 && rawLng !== 0) {
           lat = Math.abs(rawLat) > 180 ? rawLat / 1_000_000 : rawLat;
           lng = Math.abs(rawLng) > 180 ? rawLng / 1_000_000 : rawLng;
+          hasRealTimeFix = true;
         }
 
-        if (lat === 0 || lng === 0) {
-          const rawMlat = parseCoord(s.mlat);
-          const rawMlng = parseCoord(s.mlng);
-          const rawLang = parseCoord(s.lang);
+        // 解析「最後已知位置」（status.mlat / status.mlng / status.lang）
+        // 格式：通常為 decimal 字串（例如 "22.342830" / "114.157293"）
+        // 808GPS API 在車輛失去 GPS 定位時仍會保留此值，應作為「最後位置」顯示
+        const rawMlat = parseCoord(s.mlat);
+        const rawMlng = parseCoord(s.mlng);
+        const rawLang = parseCoord(s.lang);
 
-          if (rawMlat !== 0 && rawMlng !== 0) {
-            lat = Math.abs(rawMlat) > 180 ? rawMlat / 1_000_000 : rawMlat;
-            lng = Math.abs(rawMlng) > 180 ? rawMlng / 1_000_000 : rawMlng;
-          } else if (rawMlat !== 0 && rawLang !== 0) {
-            lat = Math.abs(rawMlat) > 180 ? rawMlat / 1_000_000 : rawMlat;
-            lng = Math.abs(rawLang) > 180 ? rawLang / 1_000_000 : rawLang;
-          }
+        if (rawMlat !== 0 && rawMlng !== 0) {
+          lastKnownLat = Math.abs(rawMlat) > 180 ? rawMlat / 1_000_000 : rawMlat;
+          lastKnownLng = Math.abs(rawMlng) > 180 ? rawMlng / 1_000_000 : rawMlng;
+        } else if (rawMlat !== 0 && rawLang !== 0) {
+          lastKnownLat = Math.abs(rawMlat) > 180 ? rawMlat / 1_000_000 : rawMlat;
+          lastKnownLng = Math.abs(rawLang) > 180 ? rawLang / 1_000_000 : rawLang;
+        }
+
+        // 若無即時定位但有最後已知位置，採用最後已知位置作為顯示座標
+        if (!hasRealTimeFix && (lastKnownLat !== 0 || lastKnownLng !== 0)) {
+          lat = lastKnownLat;
+          lng = lastKnownLng;
         }
 
         speed = parseSpeed(s.sp);
@@ -347,6 +419,7 @@ export function FullScreenMonitor({
             const rawLng = parseCoord(device.jindu ?? device.lng);
             lat = Math.abs(rawLat) > 180 ? rawLat / 1e6 : rawLat;
             lng = Math.abs(rawLng) > 180 ? rawLng / 1e6 : rawLng;
+            hasRealTimeFix = true;
             speed = parseSpeed(device.speed);
             direction = parseCoord(device.direction);
             onlineStatus = parseCoord(device.onlineStatus);
@@ -363,7 +436,7 @@ export function FullScreenMonitor({
         }
       }
 
-      setGpsData({ lat, lng, speed, direction, gpsTime, onlineStatus, address: gpsDataAddress });
+      setGpsData({ lat, lng, speed, direction, gpsTime, onlineStatus, address: gpsDataAddress, isRealTime: hasRealTimeFix, channelCount });
       setLastRefresh(new Date());
       setError(null);
     } catch (err) {
@@ -392,18 +465,8 @@ export function FullScreenMonitor({
     }
   }, [visible, currentDevIdno]);
 
-  // Effective camera feeds (pad to 6 slots for current vehicle's multi-channel view)
-  const paddedFeeds: CameraFeedItem[] = [...cameraFeeds];
-  while (paddedFeeds.length < 6) {
-    paddedFeeds.push({
-      id: `empty-${paddedFeeds.length}`,
-      plateNumber: '',
-      isOnline: false,
-    });
-  }
-
   const renderCameraCell = (feed: CameraFeedItem, index: number) => {
-    if (feed.id.startsWith('empty-')) {
+    if (!feed.devIdno || feed.id.startsWith('empty-')) {
       return (
         <View style={styles.emptyCameraCell}>
           <Text style={styles.emptyCameraText}>無影像</Text>
@@ -431,11 +494,15 @@ export function FullScreenMonitor({
           <View
             style={[
               styles.mapStatusDot,
-              { backgroundColor: hasValidGps ? '#22C55E' : '#EF4444' },
+              { backgroundColor: isRealTimeGps ? '#22C55E' : (hasValidGps ? '#F59E0B' : '#EF4444') },
             ]}
           />
           <Text style={styles.mapStatusText}>
-            {hasValidGps ? t('vehicles.live') : t('vehicles.noSignal')}
+            {isRealTimeGps
+              ? t('vehicles.live')
+              : hasValidGps
+                ? t('vehicles.noGpsSignalLastKnown')
+                : t('vehicles.noSignal')}
           </Text>
         </View>
         <View style={styles.mapHeaderRight}>
@@ -527,49 +594,111 @@ export function FullScreenMonitor({
     </View>
   );
 
-  const renderCameraArea = () => (
-    <View style={styles.cameraSection}>
-      {/* Camera Header */}
-      <View style={styles.cameraHeader}>
-        <Text style={styles.cameraHeaderTitle}>實時錄像</Text>
-        <View style={styles.cameraHeaderRight}>
-          {cameraFeeds.length > 0 && (
-            <Text style={styles.cameraCountText}>
-              {cameraFeeds.length} 路
-            </Text>
-          )}
+  const renderCameraArea = () => {
+    // 如果沒有影像饋送，顯示提示
+    if (allFeeds.length === 0) {
+      return (
+        <View style={styles.cameraSection}>
+          <View style={styles.cameraHeader}>
+            <Text style={styles.cameraHeaderTitle}>實時錄像</Text>
+          </View>
+          <View style={styles.noCameraContainer}>
+            <Text style={styles.noCameraText}>此車輛無影像設備</Text>
+          </View>
         </View>
-      </View>
+      );
+    }
 
-      {/* Camera Grid: 3x2 (6 slots for multi-channel view) */}
-      <View style={styles.cameraGrid}>
-        <View style={styles.cameraCellRow}>
-          <View style={styles.cameraCell}>
-            {renderCameraCell(paddedFeeds[0], 0)}
+    // 根據網格佈局動態生成行
+    const renderGrid = () => {
+      const rows: React.ReactNode[] = [];
+
+      for (let row = 0; row < gridLayout.rows; row++) {
+        const cells: React.ReactNode[] = [];
+
+        for (let col = 0; col < gridLayout.cols; col++) {
+          const index = row * gridLayout.cols + col;
+          const feed = displayFeeds[index];
+
+          if (index >= displayFeeds.length) {
+            // 超出實際通道數的格子顯示為空
+            cells.push(
+              <View key={`empty-${index}`} style={styles.cameraCell}>
+                <View style={styles.emptyCameraCell}>
+                  <Text style={styles.emptyCameraText}>-</Text>
+                </View>
+              </View>
+            );
+          } else {
+            cells.push(
+              <View key={feed.id || index} style={styles.cameraCell}>
+                {renderCameraCell(feed, index)}
+              </View>
+            );
+          }
+        }
+
+        rows.push(
+          <View key={`row-${row}`} style={styles.cameraCellRow}>
+            {cells}
           </View>
-          <View style={styles.cameraCell}>
-            {renderCameraCell(paddedFeeds[1], 1)}
+        );
+      }
+
+      return rows;
+    };
+
+    // 渲染頻道選擇器 - 直接顯示數字按鈕 (1 2 3 4)
+    const renderChannelSelector = () => {
+      if (allFeeds.length <= 1) return null;
+
+      return (
+        <View style={styles.channelSelectorContainer}>
+          {allFeeds.slice(0, Math.min(allFeeds.length, 8)).map((_, index) => {
+            const count = index + 1;
+            const isActive = visibleChannelCount === count;
+            return (
+              <TouchableOpacity
+                key={`ch-${count}`}
+                style={[
+                  styles.channelNumBtn,
+                  isActive && styles.channelNumBtnActive,
+                ]}
+                onPress={() => setVisibleChannelCount(count)}
+              >
+                <Text style={[
+                  styles.channelNumText,
+                  isActive && styles.channelNumTextActive,
+                ]}>
+                  {count}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      );
+    };
+
+    return (
+      <View style={styles.cameraSection}>
+        {/* Camera Header */}
+        <View style={styles.cameraHeader}>
+          <Text style={styles.cameraHeaderTitle}>實時錄像</Text>
+          <View style={styles.cameraHeaderRight}>
+            <Text style={styles.cameraCountText}>
+              {allFeeds.length} 通道
+            </Text>
+            {renderChannelSelector()}
           </View>
         </View>
-        <View style={styles.cameraCellRow}>
-          <View style={styles.cameraCell}>
-            {renderCameraCell(paddedFeeds[2], 2)}
-          </View>
-          <View style={styles.cameraCell}>
-            {renderCameraCell(paddedFeeds[3], 3)}
-          </View>
-        </View>
-        <View style={styles.cameraCellRow}>
-          <View style={styles.cameraCell}>
-            {renderCameraCell(paddedFeeds[4], 4)}
-          </View>
-          <View style={styles.cameraCell}>
-            {renderCameraCell(paddedFeeds[5], 5)}
-          </View>
+
+        {/* Dynamic Camera Grid based on channel count */}
+        <View style={styles.cameraGrid}>
+          {renderGrid()}
         </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   return (
     <Modal
@@ -808,5 +937,108 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.xs,
     color: colors.textTertiary,
     fontWeight: '600',
+  },
+  noCameraContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+  },
+  noCameraText: {
+    fontSize: typography.fontSize.md,
+    color: colors.textTertiary,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+
+  // --- Channel Selector (数字按钮) ---
+  channelSelectorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  channelNumBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: borderRadius.sm,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#2A3040',
+  },
+  channelNumBtnActive: {
+    backgroundColor: defaultColors.primary,
+    borderColor: defaultColors.primary,
+  },
+  channelNumText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  channelNumTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+
+  // --- 旧的 dropdown 样式保留备用 ---
+  channelSelectorBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    backgroundColor: 'rgba(59, 130, 246, 0.3)',
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: defaultColors.primary,
+  },
+  channelSelectorText: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  channelDropdown: {
+    position: 'absolute',
+    top: '100%',
+    right: 0,
+    marginTop: spacing.xs,
+    backgroundColor: '#1a1a2e',
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: '#2A3040',
+    overflow: 'hidden',
+    minWidth: 100,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  channelOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2A3040',
+  },
+  channelOptionActive: {
+    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+  },
+  channelOptionText: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  channelOptionTextActive: {
+    color: defaultColors.primary,
+    fontWeight: '600',
+  },
+  channelOptionCheck: {
+    fontSize: typography.fontSize.sm,
+    color: defaultColors.primary,
+    fontWeight: '700',
   },
 });

@@ -15,7 +15,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { useRouter } from 'expo-router';
+import { useRouter, Redirect } from 'expo-router';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import {
   ChevronLeft,
@@ -34,6 +34,7 @@ import {
 import { useVehicleStore } from '@/store/vehicleStore';
 import { useGps808Store } from '@/store/gps808Store';
 import { useThemeStore } from '@/store/themeStore';
+import { useAuthStore } from '@/store/authStore';
 import { useTranslation } from '@/i18n';
 import { spacing, typography, borderRadius } from '@/constants/theme';
 import { Header } from '@/components/ui/Header';
@@ -42,6 +43,12 @@ import { gps808Api, Gps808Vehicle } from '@/utils/gps808Api';
 import { Vehicle } from '@/types';
 
 export default function PairDeviceScreen() {
+  const { role } = useAuthStore();
+  // 司機不能訪問配對設備頁面，直接重定向到首頁
+  if (role === 'driver') {
+    return <Redirect href="/(tabs)" />;
+  }
+
   const router = useRouter();
   const { colors } = useThemeStore();
   const { t } = useTranslation();

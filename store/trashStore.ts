@@ -41,6 +41,7 @@ interface TrashState {
   loadTrash: () => Promise<void>;
   addToTrash: (kind: TrashEntityKind, payload: Record<string, unknown>, deletedBy?: string) => Promise<TrashItem>;
   removeFromTrash: (trashId: string) => Promise<void>;
+  removeManyFromTrash: (trashIds: string[]) => Promise<void>;
   cleanupExpired: () => Promise<void>;
   clearAll: () => Promise<void>;
   /** 依類型取得尚未過期的項目 */
@@ -109,6 +110,15 @@ export const useTrashStore = create<TrashState>((set, get) => ({
 
   removeFromTrash: async (trashId) => {
     const items = get().items.filter((it) => it.trashId !== trashId);
+    set({ items });
+    await persist(items);
+    void syncToSupabase(items);
+  },
+
+  removeManyFromTrash: async (trashIds) => {
+    if (trashIds.length === 0) return;
+    const idSet = new Set(trashIds);
+    const items = get().items.filter((it) => !idSet.has(it.trashId));
     set({ items });
     await persist(items);
     void syncToSupabase(items);

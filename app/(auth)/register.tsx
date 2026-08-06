@@ -17,6 +17,8 @@ import { useTranslation } from '@/i18n';
 import { useUserManagementStore } from '@/store/userManagementStore';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 
+const isWeb = Platform.OS === 'web';
+
 const GRADIENT_COLORS = [
   '#ff6b6b',
   '#feca57',
@@ -126,7 +128,7 @@ function AnimatedGradientBorder({ children, borderWidth = BORDER_WIDTH, style }:
 }
 
 export default function RegisterScreen() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const router = useRouter();
   const addUser = useUserManagementStore((s) => s.addUser);
   const [name, setName] = useState('');
@@ -171,11 +173,27 @@ export default function RegisterScreen() {
     const result = await addUser(name, email, password, 'driver');
     setIsSubmitting(false);
     if (result.success) {
-      router.replace('/(auth)/login');
+      if (isWeb) {
+        window.alert('✅ 註冊成功！即將跳轉至登入頁面。');
+        router.replace('/(auth)/login');
+      } else {
+        Alert.alert(
+          t('common.success'),
+          locale === 'zh-TW' ? '✅ 註冊成功！即將跳轉至登入頁面。' : '✅ Registration successful! Redirecting to login.',
+          [{ text: 'OK', onPress: () => router.replace('/(auth)/login') }]
+        );
+      }
     } else {
-      // 'Email already registered' → 對應的翻譯 key
       const errKey = result.error?.includes('already') ? 'error.emailAlreadyExists' : 'error.unknownError';
       setErrors((e) => ({ ...e, email: t(errKey) }));
+      if (isWeb) {
+        window.alert(`❌ 註冊失敗\n\n${result.error || '未知錯誤'}\n\n請稍後再試。`);
+      } else {
+        Alert.alert(
+          locale === 'zh-TW' ? '❌ 註冊失敗' : '❌ Registration Failed',
+          locale === 'zh-TW' ? `${result.error || t('error.unknownError')}` : `${result.error || 'An unknown error occurred'}`
+        );
+      }
     }
   };
 

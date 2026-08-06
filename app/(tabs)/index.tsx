@@ -1,8 +1,9 @@
-import { View, Text, StyleSheet, ScrollView, Image, Pressable } from 'react-native';
-import { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Image, Pressable, Dimensions } from 'react-native';
+import { useState, useRef, useEffect } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
+const { width: SCREEN_W } = Dimensions.get('window');
 import {
   Car,
   Activity,
@@ -18,7 +19,6 @@ import {
   MapPin,
   Package,
   Truck,
-  CircleCheckBig,
   Route,
   ChevronRight,
   Building2,
@@ -33,7 +33,35 @@ import { useAuthStore } from '@/store/authStore';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 import { Header } from '@/components/ui/Header';
 import { useTranslation } from '@/i18n';
-import { UserRole, Vehicle } from '@/types';
+import { UserRole, Vehicle, DeliveryOrder } from '@/types';
+
+// 格式化時間顯示（處理 ISO 格式）
+function formatTime(dateStr: string): string {
+  try {
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return dateStr;
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    return `${hours}:${minutes}`;
+  } catch {
+    return dateStr;
+  }
+}
+
+// 格式化日期和時間顯示
+function formatDateTime(dateStr: string): string {
+  try {
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return dateStr;
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const day = date.getDate().toString().padStart(2, '0');
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    return `${month}/${day} ${hours}:${minutes}`;
+  } catch {
+    return dateStr;
+  }
+}
 
 function HeroBanner({ t, total, active, maintenance, inactive }: {
   t: (key: string) => string; total: number; active: number; maintenance: number; inactive: number;
@@ -216,75 +244,55 @@ function DriverHero({
     </Animated.View>
   );
 }
-
-function DriverStatCard({
-  icon,
-  label,
-  value,
-  accentColor,
-  accentBg,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  accentColor: string;
-  accentBg: string;
-}) {
-  return (
-    <Card style={styles.driverStatCard}>
-      <View style={[styles.driverStatIconWrap, { backgroundColor: accentBg }]}>{icon}</View>
-      <Text style={styles.driverStatValue}>{value}</Text>
-      <Text style={[styles.driverStatLabel, { color: accentColor }]}>{label}</Text>
-    </Card>
-  );
-}
-
 function DriverDeliveryCard({
   t,
   order,
   statusLabel,
+  onPress,
 }: {
   t: (key: string) => string;
   order: DeliveryOrder;
   statusLabel: string;
+  onPress: () => void;
 }) {
   return (
-    <Card style={styles.driverDeliveryCard}>
-      <View style={styles.driverDeliveryHeader}>
-        <View style={styles.driverDeliveryTitleWrap}>
-          <Text style={styles.driverDeliveryOrderNo}>{order.orderNo}</Text>
-          <Text style={styles.driverDeliveryCustomer}>{order.customerName}</Text>
+    <Pressable onPress={onPress}>
+      <Card style={styles.driverDeliveryCard}>
+        <View style={styles.driverDeliveryHeader}>
+          <View style={styles.driverDeliveryTitleWrap}>
+            <Text style={styles.driverDeliveryOrderNo}>{order.orderNo}</Text>
+            <Text style={styles.driverDeliveryCustomer}>{order.customerName}</Text>
+          </View>
+          <Badge
+            label={statusLabel}
+            variant={order.status === 'signed' ? 'active' : order.status === 'in_transit' ? 'warning' : 'info'}
+            size="sm"
+          />
         </View>
-        <Badge
-          label={statusLabel}
-          variant={order.status === 'signed' ? 'active' : order.status === 'in_transit' ? 'warning' : 'info'}
-          size="sm"
-        />
-      </View>
 
-      <View style={styles.driverRouteWrap}>
-        <View style={styles.driverRouteMarkerColumn}>
-          <View style={[styles.driverRouteIconWrap, { backgroundColor: '#E8FFF6' }]}> 
-            <MapPin size={14} color={colors.primary} />
+        <View style={styles.driverRouteWrap}>
+          <View style={styles.driverRouteMarkerColumn}>
+            <View style={[styles.driverRouteIconWrap, { backgroundColor: '#E8FFF6' }]}> 
+              <MapPin size={14} color={colors.primary} />
+            </View>
+            <View style={styles.driverRouteLine} />
+            <View style={[styles.driverRouteIconWrap, { backgroundColor: '#FFF1EA' }]}> 
+              <Route size={14} color="#FF7A45" />
+            </View>
           </View>
-          <View style={styles.driverRouteLine} />
-          <View style={[styles.driverRouteIconWrap, { backgroundColor: '#FFF1EA' }]}> 
-            <Route size={14} color="#FF7A45" />
+          <View style={styles.driverRouteTextColumn}>
+            <View style={styles.driverRouteBlock}>
+              <Text style={styles.driverRouteLabel}>{t('dashboard.driverPickup')}</Text>
+              <Text style={styles.driverRouteAddress}>{order.pickupAddress}</Text>
+              <Text style={styles.driverRouteMeta}>{formatDateTime(order.pickupTime)}</Text>
+            </View>
+            <View style={styles.driverRouteBlock}>
+              <Text style={styles.driverRouteLabel}>{t('dashboard.driverDropoff')}</Text>
+              <Text style={styles.driverRouteAddress}>{order.dropoffAddress}</Text>
+              {order.dropoffTime ? <Text style={styles.driverRouteMeta}>{order.dropoffTime}</Text> : null}
+            </View>
           </View>
         </View>
-        <View style={styles.driverRouteTextColumn}>
-          <View style={styles.driverRouteBlock}>
-            <Text style={styles.driverRouteLabel}>{t('dashboard.driverPickup')}</Text>
-            <Text style={styles.driverRouteAddress}>{order.pickupAddress}</Text>
-            <Text style={styles.driverRouteMeta}>{order.pickupTime}</Text>
-          </View>
-          <View style={styles.driverRouteBlock}>
-            <Text style={styles.driverRouteLabel}>{t('dashboard.driverDropoff')}</Text>
-            <Text style={styles.driverRouteAddress}>{order.dropoffAddress}</Text>
-            {order.dropoffTime ? <Text style={styles.driverRouteMeta}>{order.dropoffTime}</Text> : null}
-          </View>
-        </View>
-      </View>
 
           <View style={styles.driverDeliveryFooter}>
             <View style={styles.driverDeliveryChip}>
@@ -297,7 +305,8 @@ function DriverDeliveryCard({
         </View>
         <ChevronRight size={18} color={colors.textTertiary} />
       </View>
-    </Card>
+      </Card>
+    </Pressable>
   );
 }
 
@@ -310,11 +319,36 @@ function DriverDashboard({
   deliveries: DeliveryOrder[];
   userName: string;
 }) {
-  const activeDeliveries = deliveries.filter((order) => order.status === 'assigned' || order.status === 'in_transit' || order.status === 'delivered');
-  const completedDeliveries = deliveries.filter((order) => order.status === 'signed');
-  const nextStop = activeDeliveries[0] ?? deliveries[0] ?? null;
+  const router = useRouter();
 
-  const totalWeight = deliveries.reduce((sum, order) => sum + order.cargoWeight, 0);
+  // 只顯示今天的配送單（根據 pickupTime）
+  const today = new Date().toISOString().slice(0, 10);
+
+  // 過濾今天的配送單
+  const todayDeliveries = deliveries.filter((order) =>
+    order.pickupTime.slice(0, 10) === today
+  );
+
+  // 未簽收的配送單作為下一站的候選
+  const activeForNextStop = todayDeliveries.filter((order) => order.status !== 'signed');
+
+  // 按取單時間排序（最早的在前）
+  const sortedActiveDeliveries = [...activeForNextStop].sort((a, b) => {
+    const timeA = new Date(a.pickupTime).getTime();
+    const timeB = new Date(b.pickupTime).getTime();
+    return timeA - timeB;
+  });
+
+  // 下一站列表（未簽收的配送單）
+  const nextStopList = sortedActiveDeliveries;
+
+  // 當前的下一站（第一個）
+  const currentNextStop = nextStopList[0] ?? null;
+
+  // 已完成（已簽收）的今日配送單
+  const completedDeliveries = todayDeliveries.filter((order) => order.status === 'signed');
+
+  // 狀態標籤映射
   const statusLabelMap: Record<DeliveryOrder['status'], string> = {
     pending: t('delivery.pending'),
     assigned: t('delivery.assigned'),
@@ -322,6 +356,25 @@ function DriverDashboard({
     delivered: t('delivery.delivered'),
     signed: t('delivery.signed'),
   };
+
+  // Slider 狀態
+  const [currentSliderIndex, setCurrentSliderIndex] = useState(0);
+  const flatListRef = useRef<ScrollView>(null);
+
+  const handleCardPress = (orderId: string) => {
+    router.push(`/delivery/${orderId}`);
+  };
+
+  // 當當前顯示的配送單變為已簽收時，自動滑動到下一個
+  useEffect(() => {
+    if (currentNextStop && currentNextStop.status === 'signed' && nextStopList.length > 1) {
+      const nextIndex = currentSliderIndex + 1;
+      if (nextIndex < nextStopList.length) {
+        flatListRef.current?.scrollTo({ x: nextIndex * (SCREEN_W - spacing.lg * 2 - spacing.md), animated: true });
+        setCurrentSliderIndex(nextIndex);
+      }
+    }
+  }, [currentNextStop?.status]);
 
   return (
     <View style={[styles.container, { backgroundColor: '#FFF8F3' }]}> 
@@ -346,72 +399,131 @@ function DriverDashboard({
         <DriverHero
           t={t}
           name={userName}
-          activeCount={activeDeliveries.length}
+          activeCount={activeForNextStop.length}
           completedCount={completedDeliveries.length}
         />
 
-        <Animated.View entering={FadeInUp.delay(120).springify()} style={styles.driverStatsGrid}>
-          <DriverStatCard
-            icon={<Activity size={18} color={colors.primary} />}
-            label={t('dashboard.driverAssigned')}
-            value={String(deliveries.filter((order) => order.status === 'assigned').length)}
-            accentColor={colors.primary}
-            accentBg="#E8FFF6"
-          />
-          <DriverStatCard
-            icon={<Route size={18} color="#FF7A45" />}
-            label={t('dashboard.driverInTransit')}
-            value={String(deliveries.filter((order) => order.status === 'in_transit').length)}
-            accentColor="#FF7A45"
-            accentBg="#FFF1EA"
-          />
-          <DriverStatCard
-            icon={<CircleCheckBig size={18} color={colors.secondary} />}
-            label={t('dashboard.driverSigned')}
-            value={String(completedDeliveries.length)}
-            accentColor={colors.secondary}
-            accentBg="#EEF5FF"
-          />
-          <DriverStatCard
-            icon={<Package size={18} color={colors.accentSecondary} />}
-            label={t('dashboard.driverCargo')}
-            value={`${totalWeight} ${t('dashboard.kg')}`}
-            accentColor={colors.accentSecondary}
-            accentBg="#FFF8E8"
-          />
-        </Animated.View>
 
-        {nextStop ? (
+        {currentNextStop ? (
           <Animated.View entering={FadeInUp.delay(180).springify()} style={styles.driverSection}>
             <View style={styles.driverSectionHeader}>
               <Text style={styles.driverSectionTitle}>{t('dashboard.driverNextStop')}</Text>
               <Text style={styles.driverSectionAction}>{t('dashboard.driverToday')}</Text>
             </View>
-            <Card style={styles.driverHighlightCard}>
-              <View style={styles.driverHighlightTop}>
-                <View>
-                  <Text style={styles.driverHighlightOrder}>{nextStop.orderNo}</Text>
-                  <Text style={styles.driverHighlightCustomer}>{nextStop.customerName}</Text>
+
+            {/* 只有多於一個下一站時才顯示 Slider */}
+            {nextStopList.length > 1 ? (
+              <View>
+                <ScrollView
+                  ref={flatListRef}
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.nextStopSliderContent}
+                  scrollEnabled={false} // 禁用滑動，由按鈕控制
+                >
+                  {nextStopList.map((order, index) => (
+                    <Pressable
+                      key={order.id}
+                      onPress={() => handleCardPress(order.id)}
+                      style={styles.nextStopSliderCard}
+                    >
+                      <Card style={styles.driverHighlightCard}>
+                        <View style={styles.driverHighlightTop}>
+                          <View>
+                            <Text style={styles.driverHighlightOrder}>{order.orderNo}</Text>
+                            <Text style={styles.driverHighlightCustomer}>{order.customerName}</Text>
+                          </View>
+                          <View style={styles.driverHighlightBadge}>
+                            <Clock size={14} color="#FF7A45" />
+                            <Text style={styles.driverHighlightBadgeText}>{formatTime(order.pickupTime)}</Text>
+                          </View>
+                        </View>
+                        <Text style={styles.driverHighlightAddress}>{order.pickupAddress}</Text>
+                        <View style={styles.driverHighlightDivider} />
+                        <Text style={styles.driverHighlightRouteLabel}>{t('dashboard.driverDestination')}</Text>
+                        <Text style={styles.driverHighlightAddress}>{order.dropoffAddress}</Text>
+                      </Card>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+
+                {/* Slider 指示器 */}
+                <View style={styles.sliderIndicator}>
+                  {nextStopList.map((_, index) => (
+                    <View
+                      key={index}
+                      style={[
+                        styles.sliderDot,
+                        index === currentSliderIndex && styles.sliderDotActive,
+                      ]}
+                    />
+                  ))}
                 </View>
-                <View style={styles.driverHighlightBadge}>
-                  <Clock size={14} color="#FF7A45" />
-                  <Text style={styles.driverHighlightBadgeText}>{nextStop.pickupTime}</Text>
+
+                {/* 左右滑動按鈕 */}
+                <View style={styles.sliderButtons}>
+                  <Pressable
+                    style={[styles.sliderButton, currentSliderIndex === 0 && styles.sliderButtonDisabled]}
+                    onPress={() => {
+                      if (currentSliderIndex > 0) {
+                        const newIndex = currentSliderIndex - 1;
+                        flatListRef.current?.scrollTo({ x: newIndex * (SCREEN_W - spacing.lg * 2 - spacing.md), animated: true });
+                        setCurrentSliderIndex(newIndex);
+                      }
+                    }}
+                    disabled={currentSliderIndex === 0}
+                  >
+                    <ChevronLeft size={20} color={currentSliderIndex === 0 ? colors.textTertiary : '#FF7A45'} />
+                  </Pressable>
+                  <Text style={styles.sliderCounter}>
+                    {currentSliderIndex + 1} / {nextStopList.length}
+                  </Text>
+                  <Pressable
+                    style={[styles.sliderButton, currentSliderIndex === nextStopList.length - 1 && styles.sliderButtonDisabled]}
+                    onPress={() => {
+                      if (currentSliderIndex < nextStopList.length - 1) {
+                        const newIndex = currentSliderIndex + 1;
+                        flatListRef.current?.scrollTo({ x: newIndex * (SCREEN_W - spacing.lg * 2 - spacing.md), animated: true });
+                        setCurrentSliderIndex(newIndex);
+                      }
+                    }}
+                    disabled={currentSliderIndex === nextStopList.length - 1}
+                  >
+                    <ChevronRight size={20} color={currentSliderIndex === nextStopList.length - 1 ? colors.textTertiary : '#FF7A45'} />
+                  </Pressable>
                 </View>
               </View>
-              <Text style={styles.driverHighlightAddress}>{nextStop.pickupAddress}</Text>
-              <View style={styles.driverHighlightDivider} />
-              <Text style={styles.driverHighlightRouteLabel}>{t('dashboard.driverDestination')}</Text>
-              <Text style={styles.driverHighlightAddress}>{nextStop.dropoffAddress}</Text>
-            </Card>
+            ) : (
+              // 只有一個下一站時，直接顯示卡片
+              <Pressable onPress={() => handleCardPress(currentNextStop.id)}>
+                <Card style={styles.driverHighlightCard}>
+                  <View style={styles.driverHighlightTop}>
+                    <View>
+                      <Text style={styles.driverHighlightOrder}>{currentNextStop.orderNo}</Text>
+                      <Text style={styles.driverHighlightCustomer}>{currentNextStop.customerName}</Text>
+                    </View>
+                    <View style={styles.driverHighlightBadge}>
+                      <Clock size={14} color="#FF7A45" />
+                      <Text style={styles.driverHighlightBadgeText}>{formatTime(currentNextStop.pickupTime)}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.driverHighlightAddress}>{currentNextStop.pickupAddress}</Text>
+                  <View style={styles.driverHighlightDivider} />
+                  <Text style={styles.driverHighlightRouteLabel}>{t('dashboard.driverDestination')}</Text>
+                  <Text style={styles.driverHighlightAddress}>{currentNextStop.dropoffAddress}</Text>
+                </Card>
+              </Pressable>
+            )}
           </Animated.View>
         ) : null}
 
         <Animated.View entering={FadeInUp.delay(260).springify()} style={[styles.driverSection, { paddingBottom: 100 }]}>
           <View style={styles.driverSectionHeader}>
             <Text style={styles.driverSectionTitle}>{t('dashboard.driverMyDeliveries')}</Text>
-            <Text style={styles.driverSectionAction}>{deliveries.length} {t('dashboard.driverTotal')}</Text>
+            <Text style={styles.driverSectionAction}>{todayDeliveries.length} {t('dashboard.driverTotal')}</Text>
           </View>
-          {deliveries.length === 0 ? (
+          {todayDeliveries.length === 0 ? (
             <Card style={styles.driverEmptyCard}>
               <View style={styles.driverEmptyIconWrap}>
                 <Truck size={20} color="#FF7A45" />
@@ -420,8 +532,14 @@ function DriverDashboard({
               <Text style={styles.driverEmptyText}>{t('dashboard.driverNoDeliveriesHint')}</Text>
             </Card>
           ) : (
-            deliveries.map((order) => (
-              <DriverDeliveryCard key={order.id} t={t} order={order} statusLabel={statusLabelMap[order.status]} />
+            todayDeliveries.map((order) => (
+              <DriverDeliveryCard
+                key={order.id}
+                t={t}
+                order={order}
+                statusLabel={statusLabelMap[order.status]}
+                onPress={() => handleCardPress(order.id)}
+              />
             ))
           )}
         </Animated.View>
@@ -494,6 +612,7 @@ function CompanyAdminDashboard({
   vehicles: Vehicle[];
   deliveries: DeliveryOrder[];
 }) {
+  const router = useRouter();
   const inTransitOrders = deliveries.filter((delivery) => delivery.status === 'in_transit');
   const pendingOrders = deliveries.filter((delivery) => delivery.status === 'pending');
   const signedOrders = deliveries.filter((delivery) => delivery.status === 'signed');
@@ -1556,37 +1675,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: 'rgba(255,255,255,0.82)',
   },
-  driverStatsGrid: {
-    paddingHorizontal: spacing.lg,
-    marginTop: spacing.lg,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.md,
-  },
-  driverStatCard: {
-    width: '47.8%',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.lg,
-    borderRadius: borderRadius.xl,
-  },
-  driverStatIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: borderRadius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.md,
-  },
-  driverStatValue: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: '800',
-    color: colors.textPrimary,
-  },
-  driverStatLabel: {
-    marginTop: 4,
-    fontSize: 13,
-    fontWeight: '600',
-  },
   driverSection: {
     paddingHorizontal: spacing.lg,
     marginTop: spacing.xl,
@@ -1766,5 +1854,55 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     flex: 1,
+  },
+  // Slider styles
+  nextStopSliderContent: {
+    paddingRight: spacing.lg,
+  },
+  nextStopSliderCard: {
+    width: SCREEN_W - spacing.lg * 2,
+    marginRight: spacing.md,
+  },
+  sliderIndicator: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: spacing.md,
+    gap: spacing.xs,
+  },
+  sliderDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.border,
+  },
+  sliderDotActive: {
+    width: 20,
+    backgroundColor: '#FF7A45',
+  },
+  sliderButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.xl,
+  },
+  sliderButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  sliderButtonDisabled: {
+    opacity: 0.5,
+  },
+  sliderCounter: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '700',
+    color: colors.textSecondary,
   },
 });

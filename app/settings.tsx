@@ -1,7 +1,7 @@
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Image, ActivityIndicator } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
-import { ChevronRight, Globe, Check, Database, Type } from 'lucide-react-native';
+import { ChevronRight, Globe, Check, Database, Type, Users, RefreshCw } from 'lucide-react-native';
 import { Card } from '@/components/ui/Card';
 import { Header } from '@/components/ui/Header';
 import { useThemeStore } from '@/store/themeStore';
@@ -9,6 +9,7 @@ import { useTranslation } from '@/i18n';
 import { spacing, typography } from '@/constants/theme';
 import { useVehicleStore } from '@/store/vehicleStore';
 import { useDeliveryStore } from '@/store/deliveryStore';
+import { useUserManagementStore } from '@/store/userManagementStore';
 import { hasSupabaseEnv, supabaseSetupSql } from '@/utils/fleetSync';
 import { useFontScale, FontScale } from '@/contexts/FontScaleContext';
 
@@ -30,6 +31,12 @@ export default function SettingsScreen() {
   const deliverySyncError = useDeliveryStore((s) => s.syncError);
   const vehicleSyncing = useVehicleStore((s) => s.isSyncing);
   const deliverySyncing = useDeliveryStore((s) => s.isSyncing);
+  const users = useUserManagementStore((s) => s.users);
+  const userSyncError = useUserManagementStore((s) => s.syncError);
+  const userSyncing = useUserManagementStore((s) => s.isSyncing);
+  const syncUsers = useUserManagementStore((s) => s.syncUsers);
+
+  const [syncingUsers, setSyncingUsers] = useState(false);
 
   const FONT_SCALES: { scale: FontScale; label: string; labelEn: string }[] = [
     { scale: 'normal', label: '標準', labelEn: 'Normal' },
@@ -45,6 +52,34 @@ export default function SettingsScreen() {
         ? '請到 Supabase SQL Editor 貼上執行，建立或更新同步資料表。'
         : 'Paste it into the Supabase SQL Editor to create or update the sync table.'
     );
+  };
+
+  const handleSyncUsers = async () => {
+    if (!hasSupabaseEnv) {
+      Alert.alert(
+        locale === 'zh-TW' ? '無法同步' : 'Cannot sync',
+        locale === 'zh-TW' ? '請先設定 Supabase 環境變數' : 'Please configure Supabase environment variables first'
+      );
+      return;
+    }
+
+    setSyncingUsers(true);
+    try {
+      await syncUsers();
+      Alert.alert(
+        locale === 'zh-TW' ? '同步完成' : 'Sync completed',
+        locale === 'zh-TW'
+          ? `已同步 ${users.length} 個使用者到 user_profile 表`
+          : `Synced ${users.length} users to user_profile table`
+      );
+    } catch (err) {
+      Alert.alert(
+        locale === 'zh-TW' ? '同步失敗' : 'Sync failed',
+        err instanceof Error ? err.message : (locale === 'zh-TW' ? '未知錯誤' : 'Unknown error')
+      );
+    } finally {
+      setSyncingUsers(false);
+    }
   };
 
   const syncStatus = vehicleSyncError || deliverySyncError
@@ -231,6 +266,42 @@ export default function SettingsScreen() {
                 </View>
               </View>
               <ChevronRight size={16} color={colors.textTertiary} />
+            </Pressable>
+
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+            <Pressable
+              onPress={handleSyncUsers}
+              disabled={syncingUsers || !hasSupabaseEnv}
+              style={({ pressed }) => [
+                styles.settingItem,
+                { backgroundColor: pressed ? colors.cardHover : 'transparent', opacity: (!hasSupabaseEnv ? 0.5 : 1) }
+              ]}
+            >
+              <View style={styles.settingLeft}>
+                <View style={[styles.settingIconWrap, { backgroundColor: `${colors.success}15` }]}>
+                  <Users size={18} color={colors.success} />
+                </View>
+                <View>
+                  <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>
+                    {locale === 'zh-TW' ? '同步使用者到 user_profile' : 'Sync users to user_profile'}
+                  </Text>
+                  <Text style={[styles.settingSub, { color: colors.textTertiary }]}>
+                    {userSyncError
+                      ? userSyncError
+                      : locale === 'zh-TW'
+                        ? `目前有 ${users.length} 個使用者等待同步`
+                        : `${users.length} users ready to sync`}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.settingRight}>
+                {syncingUsers ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <RefreshCw size={16} color={colors.textTertiary} />
+                )}
+              </View>
             </Pressable>
           </Card>
         </View>

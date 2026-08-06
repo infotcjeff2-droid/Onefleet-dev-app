@@ -1,29 +1,210 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, StyleSheet, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withTiming,
+  withSequence,
+  Easing,
+  interpolate,
+} from 'react-native-reanimated';
 import { colors } from '@/constants/theme';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
+const FLOATING_ORBS = [
+  { x: 15, y: 20, size: 120, duration: 4000, delay: 0 },
+  { x: 75, y: 60, size: 80, duration: 5000, delay: 500 },
+  { x: 85, y: 15, size: 100, duration: 4500, delay: 1000 },
+  { x: 10, y: 70, size: 90, duration: 5500, delay: 250 },
+  { x: 60, y: 85, size: 70, duration: 4800, delay: 750 },
+  { x: 40, y: 40, size: 60, duration: 4200, delay: 1250 },
+];
+
 interface LoginBackgroundProps {
   children: React.ReactNode;
+}
+
+function FloatingOrb({ x, y, size, duration, delay }: typeof FLOATING_ORBS[0]) {
+  const progress = useSharedValue(0);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      progress.value = withRepeat(
+        withSequence(
+          withTiming(1, { duration, easing: Easing.inOut(Easing.ease) }),
+          withTiming(0, { duration, easing: Easing.inOut(Easing.ease) })
+        ),
+        -1,
+        false
+      );
+    }, delay);
+    return () => clearTimeout(timeout);
+  }, [duration, delay]);
+
+  const animatedStyle = useAnimatedStyle(() => {
+    const translateX = interpolate(progress.value, [0, 0.5, 1], [0, 30, 0]);
+    const translateY = interpolate(progress.value, [0, 0.5, 1], [0, -20, 0]);
+    const scale = interpolate(progress.value, [0, 0.5, 1], [0.8, 1.2, 0.8]);
+    const opacity = interpolate(progress.value, [0, 0.5, 1], [0.2, 0.5, 0.2]);
+
+    return {
+      transform: [
+        { translateX },
+        { translateY },
+        { scale },
+      ],
+      opacity,
+    };
+  });
+
+  return (
+    <Animated.View
+      style={[
+        styles.orb,
+        {
+          left: `${x}%`,
+          top: `${y}%`,
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+        },
+        animatedStyle,
+      ]}
+    >
+      <LinearGradient
+        colors={['#ff6b6b40', '#54a0ff40', '#ff9ff340']}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+    </Animated.View>
+  );
+}
+
+function AnimatedGlows() {
+  const glow1Progress = useSharedValue(0);
+  const glow2Progress = useSharedValue(0);
+  const glow3Progress = useSharedValue(0);
+
+  useEffect(() => {
+    glow1Progress.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 3000, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0, { duration: 3000, easing: Easing.inOut(Easing.ease) })
+      ),
+      -1,
+      false
+    );
+
+    glow2Progress.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 4000, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0, { duration: 4000, easing: Easing.inOut(Easing.ease) })
+      ),
+      -1,
+      false
+    );
+
+    glow3Progress.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 3500, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0, { duration: 3500, easing: Easing.inOut(Easing.ease) })
+      ),
+      -1,
+      false
+    );
+  }, []);
+
+  const glow1Style = useAnimatedStyle(() => {
+    const translateX = interpolate(glow1Progress.value, [0, 1], [-50, 50]);
+    const translateY = interpolate(glow1Progress.value, [0, 1], [-30, 30]);
+    const opacity = interpolate(glow1Progress.value, [0, 1], [0.3, 0.6]);
+    return {
+      transform: [{ translateX }, { translateY }],
+      opacity,
+    };
+  });
+
+  const glow2Style = useAnimatedStyle(() => {
+    const translateX = interpolate(glow2Progress.value, [0, 1], [30, -30]);
+    const translateY = interpolate(glow2Progress.value, [0, 1], [20, -20]);
+    const opacity = interpolate(glow2Progress.value, [0, 1], [0.2, 0.5]);
+    return {
+      transform: [{ translateX }, { translateY }],
+      opacity,
+    };
+  });
+
+  const glow3Style = useAnimatedStyle(() => {
+    const translateX = interpolate(glow3Progress.value, [0, 1], [-20, 40]);
+    const translateY = interpolate(glow3Progress.value, [0, 1], [30, -30]);
+    const opacity = interpolate(glow3Progress.value, [0, 1], [0.25, 0.55]);
+    return {
+      transform: [{ translateX }, { translateY }],
+      opacity,
+    };
+  });
+
+  return (
+    <>
+      <Animated.View style={[styles.animatedGlow1, glow1Style]}>
+        <BlurView intensity={40} tint="light" style={styles.glowBlur} />
+      </Animated.View>
+      <Animated.View style={[styles.animatedGlow2, glow2Style]}>
+        <BlurView intensity={30} tint="light" style={styles.glowBlur} />
+      </Animated.View>
+      <Animated.View style={[styles.animatedGlow3, glow3Style]}>
+        <BlurView intensity={35} tint="light" style={styles.glowBlur} />
+      </Animated.View>
+    </>
+  );
+}
+
+function AnimatedColorOverlay() {
+  const colorProgress = useSharedValue(0);
+
+  useEffect(() => {
+    colorProgress.value = withRepeat(
+      withTiming(1, { duration: 5000, easing: Easing.linear }),
+      -1,
+      false
+    );
+  }, []);
+
+  const animatedStyle = useAnimatedStyle(() => {
+    const hue = interpolate(colorProgress.value, [0, 1], [0, 360]);
+    return {
+      backgroundColor: `hsla(${hue}, 70%, 50%, 0.08)`,
+    };
+  });
+
+  return <Animated.View style={[styles.colorOverlay, animatedStyle]} />;
 }
 
 export function LoginBackground({ children }: LoginBackgroundProps) {
   return (
     <View style={styles.container}>
       {/* Base gradient background */}
-      <LinearGradient
-        colors={[
-          colors.muted,
-          colors.background,
-          colors.background,
-        ]}
-        style={StyleSheet.absoluteFill}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-      />
+      <View style={styles.gradientBg}>
+        <LinearGradient
+          colors={[colors.muted, colors.background, colors.background]}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+        />
+      </View>
+
+      {/* Animated color overlay for gradient transitions */}
+      <AnimatedColorOverlay />
+
+      {/* Floating orbs */}
+      {FLOATING_ORBS.map((orb, index) => (
+        <FloatingOrb key={index} {...orb} />
+      ))}
 
       {/* Grid pattern overlay */}
       <View style={styles.gridContainer}>
@@ -76,6 +257,9 @@ export function LoginBackground({ children }: LoginBackgroundProps) {
         <View style={[styles.gridLine, styles.gridLineHorizontal, { top: '95.83%' }]} />
       </View>
 
+      {/* Animated glows */}
+      <AnimatedGlows />
+
       {/* Top center glow */}
       <View style={styles.glowTopCenter}>
         <BlurView
@@ -92,33 +276,6 @@ export function LoginBackground({ children }: LoginBackgroundProps) {
         </BlurView>
       </View>
 
-      {/* Violet glow - top left */}
-      <View style={styles.glowViolet}>
-        <BlurView
-          intensity={30}
-          tint="light"
-          style={styles.glowBlur}
-        />
-      </View>
-
-      {/* Cyan glow - top right */}
-      <View style={styles.glowCyan}>
-        <BlurView
-          intensity={25}
-          tint="light"
-          style={styles.glowBlur}
-        />
-      </View>
-
-      {/* Fuchsia glow - bottom left */}
-      <View style={styles.glowFuchsia}>
-        <BlurView
-          intensity={30}
-          tint="light"
-          style={styles.glowBlur}
-        />
-      </View>
-
       {/* Content */}
       <View style={styles.content}>
         {children}
@@ -131,6 +288,44 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  gradientBg: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  colorOverlay: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  orb: {
+    position: 'absolute',
+    backgroundColor: 'transparent',
+    overflow: 'hidden',
+  },
+  animatedGlow1: {
+    position: 'absolute',
+    top: -100,
+    left: -200,
+    width: 700,
+    height: 700,
+    borderRadius: 350,
+    overflow: 'hidden',
+  },
+  animatedGlow2: {
+    position: 'absolute',
+    top: SCREEN_HEIGHT * 0.15,
+    right: -100,
+    width: 600,
+    height: 500,
+    borderRadius: 300,
+    overflow: 'hidden',
+  },
+  animatedGlow3: {
+    position: 'absolute',
+    bottom: -200,
+    left: SCREEN_WIDTH * 0.1,
+    width: 600,
+    height: 600,
+    borderRadius: 300,
+    overflow: 'hidden',
   },
   gridContainer: {
     ...StyleSheet.absoluteFillObject,
@@ -154,34 +349,6 @@ const styles = StyleSheet.create({
     left: SCREEN_WIDTH / 2 - 400,
     width: 800,
     height: 600,
-    overflow: 'hidden',
-  },
-  glowViolet: {
-    position: 'absolute',
-    top: -100,
-    left: -200,
-    width: 700,
-    height: 700,
-    borderRadius: 350,
-    overflow: 'hidden',
-  },
-  glowCyan: {
-    position: 'absolute',
-    top: SCREEN_HEIGHT * 0.15,
-    right: -100,
-    width: 600,
-    height: 500,
-    borderRadius: 300,
-    overflow: 'hidden',
-    transform: [{ scale: 1.05 }],
-  },
-  glowFuchsia: {
-    position: 'absolute',
-    bottom: -200,
-    left: SCREEN_WIDTH * 0.1,
-    width: 600,
-    height: 600,
-    borderRadius: 300,
     overflow: 'hidden',
   },
   glowBlur: {

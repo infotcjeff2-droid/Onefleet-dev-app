@@ -12,6 +12,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
+  TouchableOpacity,
 } from 'react-native';
 import { X, Mail, Lock, Phone, MapPin, Globe, Building2, Upload, Image as ImageIcon } from 'lucide-react-native';
 import { TextInput } from '@/components/ui/TextInput';
@@ -75,9 +76,10 @@ interface CompanyFormModalProps {
   visible: boolean;
   onClose: () => void;
   company?: User | null;
+  onSave?: (updates: Partial<User>) => Promise<void>;
 }
 
-export function CompanyFormModal({ visible, onClose, company }: CompanyFormModalProps) {
+export function CompanyFormModal({ visible, onClose, company, onSave }: CompanyFormModalProps) {
   const { t } = useTranslation();
   const { colors: themeColors } = useThemeStore();
   const { addUser, updateUser, getCompanies } = useUserManagementStore();
@@ -168,8 +170,12 @@ export function CompanyFormModal({ visible, onClose, company }: CompanyFormModal
         if (password) {
           (updates as any).password = password;
         }
-        await updateUser(company.id, updates);
-        Alert.alert(t('common.success'), t('company.companyUpdated'));
+        if (onSave) {
+          await onSave(updates);
+        } else {
+          await updateUser(company.id, updates);
+          Alert.alert(t('common.success'), t('company.companyUpdated'));
+        }
       } else {
         const result = await addUser(
           nameZh,
@@ -226,7 +232,7 @@ export function CompanyFormModal({ visible, onClose, company }: CompanyFormModal
             keyboardShouldPersistTaps="handled"
           >
             <View style={styles.iconContainer}>
-              <Pressable onPress={async () => {
+              <TouchableOpacity onPress={async () => {
                 try {
                   setUploadingImage(true);
                   const uri = await pickImage();
@@ -234,7 +240,7 @@ export function CompanyFormModal({ visible, onClose, company }: CompanyFormModal
                 } finally {
                   setUploadingImage(false);
                 }
-              }} disabled={uploadingImage}>
+              }} disabled={uploadingImage} activeOpacity={0.7}>
                 {avatar ? (
                   <Image source={{ uri: avatar }} style={styles.companyImage} />
                 ) : (
@@ -245,7 +251,7 @@ export function CompanyFormModal({ visible, onClose, company }: CompanyFormModal
                     </Text>
                   </View>
                 )}
-              </Pressable>
+              </TouchableOpacity>
               <Text style={[styles.uploadHint, { color: themeColors.textSecondary }]}>
                 {t('company.companyImageHint')}
               </Text>

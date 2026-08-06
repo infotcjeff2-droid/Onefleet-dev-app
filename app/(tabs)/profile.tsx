@@ -262,6 +262,84 @@ function SettingItem({
   );
 }
 
+function AccountInfoModal({
+  visible,
+  user,
+  roleLabel,
+  onClose,
+  onEdit,
+}: {
+  visible: boolean;
+  user: AppUser | null;
+  roleLabel: string;
+  onClose: () => void;
+  onEdit: () => void;
+}) {
+  const colors = useThemeStore((state) => state.colors);
+  const { t } = useTranslation();
+
+  return (
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={styles.centeredModalOverlay}>
+        <Animated.View entering={FadeInDown.springify()} style={[styles.centeredModalContent, { backgroundColor: colors.card }]}>
+          <View style={[styles.centeredModalHeader, { borderBottomColor: colors.border }]}>
+            <Text style={[styles.centeredModalTitle, { color: colors.textPrimary }]}>
+              {t('profile.accountInfo')}
+            </Text>
+            <Pressable onPress={onClose}><X size={20} color={colors.textSecondary} /></Pressable>
+          </View>
+
+          <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.lg }}>
+            <View style={styles.formFieldCenter}>
+              <AvatarPreview name={user?.name} avatar={user?.avatar} backgroundColor={colors.primary} />
+            </View>
+            <Text style={[styles.accountInfoDesc, { color: colors.textSecondary }]}>
+              {t('profile.accountInfoDesc')}
+            </Text>
+          </View>
+
+          <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
+            <View style={styles.formField}>
+              <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('profile.displayName')}</Text>
+              <View style={[styles.formInputWrap, { backgroundColor: colors.background }]}>
+                <User size={16} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
+                <Text style={[styles.formInput, { color: colors.textPrimary }]} numberOfLines={1}>
+                  {user?.name || 'N/A'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.formField}>
+              <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('auth.email')}</Text>
+              <View style={[styles.formInputWrap, { backgroundColor: colors.background }]}>
+                <Mail size={16} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
+                <Text style={[styles.formInput, { color: colors.textPrimary }]} numberOfLines={1}>
+                  {user?.email || 'N/A'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.formField}>
+              <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('profile.role')}</Text>
+              <View style={[styles.formInputWrap, { backgroundColor: colors.background }]}>
+                <Award size={16} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
+                <Text style={[styles.formInput, { color: colors.textPrimary }]} numberOfLines={1}>
+                  {roleLabel || 'N/A'}
+                </Text>
+              </View>
+            </View>
+          </ScrollView>
+
+          <View style={styles.modalActions}>
+            <Button title={t('common.cancel')} variant="ghost" onPress={onClose} style={{ flex: 1 }} />
+            <Button title={t('profile.editAccount')} onPress={onEdit} style={{ flex: 1.5 }} />
+          </View>
+        </Animated.View>
+      </View>
+    </Modal>
+  );
+}
+
 function AccountEditModal({
   visible,
   user,
@@ -277,18 +355,25 @@ function AccountEditModal({
   const updateCurrentUser = useAuthStore((state) => state.updateCurrentUser);
   const updateUser = useUserManagementStore((state) => state.updateUser);
   const updateDriver = useDriverStore((state) => state.updateDriver);
+  const { getCompanies } = useUserManagementStore();
   const { t, locale } = useTranslation();
   const [name, setName] = useState(user?.name || '');
   const [email, setEmail] = useState(user?.email || '');
   const [avatar, setAvatar] = useState(user?.avatar || '');
+  const [companyId, setCompanyId] = useState(user?.companyId || '');
+  const [showCompanyPicker, setShowCompanyPicker] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const companies = getCompanies();
+  const isDriver = user?.role === 'driver';
 
   useEffect(() => {
     if (visible) {
       setName(user?.name || '');
       setEmail(user?.email || '');
       setAvatar(user?.avatar || '');
+      setCompanyId(user?.companyId || '');
       setError('');
     }
   }, [visible, user]);
@@ -310,16 +395,16 @@ function AccountEditModal({
     setError('');
 
     try {
-      const updates = {
+      const updates: Record<string, unknown> = {
         name: name.trim(),
         email: email.trim().toLowerCase(),
         avatar: avatar.trim() || undefined,
       };
 
-      await updateCurrentUser(updates);
+      await updateCurrentUser(updates as Parameters<typeof updateCurrentUser>[0]);
 
       if (user.role === 'driver' || user.role === 'company') {
-        await updateUser(user.id, updates);
+        await updateUser(user.id, updates as Parameters<typeof updateUser>[1]);
       }
 
       if (user.role === 'driver') {
@@ -396,6 +481,47 @@ function AccountEditModal({
                 />
               </View>
             </View>
+
+            {/* 司機的公司選擇 */}
+            {isDriver && companies.length > 0 && (
+              <View style={styles.formField}>
+                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('company.title')}</Text>
+                <Pressable
+                  style={[styles.formInputWrap, { backgroundColor: colors.background }]}
+                  onPress={() => setShowCompanyPicker(true)}
+                >
+                  <Building2 size={16} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
+                  <Text style={[styles.formInput, { color: colors.textPrimary, flex: 1 }]}>
+                    {companyId
+                      ? (companies.find((c) => c.id === companyId)?.nameZh || companies.find((c) => c.id === companyId)?.name || companies.find((c) => c.id === companyId)?.email)
+                      : t('company.noCompany')}
+                  </Text>
+                  <ChevronRight size={16} color={colors.textTertiary} />
+                </Pressable>
+              </View>
+            )}
+
+            {/* 公司選擇 ActionSheet */}
+            {showCompanyPicker && (
+              <View style={[styles.formField, { marginTop: -spacing.sm }]}>
+                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>選擇公司：</Text>
+                {[{ id: '', name: t('company.noCompany') }, ...companies].map((c) => (
+                  <Pressable
+                    key={c.id}
+                    style={[styles.companyOption, companyId === c.id && { backgroundColor: `${colors.primary}20` }]}
+                    onPress={() => {
+                      setCompanyId(c.id);
+                      setShowCompanyPicker(false);
+                    }}
+                  >
+                    <Text style={[styles.companyOptionText, { color: companyId === c.id ? colors.primary : colors.textPrimary }]}>
+                      {c.nameZh || c.name || c.id}
+                    </Text>
+                    {companyId === c.id && <Text style={{ color: colors.primary }}>✓</Text>}
+                  </Pressable>
+                ))}
+              </View>
+            )}
 
             {error ? <Text style={[styles.formError, { color: colors.danger }]}>{error}</Text> : null}
           </ScrollView>
@@ -568,7 +694,7 @@ function AddUserModal({ visible, onClose, onAdded }: { visible: boolean; onClose
             {role === 'driver' && companies.length > 0 && (
               <View style={styles.formField}>
                 <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('company.title')}</Text>
-                <Pressable
+                <TouchableOpacity
                   onPress={() => {
                     Alert.alert(
                       t('company.selectCompany'),
@@ -583,6 +709,7 @@ function AddUserModal({ visible, onClose, onAdded }: { visible: boolean; onClose
                     );
                   }}
                   style={[styles.formInputWrap, { backgroundColor: colors.background }]}
+                  activeOpacity={0.7}
                 >
                   <Building2 size={16} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
                   <Text style={[styles.formInput, { color: colors.textPrimary, flex: 1 }]}>
@@ -591,7 +718,7 @@ function AddUserModal({ visible, onClose, onAdded }: { visible: boolean; onClose
                       : t('company.noCompany')}
                   </Text>
                   <ChevronRight size={16} color={colors.textTertiary} />
-                </Pressable>
+                </TouchableOpacity>
               </View>
             )}
 
@@ -949,7 +1076,7 @@ function DriverEditModal({
             {companies.length > 0 && (
               <View style={styles.formField}>
                 <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('company.title')}</Text>
-                <Pressable
+                <TouchableOpacity
                   onPress={() => {
                     Alert.alert(
                       t('company.selectCompany'),
@@ -964,6 +1091,7 @@ function DriverEditModal({
                     );
                   }}
                   style={[styles.formInputWrap, { backgroundColor: colors.background }]}
+                  activeOpacity={0.7}
                 >
                   <Building2 size={16} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
                   <Text style={[styles.formInput, { color: colors.textPrimary, flex: 1 }]}>
@@ -972,7 +1100,7 @@ function DriverEditModal({
                       : t('company.noCompany')}
                   </Text>
                   <ChevronRight size={16} color={colors.textTertiary} />
-                </Pressable>
+                </TouchableOpacity>
               </View>
             )}
 
@@ -995,7 +1123,7 @@ export default function ProfileScreen() {
   const user = useAuthStore((state) => state.user);
   const role = useAuthStore((state) => state.role);
   const { colors } = useThemeStore();
-  const { users, loadUsers } = useUserManagementStore();
+  const { users, loadUsers, getCompanyById } = useUserManagementStore();
   const drivers = useDriverStore((state) => state.drivers);
   const loadDrivers = useDriverStore((state) => state.loadDrivers);
   const { locale, t, setLocale } = useTranslation();
@@ -1007,6 +1135,7 @@ export default function ProfileScreen() {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editingDriver, setEditingDriver] = useState<ManagedUser | null>(null);
   const [accountEditVisible, setAccountEditVisible] = useState(false);
+  const [accountInfoVisible, setAccountInfoVisible] = useState(false);
   const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [isLoadingDummyData, setIsLoadingDummyData] = useState(false);
@@ -1016,9 +1145,29 @@ export default function ProfileScreen() {
   const canManageUsers = role === 'admin' || role === 'company';
 
   useEffect(() => {
-    loadUsers();
-    loadDrivers();
-    if (isAdmin) loadTrash();
+    const refreshUserData = async () => {
+      // 先同步 users 確保取得最新資料
+      await loadUsers();
+      // 同步到遠端取得最新資料
+      const { syncUsers } = useUserManagementStore.getState();
+      await syncUsers();
+      loadDrivers();
+      if (isAdmin) loadTrash();
+
+      // 用同步後的最新資料更新 authStore.user
+      if (user?.email) {
+        const { users } = useUserManagementStore.getState();
+        const latestUser = users.find(
+          (u) => u.email?.toLowerCase() === user.email?.toLowerCase()
+        );
+        if (latestUser && latestUser.companyId !== user.companyId) {
+          // 更新 authStore 中的 user companyId
+          const { setUser } = useAuthStore.getState();
+          setUser({ ...user, companyId: latestUser.companyId, role: latestUser.role });
+        }
+      }
+    };
+    refreshUserData();
   }, [loadUsers, loadDrivers, loadTrash, isAdmin, refreshKey]);
 
   const roleConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
@@ -1171,34 +1320,124 @@ export default function ProfileScreen() {
                 </Text>
               </View>
             )}
-
-            <SettingItem
-              icon={<User size={18} color={colors.textSecondary} />}
-              label={t('profile.displayName')}
-              value={user?.name || 'N/A'}
-              onPress={() => setAccountEditVisible(true)}
-            />
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-            <SettingItem
-              icon={<Mail size={18} color={colors.textSecondary} />}
-              label={t('auth.email')}
-              value={user?.email || 'N/A'}
-              onPress={() => setAccountEditVisible(true)}
-            />
-            {isAdmin && (
-              <>
-                <View style={[styles.divider, { backgroundColor: colors.border }]} />
-                <SettingItem
-                  icon={<Award size={18} color={colors.textSecondary} />}
-                  label={t('profile.role')}
-                  value={currentRole.label}
-                />
-              </>
-            )}
           </Card>
         </Animated.View>
 
-        {isAdmin && (
+        {/* 司機：顯示所屬公司資料 */}
+        {role === 'driver' && (() => {
+          const companyId = user?.companyId;
+          const company = companyId ? getCompanyById(companyId) : null;
+
+          if (!companyId) {
+            return (
+              <Animated.View entering={FadeInDown.springify()}>
+                <Card style={styles.companyCard}>
+                  <View style={styles.companyHeader}>
+                    <Building2 size={18} color={colors.textSecondary} />
+                    <Text style={[styles.companyHeaderTitle, { color: colors.textPrimary }]}>
+                      {t('company.companyInfo')}
+                    </Text>
+                  </View>
+                  <Text style={[styles.companyEmpty, { color: colors.textTertiary }]}>
+                    {t('company.noCompany')}
+                  </Text>
+                </Card>
+              </Animated.View>
+            );
+          }
+
+          if (!company) {
+            return (
+              <Animated.View entering={FadeInDown.springify()}>
+                <Card style={styles.companyCard}>
+                  <View style={styles.companyHeader}>
+                    <Building2 size={18} color={colors.textSecondary} />
+                    <Text style={[styles.companyHeaderTitle, { color: colors.textPrimary }]}>
+                      {t('company.companyInfo')}
+                    </Text>
+                  </View>
+                  <Text style={[styles.companyEmpty, { color: colors.danger }]}>
+                    ⚠️ 找不到所屬公司資料（公司可能已被刪除）
+                  </Text>
+                </Card>
+              </Animated.View>
+            );
+          }
+
+          return (
+            <Animated.View entering={FadeInDown.springify()}>
+              <Card style={styles.companyCard}>
+                <View style={styles.companyHeader}>
+                  <Building2 size={18} color={colors.secondary} />
+                  <Text style={[styles.companyHeaderTitle, { color: colors.textPrimary }]}>
+                    {t('company.companyInfo')}
+                  </Text>
+                </View>
+
+                {/* 公司頭像 + 名稱 */}
+                <View style={styles.companyIdentity}>
+                  <AvatarPreview
+                    name={company.nameZh || company.name}
+                    avatar={company.avatar}
+                    backgroundColor={colors.secondary}
+                    size={56}
+                  />
+                  <View style={{ flex: 1, marginLeft: spacing.md }}>
+                    {company.nameZh && (
+                      <Text style={[styles.companyNameZh, { color: colors.textPrimary }]} numberOfLines={1}>
+                        {company.nameZh}
+                      </Text>
+                    )}
+                    {company.nameEn && (
+                      <Text style={[styles.companyNameEn, { color: colors.textSecondary }]} numberOfLines={1}>
+                        {company.nameEn}
+                      </Text>
+                    )}
+                    {!company.nameZh && !company.nameEn && (
+                      <Text style={[styles.companyNameZh, { color: colors.textPrimary }]} numberOfLines={1}>
+                        {company.name || company.email}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+
+                {/* 公司詳細資料 */}
+                <View style={[styles.companyDivider, { backgroundColor: colors.border }]} />
+
+                <View style={styles.companyField}>
+                  <Mail size={14} color={colors.textTertiary} />
+                  <Text style={[styles.companyFieldLabel, { color: colors.textSecondary }]}>Email</Text>
+                  <Text style={[styles.companyFieldValue, { color: colors.textPrimary }]} numberOfLines={1}>
+                    {company.email || 'N/A'}
+                  </Text>
+                </View>
+
+                {company.phone && (
+                  <View style={styles.companyField}>
+                    <User size={14} color={colors.textTertiary} />
+                    <Text style={[styles.companyFieldLabel, { color: colors.textSecondary }]}>電話</Text>
+                    <Text style={[styles.companyFieldValue, { color: colors.textPrimary }]} numberOfLines={1}>
+                      {company.phone}
+                    </Text>
+                  </View>
+                )}
+
+                {company.address && (
+                  <View style={styles.companyField}>
+                    <Building2 size={14} color={colors.textTertiary} />
+                    <Text style={[styles.companyFieldLabel, { color: colors.textSecondary }]}>地址</Text>
+                    <Text style={[styles.companyFieldValue, { color: colors.textPrimary }]} numberOfLines={2}>
+                      {company.address}
+                    </Text>
+                  </View>
+                )}
+              </Card>
+            </Animated.View>
+          );
+        })()}
+
+        {/* OneFleet 系統管理 - admin 和 company 角色可見 */}
+        {(role === 'admin' || role === 'company') && (
           <Pressable
             style={[styles.adminPanelBtn, { backgroundColor: colors.primary }]}
             onPress={() => router.push('/onefleet-system-admin')}
@@ -1294,15 +1533,6 @@ export default function ProfileScreen() {
         {(role === 'admin' || role === 'company') && (
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>🚛 司機管理</Text>
-            {/* 調試資訊 */}
-            <Text style={{ fontSize: 10, color: colors.textTertiary, marginBottom: 4 }}>
-              Debug: 登入公司ID={role === 'company' ? user?.id : 'admin'} | 所有司機數={users.filter(u => u.role === 'driver').length}
-            </Text>
-            {users.filter(u => u.role === 'driver').map(d => (
-              <Text key={d.id} style={{ fontSize: 9, color: '#999', marginLeft: 4 }}>
-                - {d.name}: companyId={d.companyId || '無'}
-              </Text>
-            ))}
             <Card style={styles.settingsCard}>
               {(() => {
                 const managedDrivers = users
@@ -1398,6 +1628,12 @@ export default function ProfileScreen() {
           <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>{t('profile.account')}</Text>
           <Card style={styles.settingsCard}>
             <SettingItem
+              icon={<User size={18} color={colors.textSecondary} />}
+              label={t('profile.accountInfo')}
+              onPress={() => setAccountInfoVisible(true)}
+            />
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            <SettingItem
               icon={<LogOut size={18} color={colors.danger} />}
               label={t('profile.signOut')}
               danger
@@ -1415,6 +1651,17 @@ export default function ProfileScreen() {
           </Text>
         </View>
       </ScrollView>
+
+      <AccountInfoModal
+        visible={accountInfoVisible}
+        user={user}
+        roleLabel={currentRole.label}
+        onClose={() => setAccountInfoVisible(false)}
+        onEdit={() => {
+          setAccountInfoVisible(false);
+          setAccountEditVisible(true);
+        }}
+      />
 
       <AccountEditModal
         visible={accountEditVisible}
@@ -1526,6 +1773,33 @@ const styles = StyleSheet.create({
   section: {
     paddingHorizontal: spacing.lg,
     marginTop: spacing.xl,
+  },
+  preferencesBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    gap: spacing.md,
+  },
+  preferencesIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  preferencesBtnContent: {
+    flex: 1,
+  },
+  preferencesBtnTitle: {
+    fontSize: typography.fontSize.base,
+    fontWeight: '600',
+  },
+  preferencesBtnDesc: {
+    fontSize: typography.fontSize.xs,
+    marginTop: 2,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -1711,6 +1985,18 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     paddingHorizontal: spacing.lg,
   },
+  companyOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.sm,
+    marginBottom: 4,
+  },
+  companyOptionText: {
+    fontSize: typography.fontSize.sm,
+  },
   modalActions: {
     flexDirection: 'row',
     gap: spacing.md,
@@ -1733,6 +2019,32 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     fontWeight: '600',
   },
+  accountInfoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.lg,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    width: '100%',
+  },
+  accountInfoBtnLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  accountInfoBtnText: {
+    fontSize: typography.fontSize.base,
+    fontWeight: '600',
+  },
+  accountInfoDesc: {
+    fontSize: typography.fontSize.sm,
+    marginTop: spacing.md,
+    lineHeight: 20,
+    textAlign: 'center',
+  },
   uploadButton: {
     height: 48,
     borderWidth: 1,
@@ -1754,5 +2066,57 @@ const styles = StyleSheet.create({
   uploadHint: {
     fontSize: typography.fontSize.xs,
     marginTop: spacing.xs,
+  },
+  companyCard: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    padding: spacing.lg,
+  },
+  companyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  companyHeaderTitle: {
+    fontSize: typography.fontSize.base,
+    fontWeight: '700',
+  },
+  companyIdentity: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+  },
+  companyNameZh: {
+    fontSize: typography.fontSize.base,
+    fontWeight: '600',
+  },
+  companyNameEn: {
+    fontSize: typography.fontSize.xs,
+    marginTop: 2,
+  },
+  companyDivider: {
+    height: 1,
+    marginVertical: spacing.md,
+  },
+  companyField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.xs,
+    gap: spacing.sm,
+  },
+  companyFieldLabel: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: '600',
+    width: 40,
+  },
+  companyFieldValue: {
+    flex: 1,
+    fontSize: typography.fontSize.sm,
+  },
+  companyEmpty: {
+    fontSize: typography.fontSize.sm,
+    paddingVertical: spacing.sm,
+    textAlign: 'center',
   },
 });

@@ -10,9 +10,11 @@ import {
   Dimensions,
   Image,
   Platform,
+  TouchableOpacity,
+  Animated as RNAnimated,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import Animated, { FadeInDown, FadeInUp, FadeIn, useAnimatedStyle, withSpring, useSharedValue } from 'react-native-reanimated';
 import Svg, { Line } from 'react-native-svg';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,7 +22,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { useAuthStore } from '@/store/authStore';
 import { getEffectiveDeliveryStatus, useDeliveryStore } from '@/store/deliveryStore';
-import { DeliveryOrder, DeliveryStatus } from '@/types';
+import { DeliveryOrder, DeliveryStatus, SignatureStroke } from '@/types';
 import { useDriverStore } from '@/store/driverStore';
 import { useUserManagementStore } from '@/store/userManagementStore';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
@@ -34,26 +36,68 @@ import {
   X,
   CheckCircle,
   ArrowLeft,
+  ArrowRight,
   Scale,
   StickyNote,
   AlertTriangle,
   Camera,
+  MapPin,
+  ChevronLeft,
+  ChevronRight,
+  Pencil,
 } from 'lucide-react-native';
 import { useTranslation } from '@/i18n';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
-function buildStatusConfig(t: (key: string) => string): Record<DeliveryStatus, { label: string; color: string; bg: string }> {
+type StepKey = 'pending' | 'assigned' | 'picked_up' | 'in_transit' | 'delivered' | 'signed' | 'completed' | 'expired';
+
+const STEP_ORDER: StepKey[] = ['pending', 'assigned', 'picked_up', 'in_transit', 'delivered', 'signed', 'completed'];
+
+const STATUS_TO_STEP: Record<DeliveryStatus, StepKey> = {
+  pending: 'pending',
+  assigned: 'assigned',
+  in_transit: 'in_transit',
+  delivered: 'delivered',
+  signed: 'signed',
+  expired: 'expired',
+};
+
+const STEP_TO_STATUS: Record<StepKey, DeliveryStatus> = {
+  pending: 'pending',
+  assigned: 'assigned',
+  picked_up: 'assigned',
+  in_transit: 'in_transit',
+  delivered: 'delivered',
+  signed: 'signed',
+  completed: 'signed',
+  expired: 'expired',
+};
+
+function buildStepConfig(t: (key: string) => string): Record<StepKey, { label: string; color: string; bg: string }> {
   return {
-    pending: { label: t('delivery.pending'), color: colors.warning, bg: `${colors.warning}20` },
-    assigned: { label: t('delivery.assigned'), color: colors.secondary, bg: `${colors.secondary}20` },
-    in_transit: { label: t('delivery.inTransit'), color: colors.accent, bg: `${colors.accent}20` },
-    delivered: { label: t('delivery.delivered'), color: colors.success, bg: `${colors.success}20` },
-    signed: { label: t('delivery.signed'), color: colors.primary, bg: `${colors.primary}20` },
-    expired: { label: t('delivery.expired'), color: colors.danger, bg: `${colors.danger}20` },
+    pending: { label: t('delivery.stepPending'), color: colors.warning, bg: `${colors.warning}20` },
+    assigned: { label: t('delivery.stepAssigned'), color: colors.secondary, bg: `${colors.secondary}20` },
+    picked_up: { label: t('delivery.stepPickedUp'), color: colors.accent, bg: `${colors.accent}20` },
+    in_transit: { label: t('delivery.stepInTransit'), color: colors.primary, bg: `${colors.primary}20` },
+    delivered: { label: t('delivery.stepDelivered'), color: colors.success, bg: `${colors.success}20` },
+    signed: { label: t('delivery.stepSigned'), color: colors.primary, bg: `${colors.primary}20` },
+    completed: { label: t('delivery.orderCompleted'), color: colors.success, bg: `${colors.success}20` },
+    expired: { label: t('delivery.stepExpired'), color: colors.danger, bg: `${colors.danger}20` },
   };
 }
 
+function getStepIndex(step: StepKey): number {
+  return STEP_ORDER.indexOf(step);
+}
+
+function isStepReachable(currentStatus: StepKey, targetStatus: StepKey): boolean {
+  const currentIdx = getStepIndex(currentStatus);
+  const targetIdx = getStepIndex(targetStatus);
+  return targetIdx <= currentIdx;
+}
+
+// ============ InfoRow Component ============
 function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
     <View style={styles.infoRow}>
@@ -66,16 +110,7 @@ function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string;
   );
 }
 
-function StatusBadge({ status, t }: { status: DeliveryStatus; t: (key: string) => string }) {
-  const statusConfig = buildStatusConfig(t);
-  const cfg = statusConfig[status];
-  return (
-    <View style={[styles.badge, { backgroundColor: cfg.bg }]}>
-      <Text style={[styles.badgeText, { color: cfg.color }]}>{cfg.label}</Text>
-    </View>
-  );
-}
-
+// ============ Assign Driver Modal ============
 function AssignDriverModal({
   visible,
   onClose,
@@ -158,6 +193,65 @@ function AssignDriverModal({
   );
 }
 
+// ============ Signature Display Component ============
+function SignatureDisplay({ strokes }: { strokes: SignatureStroke[][] }) {
+  if (!strokes || strokes.length === 0) return null;
+
+  // Calculate bounding box of the signature
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  strokes.forEach((stroke) => {
+    stroke.forEach((pt) => {
+      minX = Math.min(minX, pt.x);
+      minY = Math.min(minY, pt.y);
+      maxX = Math.max(maxX, pt.x);
+      maxY = Math.max(maxY, pt.y);
+    });
+  });
+
+  const padding = 16;
+  const originalWidth = maxX - minX + padding * 2;
+  const originalHeight = maxY - minY + padding * 2;
+
+  // Target display size (larger to show full signature)
+  const displayWidth = 320;
+  const displayHeight = 160;
+
+  // Calculate scale to fit within display area while maintaining aspect ratio
+  const scaleX = displayWidth / originalWidth;
+  const scaleY = displayHeight / originalHeight;
+  const scale = Math.min(scaleX, scaleY, 1); // Don't upscale, only downscale
+
+  const scaledWidth = originalWidth * scale;
+  const scaledHeight = originalHeight * scale;
+
+  // Offset to center the signature
+  const offsetX = (displayWidth - scaledWidth) / 2 - (minX - padding) * scale;
+  const offsetY = (displayHeight - scaledHeight) / 2 - (minY - padding) * scale;
+
+  return (
+    <Svg width={displayWidth} height={displayHeight}>
+      {strokes.map((stroke, si) =>
+        stroke.length > 1
+          ? stroke.slice(1).map((pt, i) => (
+              <Line
+                key={`s-${si}-${i}`}
+                x1={stroke[i].x * scale + offsetX}
+                y1={stroke[i].y * scale + offsetY}
+                x2={pt.x * scale + offsetX}
+                y2={pt.y * scale + offsetY}
+                stroke={colors.textPrimary}
+                strokeWidth={2.5 / scale}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            ))
+          : null
+      )}
+    </Svg>
+  );
+}
+
+// ============ Signature Modal ============
 function SignatureModal({
   visible,
   onClose,
@@ -323,33 +417,31 @@ function SignatureModal({
   );
 }
 
-export default function DeliveryDetailScreen() {
+// ============ Photo Gallery Component ============
+function PhotoGallery({
+  photos,
+  onAddPhoto,
+  onDeletePhoto,
+  onViewPhoto,
+  isPickup,
+  maxPhotos = 5,
+  disabled = false,
+}: {
+  photos: { id: string; uri: string; takenAt: string }[];
+  onAddPhoto: () => void;
+  onDeletePhoto: (photoId: string) => void;
+  onViewPhoto: (uri: string) => void;
+  isPickup: boolean;
+  maxPhotos?: number;
+  disabled?: boolean;
+}) {
   const { t } = useTranslation();
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const { role } = useAuthStore();
-  const { deliveries, assignDriver, updateStatus, addSignature, addPhoto, removePhoto, removeDriver } = useDeliveryStore();
-  const { drivers, loadDrivers } = useDriverStore();
-  const { users: managedUsers, loadUsers } = useUserManagementStore();
-  const isAdmin = role === 'admin' || role === 'company';
-
-  const [order, setOrder] = useState<DeliveryOrder | null>(null);
-  const [assignModalVisible, setAssignModalVisible] = useState(false);
-  const [signatureModalVisible, setSignatureModalVisible] = useState(false);
-  const [lightboxVisible, setLightboxVisible] = useState(false);
-  const [lightboxUri, setLightboxUri] = useState('');
-  const [pendingPhotos, setPendingPhotos] = useState<{ uri: string }[]>([]);
-  const [photoPreviewVisible, setPhotoPreviewVisible] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
-  // 解決 React Native Web 圖片快取問題
   const [photoUriCache, setPhotoUriCache] = useState<Record<string, string>>({});
 
-  // 首次 mount 時初始化 photo URI cache
   useEffect(() => {
-    if (order?.photos) {
+    if (photos) {
       const cache: Record<string, string> = {};
-      order.photos.forEach((photo) => {
+      photos.forEach((photo) => {
         if (!cache[photo.uri]) {
           const separator = photo.uri.includes('?') ? '&' : '?';
           cache[photo.uri] = `${photo.uri}${separator}nocache=${Date.now()}`;
@@ -357,11 +449,232 @@ export default function DeliveryDetailScreen() {
       });
       setPhotoUriCache(cache);
     }
-  }, [order?.id]); // 只在 order.id 改變時更新
+  }, [photos]);
+
+  const getPhotoUri = (uri: string) => {
+    if (photoUriCache[uri]) return photoUriCache[uri];
+    const separator = uri.includes('?') ? '&' : '?';
+    const newUri = `${uri}${separator}nocache=${Date.now()}`;
+    setPhotoUriCache((prev) => ({ ...prev, [uri]: newUri }));
+    return newUri;
+  };
+
+  return (
+    <View style={styles.photosGallery}>
+      {photos.map((photo) => (
+        <Pressable
+          key={photo.id}
+          style={styles.photoItem}
+          onPress={() => onViewPhoto(photo.uri)}
+        >
+          <View style={styles.photoImageWrapper}>
+            <Image source={{ uri: getPhotoUri(photo.uri) }} style={styles.photoImage} resizeMode="cover" />
+            {!disabled && (
+              <Pressable
+                style={styles.photoDeleteBtn}
+                onPress={() => onDeletePhoto(photo.id)}
+                hitSlop={8}
+              >
+                <Text style={styles.photoDeleteIcon}>X</Text>
+              </Pressable>
+            )}
+          </View>
+          <Text style={styles.photoMeta}>{new Date(photo.takenAt).toLocaleString()}</Text>
+        </Pressable>
+      ))}
+      {photos.length < maxPhotos && !disabled && (
+        <Pressable style={styles.photoItem} onPress={onAddPhoto}>
+          <View style={[styles.photoImage, styles.addPhotoPlaceholder]}>
+            <Camera size={24} color={colors.textTertiary} />
+          </View>
+          <Text style={styles.photoMeta}>{isPickup ? t('delivery.addPickupPhoto') : t('delivery.addDeliveryPhoto')}</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+// ============ Step Tab Bar Component ============
+function StepTabBar({
+  currentStep,
+  deliveryStep,
+  onStepPress,
+  stepConfig,
+  order,
+}: {
+  currentStep: StepKey;
+  deliveryStep: StepKey;
+  onStepPress: (step: StepKey) => void;
+  stepConfig: Record<StepKey, { label: string; color: string; bg: string }>;
+  order: DeliveryOrder;
+}) {
+  const { t } = useTranslation();
+  const isExpired = order.status === 'expired';
+  const isCompleted = order.isCompleted;
+
+  // 使用 currentStep 來判斷高亮（跟隨司機操作）
+  const effectiveStep = isExpired ? 'expired' : currentStep;
+
+  // 已完成的配送單顯示所有步驟標籤
+  const displaySteps = isCompleted
+    ? STEP_ORDER
+    : isExpired
+      ? ['pending', 'assigned', 'picked_up', 'in_transit', 'delivered', 'expired'] as StepKey[]
+      : STEP_ORDER.slice(0, -1); // 非已完成時不顯示 completed 標籤
+
+  const getStepStatus = (step: StepKey): 'completed' | 'current' | 'locked' => {
+    // 已完成的配送單：所有步驟都是 completed
+    if (isCompleted) {
+      if (step === 'completed') return 'current';
+      return 'completed';
+    }
+
+    if (step === 'expired') {
+      return step === effectiveStep ? 'current' : 'completed';
+    }
+    const stepIdx = getStepIndex(step);
+    const currentIdx = getStepIndex(effectiveStep);
+    if (stepIdx < currentIdx) return 'completed';
+    if (stepIdx === currentIdx) return 'current';
+    return 'locked';
+  };
+
+  return (
+    <View style={styles.stepTabBar}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.stepTabContent}>
+        {displaySteps.map((step, index) => {
+          const status = getStepStatus(step);
+          const cfg = stepConfig[step];
+          // 已完成的配送單所有步驟都可以點擊，否則只有 completed 或 current 狀態可以點擊
+          const isClickable = isCompleted || status === 'completed' || status === 'current';
+
+          return (
+            <Pressable
+              key={step}
+              style={[
+                styles.stepTabItem,
+                status === 'current' && styles.stepTabItemCurrent,
+                status === 'completed' && styles.stepTabItemCompleted,
+                status === 'locked' && styles.stepTabItemLocked,
+              ]}
+              onPress={() => isClickable && onStepPress(step)}
+              disabled={!isClickable}
+            >
+              <View
+                style={[
+                  styles.stepTabNumber,
+                  status === 'current' && { backgroundColor: cfg.color },
+                  status === 'completed' && { backgroundColor: colors.success },
+                  status === 'locked' && { backgroundColor: colors.border },
+                ]}
+              >
+                {status === 'completed' ? (
+                  <CheckCircle size={14} color="#fff" />
+                ) : (
+                  <Text style={[
+                    styles.stepTabNumberText,
+                    status === 'locked' && { color: colors.textTertiary },
+                  ]}>
+                    {index + 1}
+                  </Text>
+                )}
+              </View>
+              <Text
+                style={[
+                  styles.stepTabLabel,
+                  status === 'current' && { color: cfg.color, fontWeight: '700' },
+                  status === 'locked' && { color: colors.textTertiary },
+                ]}
+                numberOfLines={1}
+              >
+                {cfg.label}
+              </Text>
+              {status === 'current' && (
+                <View style={[styles.stepTabIndicator, { backgroundColor: cfg.color }]} />
+              )}
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+}
+
+// ============ Main Component ============
+export default function DeliveryDetailScreen() {
+  const { t } = useTranslation();
+  const { id, action } = useLocalSearchParams<{ id: string; action?: string }>();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { role } = useAuthStore();
+  const {
+    deliveries,
+    assignDriver,
+    updateStatus,
+    addSignature,
+    addPhoto,
+    removePhoto,
+    removeDriver,
+    recordPickupTime,
+    recordInTransitTime,
+    recordDeliveredTime,
+    completeDelivery,
+  } = useDeliveryStore();
+  const { drivers, loadDrivers } = useDriverStore();
+  const { users: managedUsers, loadUsers } = useUserManagementStore();
+  const isAdmin = role === 'admin' || role === 'company';
+
+  const [order, setOrder] = useState<DeliveryOrder | null>(null);
+  const [currentStep, setCurrentStep] = useState<StepKey>('pending');
+  const [assignModalVisible, setAssignModalVisible] = useState(false);
+  const [signatureModalVisible, setSignatureModalVisible] = useState(false);
+  const [lightboxVisible, setLightboxVisible] = useState(false);
+  const [lightboxUri, setLightboxUri] = useState('');
+  const [pendingPhotos, setPendingPhotos] = useState<{ uri: string }[]>([]);
+  const [photoPreviewVisible, setPhotoPreviewVisible] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isPickupPhotoMode, setIsPickupPhotoMode] = useState(false);
+  const [photoUriCache, setPhotoUriCache] = useState<Record<string, string>>({});
+
+  // Animation value for step content fade in
+  const stepContentFade = useRef(new RNAnimated.Value(1)).current;
+
+  // 處理 URL 參數中的 action
+  useEffect(() => {
+    if (action === 'pickup' && currentStep === 'assigned') {
+      // 司機從列表點擊「已取貨」進入，直接切換到取貨 tab
+      setCurrentStep('picked_up');
+    }
+  }, [action, currentStep]);
+
+  const stepConfig = buildStepConfig(t);
+
+  useEffect(() => {
+    if (order?.pickupPhotos) {
+      const cache: Record<string, string> = {};
+      order.pickupPhotos.forEach((photo) => {
+        if (!cache[photo.uri]) {
+          const separator = photo.uri.includes('?') ? '&' : '?';
+          cache[photo.uri] = `${photo.uri}${separator}nocache=${Date.now()}`;
+        }
+      });
+      setPhotoUriCache(cache);
+    }
+  }, [order?.pickupPhotos]);
 
   useEffect(() => {
     const found = deliveries.find((delivery) => delivery.id === id);
-    setOrder(found || null);
+    if (found) {
+      setOrder(found);
+      const isExpired = getEffectiveDeliveryStatus(found) === 'expired';
+      // 已完成的配送單預設顯示 completed 標籤
+      if (found.isCompleted) {
+        setCurrentStep('completed');
+      } else {
+        const step = isExpired ? 'expired' : STATUS_TO_STEP[found.status];
+        setCurrentStep(step);
+      }
+    }
   }, [id, deliveries]);
 
   useEffect(() => {
@@ -384,7 +697,7 @@ export default function DeliveryDetailScreen() {
 
   if (!order) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top }]}> 
+      <View style={[styles.container, { paddingTop: insets.top }]}>
         <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.notFound}>
           <FileText size={48} color={colors.textTertiary} />
@@ -395,9 +708,8 @@ export default function DeliveryDetailScreen() {
     );
   }
 
-  const statusConfig = buildStatusConfig(t);
-  const statusCfg = statusConfig[order.status];
-  const isExpired = order.status !== 'signed' && order.status !== 'expired' && getEffectiveDeliveryStatus(order) === 'expired';
+  const isExpired = getEffectiveDeliveryStatus(order) === 'expired';
+  const deliveryStep: StepKey = isExpired ? 'expired' : STATUS_TO_STEP[order.status];
 
   const mergedDrivers = [
     ...drivers,
@@ -407,15 +719,14 @@ export default function DeliveryDetailScreen() {
   ];
 
   const getPhotoUri = (uri: string) => {
-    if (photoUriCache[uri]) {
-      return photoUriCache[uri];
-    }
+    if (photoUriCache[uri]) return photoUriCache[uri];
     const separator = uri.includes('?') ? '&' : '?';
     const newUri = `${uri}${separator}nocache=${Date.now()}`;
     setPhotoUriCache((prev) => ({ ...prev, [uri]: newUri }));
     return newUri;
   };
 
+  // ============ Handlers ============
   const handleAssign = () => {
     if (isExpired) {
       Alert.alert(t('delivery.expired'), t('delivery.expiredReadonly'));
@@ -424,53 +735,136 @@ export default function DeliveryDetailScreen() {
     setAssignModalVisible(true);
   };
 
-  const handleDriverAssign = (driverId: string, driverName: string) => {
-    assignDriver(order.id, driverId, driverName);
+  const handleDriverAssign = async (driverId: string, driverName: string) => {
+    await assignDriver(order.id, driverId, driverName);
   };
 
-  const handleStartTransit = () => {
-    if (Platform.OS === 'web') {
-      if (!window.confirm(t('delivery.markInTransitConfirm'))) return;
-      updateStatus(order.id, 'in_transit').then(() => {
-        router.replace({ pathname: '/delivery/[id]', params: { id: order.id } });
-      });
-    } else {
-      Alert.alert(t('delivery.startTransit'), t('delivery.markInTransitConfirm'), [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('common.confirm'),
-          onPress: () => {
-            updateStatus(order.id, 'in_transit').then(() => {
-              router.replace({ pathname: '/delivery/[id]', params: { id: order.id } });
-            });
-          },
-        },
-      ]);
+  const handleStepPress = (step: StepKey) => {
+    if (step === currentStep) return;
+    
+    // Fade out then fade in
+    RNAnimated.sequence([
+      RNAnimated.timing(stepContentFade, {
+        toValue: 0,
+        duration: 150,
+        useNativeDriver: true,
+      }),
+      RNAnimated.timing(stepContentFade, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start();
+    
+    setCurrentStep(step);
+  };
+
+  const handleNextStep = async () => {
+    const currentIdx = getStepIndex(currentStep);
+    if (currentIdx >= STEP_ORDER.length - 1) return;
+
+    const nextStep = STEP_ORDER[currentIdx + 1];
+
+    // 根據不同步驟處理
+    if (currentStep === 'assigned' && nextStep === 'picked_up') {
+      // 已分配司機後，司機進入取貨階段
+      setCurrentStep(nextStep);
+      return;
     }
+
+    if (currentStep === 'picked_up' && nextStep === 'in_transit') {
+      // 已取貨需要先上傳相片
+      if (!order.pickupPhotos || order.pickupPhotos.length === 0) {
+        Alert.alert(t('common.warning'), t('delivery.pickupPhotoRequired'));
+        return;
+      }
+      // 記錄取貨時間並切換狀態
+      await recordPickupTime(order.id);
+      if (Platform.OS === 'web') {
+        await updateStatus(order.id, 'in_transit');
+        router.replace({ pathname: '/delivery/[id]', params: { id: order.id } });
+      } else {
+        Alert.alert(t('delivery.startTransit'), t('delivery.markInTransitConfirm'), [
+          { text: t('common.cancel'), style: 'cancel' },
+          {
+            text: t('common.confirm'),
+            onPress: () => updateStatus(order.id, 'in_transit').then(() => {
+              router.replace({ pathname: '/delivery/[id]', params: { id: order.id } });
+            }),
+          },
+        ]);
+        return;
+      }
+      setCurrentStep(nextStep);
+      return;
+    }
+
+    if (currentStep === 'in_transit' && nextStep === 'delivered') {
+      // 運輸中 -> 已送達：記錄運輸時間，切換到已送達步驟
+      await recordInTransitTime(order.id);
+      if (Platform.OS === 'web') {
+        await updateStatus(order.id, 'delivered');
+        router.replace({ pathname: '/delivery/[id]', params: { id: order.id } });
+      } else {
+        Alert.alert(t('delivery.markDelivered'), t('delivery.confirmDeliveryComplete'), [
+          { text: t('common.cancel'), style: 'cancel' },
+          {
+            text: t('common.confirm'),
+            onPress: () => updateStatus(order.id, 'delivered').then(() => {
+              router.replace({ pathname: '/delivery/[id]', params: { id: order.id } });
+            }),
+          },
+        ]);
+        return;
+      }
+      setCurrentStep(nextStep);
+      return;
+    }
+
+    if (currentStep === 'delivered' && nextStep === 'signed') {
+      // 已送達 -> 已簽收：需要上傳送達相片
+      if (!order.photos || order.photos.length === 0) {
+        Alert.alert(t('common.warning'), t('delivery.deliveryPhotoRequired'));
+        return;
+      }
+      await recordDeliveredTime(order.id);
+      setCurrentStep(nextStep);
+      return;
+    }
+
+    // 預設情況下直接切換步驟
+    setCurrentStep(nextStep);
   };
 
-  const handleMarkDelivered = () => {
-    if (Platform.OS === 'web') {
-      if (!window.confirm(t('delivery.confirmDeliveryComplete'))) return;
-      updateStatus(order.id, 'delivered').then(() => {
-        router.replace({ pathname: '/delivery/[id]', params: { id: order.id } });
-      });
-    } else {
-      Alert.alert(t('delivery.markDelivered'), t('delivery.confirmDeliveryComplete'), [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('common.confirm'),
-          onPress: () => {
-            updateStatus(order.id, 'delivered').then(() => {
-              router.replace({ pathname: '/delivery/[id]', params: { id: order.id } });
-            });
-          },
-        },
-      ]);
+  const handlePrevStep = () => {
+    const currentIdx = getStepIndex(currentStep);
+    if (currentIdx > 0) {
+      setCurrentStep(STEP_ORDER[currentIdx - 1]);
     }
   };
 
   const handleSign = () => setSignatureModalVisible(true);
+
+  const handleCompleteOrder = () => {
+    const confirmAction = async () => {
+      await completeDelivery(order.id);
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(`${t('delivery.completeOrderConfirmTitle')}\n\n${t('delivery.completeOrderConfirmMessage')}`)) {
+        confirmAction();
+      }
+    } else {
+      Alert.alert(
+        t('delivery.completeOrderConfirmTitle'),
+        t('delivery.completeOrderConfirmMessage'),
+        [
+          { text: t('common.cancel'), style: 'cancel' },
+          { text: t('common.confirm'), onPress: confirmAction },
+        ]
+      );
+    }
+  };
 
   const handleAddPhoto = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -494,17 +888,14 @@ export default function DeliveryDetailScreen() {
     const photosToUpload = [...pendingPhotos];
     const orderId = order.id;
 
-    // 開始同步，禁用所有操作
     setIsSyncing(true);
     setPendingPhotos([]);
     setPhotoPreviewVisible(false);
 
-    // 上傳所有照片
     for (const photo of photosToUpload) {
-      await addPhoto(orderId, photo.uri);
+      await addPhoto(orderId, photo.uri, isPickupPhotoMode);
     }
 
-    // 等待同步完成後刷新頁面
     if (typeof window !== 'undefined' && Platform.OS === 'web') {
       await new Promise<void>((resolve) => setTimeout(resolve, 800));
       window.location.reload();
@@ -519,6 +910,34 @@ export default function DeliveryDetailScreen() {
     setPhotoPreviewVisible(false);
   };
 
+  const handleDeletePhoto = async (photoId: string, isPickup: boolean) => {
+    const confirmed = Platform.OS === 'web'
+      ? window.confirm(t('delivery.deletePhotoMessage'))
+      : null;
+
+    if (Platform.OS === 'web' && confirmed) {
+      setIsSyncing(true);
+      await removePhoto(order.id, photoId, isPickup);
+      await new Promise<void>((resolve) => setTimeout(resolve, 500));
+      window.location.reload();
+    } else if (Platform.OS !== 'web') {
+      Alert.alert(
+        t('delivery.deletePhotoTitle'),
+        t('delivery.deletePhotoMessage'),
+        [
+          { text: t('common.cancel'), style: 'cancel' },
+          {
+            text: t('common.delete'),
+            style: 'destructive',
+            onPress: async () => {
+              await removePhoto(order.id, photoId, isPickup);
+            },
+          },
+        ]
+      );
+    }
+  };
+
   const handleSignatureConfirm = async (
     signatureData: string,
     strokes: { x: number; y: number; id: number }[][]
@@ -528,323 +947,461 @@ export default function DeliveryDetailScreen() {
     router.replace({ pathname: '/delivery/[id]', params: { id: order.id } });
   };
 
-  const actionButtons: { label: string; onPress: () => void; variant?: 'primary' | 'secondary'; icon?: React.ReactNode }[] = [];
+  // ============ Step Content Rendering ============
+  const renderStepContent = () => {
+    const currentIdx = getStepIndex(currentStep);
+    const isLastStep = currentIdx >= STEP_ORDER.length - 1 || currentStep === 'expired';
 
-  if (!isExpired) {
-    if (isAdmin && order.status === 'pending') {
-      actionButtons.push({ label: t('delivery.assignDriver'), onPress: handleAssign, variant: 'primary', icon: <Truck size={16} color="#fff" /> });
+    switch (currentStep) {
+      case 'pending':
+        return (
+          <Animated.View entering={FadeInDown.springify()}>
+            <Card style={styles.stepCard}>
+              <Text style={styles.stepTitle}>{t('delivery.stepPending')}</Text>
+              <Text style={styles.stepDescription}>
+                {t('delivery.stepFlow')} - {t('delivery.stepPending')}
+              </Text>
+              {isAdmin && (
+                <View style={styles.stepAction}>
+                  <Button
+                    title={t('delivery.assignDriver')}
+                    onPress={handleAssign}
+                    icon={<Truck size={16} color="#fff" />}
+                  />
+                </View>
+              )}
+            </Card>
+            <View style={styles.stepInfoSection}>
+              <Text style={styles.sectionTitle}>{t('delivery.customer')}</Text>
+              <Card style={styles.infoCard}>
+                <InfoRow icon={<User size={16} color={colors.textSecondary} />} label={t('delivery.name')} value={order.customerName} />
+                <View style={styles.divider} />
+                <InfoRow icon={<Phone size={16} color={colors.textSecondary} />} label={t('delivery.phone')} value={order.customerPhone} />
+              </Card>
+            </View>
+            <View style={styles.stepInfoSection}>
+              <Text style={styles.sectionTitle}>{t('delivery.route')}</Text>
+              <Card style={styles.infoCard}>
+                <View style={styles.routeContainer}>
+                  <View style={styles.routeStop}>
+                    <View style={[styles.routeIconCircle, { backgroundColor: `${colors.primary}20` }]}>
+                      <View style={[styles.routeIconDot, { backgroundColor: colors.primary }]} />
+                    </View>
+                    <View style={styles.routeStopInfo}>
+                      <Text style={styles.routeStopLabel}>{t('delivery.pickup').toUpperCase()}</Text>
+                      <Text style={styles.routeStopAddress}>{order.pickupAddress}</Text>
+                      <Text style={styles.routeStopTime}>{order.pickupTime}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.routeConnector}>
+                    <View style={[styles.routeConnectorLine, { backgroundColor: colors.border }]} />
+                  </View>
+                  <View style={styles.routeStop}>
+                    <View style={[styles.routeIconCircle, { backgroundColor: `${colors.danger}20` }]}>
+                      <View style={[styles.routeIconDot, { backgroundColor: colors.danger }]} />
+                    </View>
+                    <View style={styles.routeStopInfo}>
+                      <Text style={styles.routeStopLabel}>{t('delivery.dropoff').toUpperCase()}</Text>
+                      <Text style={styles.routeStopAddress}>{order.dropoffAddress}</Text>
+                      {order.dropoffTime && <Text style={styles.routeStopTime}>{order.dropoffTime}</Text>}
+                    </View>
+                  </View>
+                </View>
+              </Card>
+            </View>
+            <View style={styles.stepInfoSection}>
+              <Text style={styles.sectionTitle}>{t('delivery.cargo')}</Text>
+              <Card style={styles.infoCard}>
+                <InfoRow icon={<Package size={16} color={colors.textSecondary} />} label={t('delivery.description')} value={order.cargoDescription} />
+                <View style={styles.divider} />
+                <InfoRow icon={<Scale size={16} color={colors.textSecondary} />} label={t('delivery.weight')} value={`${order.cargoWeight} ${t('dashboard.kg')}`} />
+                {order.notes && (
+                  <>
+                    <View style={styles.divider} />
+                    <InfoRow icon={<StickyNote size={16} color={colors.textSecondary} />} label={t('delivery.notes')} value={order.notes} />
+                  </>
+                )}
+              </Card>
+            </View>
+          </Animated.View>
+        );
+
+      case 'assigned':
+        return (
+          <Animated.View entering={FadeInDown.springify()}>
+            <Card style={styles.stepCard}>
+              <Text style={styles.stepTitle}>{t('delivery.stepAssigned')}</Text>
+              <Text style={styles.stepDescription}>
+                {order.assignedDriverName ? `${t('delivery.driverAssigned')} ${order.assignedDriverName}` : t('delivery.selectDriver')}
+              </Text>
+              {!order.assignedDriverName && !isAdmin && (
+                <View style={styles.stepAction}>
+                  <Button
+                    title={t('delivery.assignDriver')}
+                    onPress={handleAssign}
+                    icon={<Truck size={16} color="#fff" />}
+                  />
+                </View>
+              )}
+            </Card>
+            <View style={styles.stepInfoSection}>
+              <Text style={styles.sectionTitle}>{t('delivery.customer')}</Text>
+              <Card style={styles.infoCard}>
+                <InfoRow icon={<User size={16} color={colors.textSecondary} />} label={t('delivery.name')} value={order.customerName} />
+                <View style={styles.divider} />
+                <InfoRow icon={<Phone size={16} color={colors.textSecondary} />} label={t('delivery.phone')} value={order.customerPhone} />
+              </Card>
+            </View>
+            <View style={styles.stepInfoSection}>
+              <Text style={styles.sectionTitle}>{t('delivery.route')}</Text>
+              <Card style={styles.infoCard}>
+                <View style={styles.routeContainer}>
+                  <View style={styles.routeStop}>
+                    <View style={[styles.routeIconCircle, { backgroundColor: `${colors.primary}20` }]}>
+                      <View style={[styles.routeIconDot, { backgroundColor: colors.primary }]} />
+                    </View>
+                    <View style={styles.routeStopInfo}>
+                      <Text style={styles.routeStopLabel}>{t('delivery.pickup').toUpperCase()}</Text>
+                      <Text style={styles.routeStopAddress}>{order.pickupAddress}</Text>
+                      <Text style={styles.routeStopTime}>{order.pickupTime}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.routeConnector}>
+                    <View style={[styles.routeConnectorLine, { backgroundColor: colors.border }]} />
+                  </View>
+                  <View style={styles.routeStop}>
+                    <View style={[styles.routeIconCircle, { backgroundColor: `${colors.danger}20` }]}>
+                      <View style={[styles.routeIconDot, { backgroundColor: colors.danger }]} />
+                    </View>
+                    <View style={styles.routeStopInfo}>
+                      <Text style={styles.routeStopLabel}>{t('delivery.dropoff').toUpperCase()}</Text>
+                      <Text style={styles.routeStopAddress}>{order.dropoffAddress}</Text>
+                      {order.dropoffTime && <Text style={styles.routeStopTime}>{order.dropoffTime}</Text>}
+                    </View>
+                  </View>
+                </View>
+              </Card>
+            </View>
+            <View style={styles.stepInfoSection}>
+              <Text style={styles.sectionTitle}>{t('delivery.cargo')}</Text>
+              <Card style={styles.infoCard}>
+                <InfoRow icon={<Package size={16} color={colors.textSecondary} />} label={t('delivery.description')} value={order.cargoDescription} />
+                <View style={styles.divider} />
+                <InfoRow icon={<Scale size={16} color={colors.textSecondary} />} label={t('delivery.weight')} value={`${order.cargoWeight} ${t('dashboard.kg')}`} />
+                {order.notes && (
+                  <>
+                    <View style={styles.divider} />
+                    <InfoRow icon={<StickyNote size={16} color={colors.textSecondary} />} label={t('delivery.notes')} value={order.notes} />
+                  </>
+                )}
+              </Card>
+            </View>
+            {order.assignedDriverName && (
+              <View style={styles.stepInfoSection}>
+                <Text style={styles.sectionTitle}>{t('delivery.assignedDriver')}</Text>
+                <Card style={styles.infoCard}>
+                  <InfoRow icon={<Truck size={16} color={colors.textSecondary} />} label={t('delivery.name')} value={order.assignedDriverName} />
+                  <View style={styles.divider} />
+                  <InfoRow icon={<Clock size={16} color={colors.textSecondary} />} label={t('delivery.assignedAt')} value={order.assignedAt ? new Date(order.assignedAt).toLocaleString() : '-'} />
+                </Card>
+              </View>
+            )}
+          </Animated.View>
+        );
+
+      case 'picked_up':
+        return (
+          <Animated.View entering={FadeInDown.springify()}>
+            <Card style={styles.stepCard}>
+              <Text style={styles.stepTitle}>{t('delivery.stepPickedUp')}</Text>
+              <Text style={styles.stepDescription}>
+                {order.pickedUpAt ? `${t('delivery.pickUpTimeRecorded')}: ${new Date(order.pickedUpAt).toLocaleString()}` : t('delivery.addPickupPhoto')}
+              </Text>
+            </Card>
+            <View style={styles.stepInfoSection}>
+              <Text style={styles.sectionTitle}>{t('delivery.pickupPhotos')}</Text>
+              <PhotoGallery
+                photos={order.pickupPhotos || []}
+                onAddPhoto={() => {
+                  setIsPickupPhotoMode(true);
+                  handleAddPhoto();
+                }}
+                onDeletePhoto={(photoId) => handleDeletePhoto(photoId, true)}
+                onViewPhoto={(uri) => {
+                  setLightboxUri(uri);
+                  setLightboxVisible(true);
+                }}
+                isPickup={true}
+                disabled={order.isCompleted}
+              />
+            </View>
+          </Animated.View>
+        );
+
+      case 'in_transit':
+        return (
+          <Animated.View entering={FadeInDown.springify()}>
+            <Card style={styles.stepCard}>
+              <Text style={styles.stepTitle}>{t('delivery.stepInTransit')}</Text>
+              <Text style={styles.stepDescription}>
+                {order.inTransitAt ? `${t('delivery.inTransitTimeRecorded')}: ${new Date(order.inTransitAt).toLocaleString()}` : t('delivery.stepInTransit')}
+              </Text>
+            </Card>
+            <View style={styles.stepInfoSection}>
+              <Text style={styles.sectionTitle}>{t('delivery.route')}</Text>
+              <Card style={styles.infoCard}>
+                <View style={styles.routeContainer}>
+                  <View style={styles.routeStop}>
+                    <View style={[styles.routeIconCircle, { backgroundColor: `${colors.primary}20` }]}>
+                      <View style={[styles.routeIconDot, { backgroundColor: colors.primary }]} />
+                    </View>
+                    <View style={styles.routeStopInfo}>
+                      <Text style={styles.routeStopLabel}>{t('delivery.pickup').toUpperCase()}</Text>
+                      <Text style={styles.routeStopAddress}>{order.pickupAddress}</Text>
+                      <Text style={styles.routeStopTime}>{order.pickupTime}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.routeConnector}>
+                    <View style={[styles.routeConnectorLine, { backgroundColor: colors.accent }]} />
+                  </View>
+                  <View style={styles.routeStop}>
+                    <View style={[styles.routeIconCircle, { backgroundColor: `${colors.danger}20` }]}>
+                      <View style={[styles.routeIconDot, { backgroundColor: colors.danger }]} />
+                    </View>
+                    <View style={styles.routeStopInfo}>
+                      <Text style={styles.routeStopLabel}>{t('delivery.dropoff').toUpperCase()}</Text>
+                      <Text style={styles.routeStopAddress}>{order.dropoffAddress}</Text>
+                      {order.dropoffTime && <Text style={styles.routeStopTime}>{order.dropoffTime}</Text>}
+                    </View>
+                  </View>
+                </View>
+              </Card>
+            </View>
+          </Animated.View>
+        );
+
+      case 'delivered':
+        return (
+          <Animated.View entering={FadeInDown.springify()}>
+            <Card style={styles.stepCard}>
+              <Text style={styles.stepTitle}>{t('delivery.stepDelivered')}</Text>
+              <Text style={styles.stepDescription}>
+                {order.deliveredAt ? `${t('delivery.deliveredTimeRecorded')}: ${new Date(order.deliveredAt).toLocaleString()}` : t('delivery.addDeliveryPhoto')}
+              </Text>
+            </Card>
+            <View style={styles.stepInfoSection}>
+              <Text style={styles.sectionTitle}>{t('delivery.deliveryPhotos')}</Text>
+              <PhotoGallery
+                photos={order.photos || []}
+                onAddPhoto={() => {
+                  setIsPickupPhotoMode(false);
+                  handleAddPhoto();
+                }}
+                onDeletePhoto={(photoId) => handleDeletePhoto(photoId, false)}
+                onViewPhoto={(uri) => {
+                  setLightboxUri(uri);
+                  setLightboxVisible(true);
+                }}
+                isPickup={false}
+                disabled={order.isCompleted}
+              />
+            </View>
+          </Animated.View>
+        );
+
+      case 'signed':
+        return (
+          <Animated.View entering={FadeInDown.springify()}>
+            <Card style={styles.stepCard}>
+              <Text style={styles.stepTitle}>{t('delivery.stepSigned')}</Text>
+              <Text style={styles.stepDescription}>
+                {order.signedAt ? `${t('delivery.signedTimeRecorded')}: ${new Date(order.signedAt).toLocaleString()}` : t('delivery.electronicSignature')}
+              </Text>
+              {!order.signatureData && !isAdmin && (
+                <View style={styles.stepAction}>
+                  <Button
+                    title={t('delivery.signDelivery')}
+                    onPress={handleSign}
+                    icon={<Pencil size={16} color={colors.primary} />}
+                    variant="secondary"
+                  />
+                </View>
+              )}
+            </Card>
+            {order.signatureData && order.signatureStrokes && order.signatureStrokes.length > 0 && (
+              <View style={styles.stepInfoSection}>
+                <Text style={styles.sectionTitle}>{t('delivery.electronicSignature')}</Text>
+                <Card style={styles.signatureDisplayCard}>
+                  <SignatureDisplay strokes={order.signatureStrokes} />
+                  <Text style={styles.signatureMeta}>{t('delivery.signedAt')} {new Date(order.signedAt!).toLocaleString()}</Text>
+                </Card>
+              </View>
+            )}
+          </Animated.View>
+        );
+
+      case 'completed':
+        return (
+          <Animated.View entering={FadeInDown.springify()}>
+            <Card style={styles.stepCard}>
+              <Text style={styles.stepDescription}>
+                {t('delivery.completedAt')}: {order.completedAt ? new Date(order.completedAt).toLocaleString() : '-'}
+              </Text>
+            </Card>
+            {/* 顯示所有已完成配送的資訊摘要 */}
+            <View style={styles.stepInfoSection}>
+              <Text style={styles.sectionTitle}>{t('delivery.summary')}</Text>
+              <Card style={styles.infoCard}>
+                <InfoRow icon={<FileText size={16} color={colors.textSecondary} />} label={t('delivery.orderNo')} value={order.orderNo} />
+                <View style={styles.divider} />
+                <InfoRow icon={<User size={16} color={colors.textSecondary} />} label={t('delivery.customer')} value={order.customerName} />
+                <View style={styles.divider} />
+                <InfoRow icon={<Package size={16} color={colors.textSecondary} />} label={t('delivery.cargo')} value={order.cargoDescription} />
+                <View style={styles.divider} />
+                <InfoRow icon={<Scale size={16} color={colors.textSecondary} />} label={t('delivery.weight')} value={`${order.cargoWeight} ${t('dashboard.kg')}`} />
+              </Card>
+            </View>
+            {/* 司機可以查看簽收資料 */}
+            {order.signatureData && (
+              <View style={styles.stepInfoSection}>
+                <Text style={styles.sectionTitle}>{t('delivery.signature')}</Text>
+                <Card style={styles.signatureDisplayCard}>
+                  {order.signatureStrokes && order.signatureStrokes.length > 0 && (
+                    <SignatureDisplay strokes={order.signatureStrokes} />
+                  )}
+                  <Text style={styles.signatureMeta}>{t('delivery.signedAt')} {order.signedAt ? new Date(order.signedAt).toLocaleString() : '-'}</Text>
+                </Card>
+              </View>
+            )}
+          </Animated.View>
+        );
+
+      case 'expired':
+        return (
+          <Animated.View entering={FadeInDown.springify()}>
+            <Card style={styles.stepCard}>
+              <View style={styles.expiredBanner}>
+                <AlertTriangle size={20} color={colors.danger} />
+                <Text style={styles.expiredBannerText}>{t('delivery.expiredReadonly')}</Text>
+              </View>
+            </Card>
+          </Animated.View>
+        );
+
+      default:
+        return null;
     }
-    if (!isAdmin && order.status === 'assigned') {
-      actionButtons.push({ label: t('delivery.startTransit'), onPress: handleStartTransit, variant: 'primary', icon: <Truck size={16} color="#fff" /> });
-    }
-    if (!isAdmin && order.status === 'in_transit') {
-      actionButtons.push({ label: t('delivery.markDelivered'), onPress: handleMarkDelivered, variant: 'secondary', icon: <CheckCircle size={16} color={colors.primary} /> });
-    }
-    if (!isAdmin && order.status === 'delivered') {
-      actionButtons.push({ label: t('delivery.signDelivery'), onPress: handleSign, variant: 'secondary', icon: <CheckCircle size={16} color={colors.primary} /> });
-    }
-  }
+  };
+
+  const currentIdx = getStepIndex(currentStep);
+  const canGoNext = currentIdx < STEP_ORDER.length - 1 && currentStep !== 'expired';
+  const canGoPrev = currentIdx > 0 && !order.isCompleted;
+
+  const showNextButton = () => {
+    // 已完成配送後不顯示任何操作按鈕
+    if (order.isCompleted) return false;
+
+    // 管理員不能操作步驟
+    if (isAdmin) return false;
+
+    // 司機在以下步驟可按下一步
+    // assigned -> picked_up: 需要先上傳取貨相片（按鈕會根據相片存在動態啟用）
+    if (currentStep === 'assigned') return order.assignedDriverId ? true : false;
+
+    // picked_up -> in_transit: 需要先上傳取貨相片
+    if (currentStep === 'picked_up') return (order.pickupPhotos && order.pickupPhotos.length > 0);
+
+    // in_transit -> delivered: 任何時候都可按下一步（記錄運輸時間並切換狀態）
+    if (currentStep === 'in_transit') return true;
+
+    // delivered -> signed: 需要先上傳送達相片
+    if (currentStep === 'delivered') return (order.photos && order.photos.length > 0);
+
+    // 已簽收後不顯示下一步按鈕，用戶可自由查看各 Tab
+    if (currentStep === 'signed') return false;
+
+    return false;
+  };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}> 
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <Stack.Screen options={{ headerShown: false }} />
 
       <View style={styles.topBar}>
         <Pressable onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/delivery')} style={styles.backBtn}>
           <ArrowLeft size={20} color={colors.textPrimary} />
         </Pressable>
-        <Text style={styles.topBarTitle}>{t('nav.deliveryDetail')}</Text>
+        <View style={styles.topBarTitleContainer}>
+          <FileText size={18} color={colors.primary} />
+          <Text style={styles.topBarTitle}>{order.orderNo}</Text>
+        </View>
         <View style={{ width: 40 }} />
       </View>
 
-      {/* 同步中的載入提示 */}
       {isSyncing && (
         <View style={styles.syncingOverlay}>
           <View style={styles.syncingBox}>
-            <Text style={styles.syncingText}>上傳中...</Text>
-            <Text style={styles.syncingSubtext}>請稍候</Text>
+            <Text style={styles.syncingText}>{t('delivery.uploading')}</Text>
+            <Text style={styles.syncingSubtext}>{t('common.wait')}</Text>
           </View>
         </View>
       )}
 
+      <StepTabBar
+        currentStep={currentStep}
+        deliveryStep={deliveryStep}
+        onStepPress={handleStepPress}
+        stepConfig={stepConfig}
+        order={order}
+      />
+
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} pointerEvents={isSyncing ? 'none' : 'auto'}>
-        <Animated.View entering={FadeInDown.springify()}>
-          <Card style={styles.headerCard}>
-            <View style={styles.headerTop}>
-              <View style={styles.orderNoContainer}>
-                <FileText size={18} color={colors.primary} />
-                <Text style={styles.orderNo}>{order.orderNo}</Text>
-              </View>
-              <StatusBadge status={order.status} t={t} />
-            </View>
-
-            {isExpired && (
-              <View style={styles.expiredBanner}>
-                <AlertTriangle size={16} color={colors.danger} />
-                <Text style={styles.expiredBannerText}>{t('delivery.expiredReadonly')}</Text>
-              </View>
-            )}
-
-            <View style={[styles.statusTimeline, { borderLeftColor: statusCfg.color }]}> 
-              {(['pending', 'assigned', 'in_transit', 'delivered', 'signed', 'expired'] as DeliveryStatus[]).map((status) => {
-                const isCurrent = status === order.status;
-                const isDone = isCurrent || (order.status === 'signed' && status !== 'expired') || (order.status === 'expired' && status === 'expired');
-                return (
-                  <View key={status} style={styles.timelineItem}>
-                    <View
-                      style={[
-                        styles.timelineDot,
-                        isDone && { backgroundColor: statusCfg.color, borderColor: statusCfg.color },
-                        isCurrent && styles.timelineDotCurrent,
-                      ]}
-                    >
-                      {isDone && <CheckCircle size={10} color="#fff" />}
-                    </View>
-                    <Text style={[styles.timelineLabel, isCurrent && { color: statusCfg.color, fontWeight: '700' }]}>
-                      {statusConfig[status].label}
-                    </Text>
-                  </View>
-                );
-              })}
-            </View>
-          </Card>
+        <Animated.View style={{ opacity: stepContentFade }}>
+          {renderStepContent()}
         </Animated.View>
-
-        <Animated.View entering={FadeInDown.delay(80).springify()}>
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{t('delivery.customer')}</Text>
-            <Card style={styles.infoCard}>
-              <InfoRow icon={<User size={16} color={colors.textSecondary} />} label={t('delivery.name')} value={order.customerName} />
-              <View style={styles.divider} />
-              <InfoRow icon={<Phone size={16} color={colors.textSecondary} />} label={t('delivery.phone')} value={order.customerPhone} />
-            </Card>
-          </View>
-        </Animated.View>
-
-        <Animated.View entering={FadeInDown.delay(120).springify()}>
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{t('delivery.route')}</Text>
-            <Card style={styles.infoCard}>
-              <View style={styles.routeContainer}>
-                <View style={styles.routeStop}>
-                  <View style={[styles.routeIconCircle, { backgroundColor: `${colors.primary}20` }]}>
-                    <View style={[styles.routeIconDot, { backgroundColor: colors.primary }]} />
-                  </View>
-                  <View style={styles.routeStopInfo}>
-                    <Text style={styles.routeStopLabel}>{t('delivery.pickup').toUpperCase()}</Text>
-                    <Text style={styles.routeStopAddress}>{order.pickupAddress}</Text>
-                    <Text style={styles.routeStopTime}>{order.pickupTime}</Text>
-                  </View>
-                </View>
-
-                <View style={styles.routeConnector}>
-                  <View style={[styles.routeConnectorLine, { backgroundColor: colors.border }]} />
-                </View>
-
-                <View style={styles.routeStop}>
-                  <View style={[styles.routeIconCircle, { backgroundColor: `${colors.danger}20` }]}>
-                    <View style={[styles.routeIconDot, { backgroundColor: colors.danger }]} />
-                  </View>
-                  <View style={styles.routeStopInfo}>
-                    <Text style={styles.routeStopLabel}>{t('delivery.dropoff').toUpperCase()}</Text>
-                    <Text style={styles.routeStopAddress}>{order.dropoffAddress}</Text>
-                    {order.dropoffTime && <Text style={styles.routeStopTime}>{order.dropoffTime}</Text>}
-                  </View>
-                </View>
-              </View>
-            </Card>
-          </View>
-        </Animated.View>
-
-        <Animated.View entering={FadeInDown.delay(160).springify()}>
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{t('delivery.cargo')}</Text>
-            <Card style={styles.infoCard}>
-              <InfoRow icon={<Package size={16} color={colors.textSecondary} />} label={t('delivery.description')} value={order.cargoDescription} />
-              <View style={styles.divider} />
-              <InfoRow icon={<Scale size={16} color={colors.textSecondary} />} label={t('delivery.weight')} value={`${order.cargoWeight} ${t('dashboard.kg')}`} />
-              {order.notes && (
-                <>
-                  <View style={styles.divider} />
-                  <InfoRow icon={<StickyNote size={16} color={colors.textSecondary} />} label={t('delivery.notes')} value={order.notes} />
-                </>
-              )}
-            </Card>
-          </View>
-        </Animated.View>
-
-        {order.assignedDriverName && (
-          <Animated.View entering={FadeInDown.delay(200).springify()}>
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>{t('delivery.assignedDriver')}</Text>
-              <Card style={styles.infoCard}>
-                <InfoRow icon={<Truck size={16} color={colors.textSecondary} />} label={t('delivery.name')} value={order.assignedDriverName} />
-                <View style={styles.divider} />
-                <InfoRow icon={<Clock size={16} color={colors.textSecondary} />} label={t('delivery.assignedAt')} value={order.pickupTime} />
-                {order.signatureData && (
-                  <>
-                    <View style={styles.divider} />
-                    <View style={styles.signedRow}>
-                      <CheckCircle size={16} color={colors.success} />
-                      <Text style={styles.signedText}>
-                        {t('delivery.signedAt')} {new Date(order.signedAt!).toLocaleString()}
-                      </Text>
-                    </View>
-                  </>
-                )}
-              </Card>
-            </View>
-          </Animated.View>
-        )}
-
-        {((!isAdmin && (order.status === 'in_transit' || order.status === 'delivered' || order.status === 'signed')) || (order.photos && order.photos.length > 0)) && (
-          <Animated.View entering={FadeInDown.delay(220).springify()}>
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>{t('delivery.photos')}</Text>
-              <View style={styles.photosGallery}>
-                {order.photos && order.photos.map((photo) => (
-                  <Pressable
-                    key={photo.id}
-                    style={styles.photoItem}
-                    onPress={() => {
-                      setLightboxUri(photo.uri);
-                      setLightboxVisible(true);
-                    }}
-                  >
-                    <View style={styles.photoImageWrapper}>
-                      <Image
-                        source={{ uri: getPhotoUri(photo.uri) }}
-                        style={styles.photoImage}
-                        resizeMode="cover"
-                      />
-                      <Pressable
-                        style={styles.photoDeleteBtn}
-                        onPress={async () => {
-                          const confirmed = Platform.OS === 'web'
-                            ? window.confirm(t('delivery.deletePhotoMessage'))
-                            : null;
-                          if (Platform.OS === 'web' && confirmed) {
-                            setIsSyncing(true);
-                            await removePhoto(order.id, photo.id);
-                            await new Promise<void>((resolve) => setTimeout(resolve, 500));
-                            window.location.reload();
-                          } else if (Platform.OS !== 'web') {
-                            Alert.alert(
-                              t('delivery.deletePhotoTitle'),
-                              t('delivery.deletePhotoMessage'),
-                              [
-                                { text: t('common.cancel'), style: 'cancel' },
-                                {
-                                  text: t('common.delete'),
-                                  style: 'destructive',
-                                  onPress: async () => {
-                                    await removePhoto(order.id, photo.id);
-                                  },
-                                },
-                              ]
-                            );
-                          }
-                        }}
-                        hitSlop={8}
-                      >
-                        <Text style={styles.photoDeleteIcon}>X</Text>
-                      </Pressable>
-                    </View>
-                    <Text style={styles.photoMeta}>{new Date(photo.takenAt).toLocaleString()}</Text>
-                  </Pressable>
-                ))}
-                {(!order.photos || order.photos.length < 5) && (
-                  <Pressable style={styles.photoItem} onPress={handleAddPhoto}>
-                    <View style={[styles.photoImage, styles.addPhotoPlaceholder]}>
-                      <Text style={styles.addPhotoIcon}>+</Text>
-                    </View>
-                    <Text style={styles.photoMeta}>{t('delivery.addPhoto')}</Text>
-                  </Pressable>
-                )}
-              </View>
-            </View>
-          </Animated.View>
-        )}
-
-        {order.signatureData && order.signatureStrokes && order.signatureStrokes.length > 0 && (() => {
-          const allPoints = order.signatureStrokes.flat();
-          const xs = allPoints.map((p) => p.x);
-          const ys = allPoints.map((p) => p.y);
-          const minX = Math.min(...xs);
-          const maxX = Math.max(...xs);
-          const minY = Math.min(...ys);
-          const maxY = Math.max(...ys);
-          const sigW = maxX - minX || 1;
-          const sigH = maxY - minY || 1;
-          const pad = 20;
-          const svgW = 300;
-          const svgH = 120;
-          const scaleX = (svgW - pad * 2) / sigW;
-          const scaleY = (svgH - pad * 2) / sigH;
-          const scale = Math.min(scaleX, scaleY);
-          const offsetX = (svgW - sigW * scale) / 2 - minX * scale;
-          const offsetY = (svgH - sigH * scale) / 2 - minY * scale;
-          const sx = (v: number) => v * scale + offsetX;
-          const sy = (v: number) => v * scale + offsetY;
-          return (
-            <Animated.View entering={FadeInDown.delay(220).springify()}>
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>{t('delivery.electronicSignature')}</Text>
-                <Card style={styles.signatureDisplayCard}>
-                  <Svg width={svgW} height={svgH}>
-                    {order.signatureStrokes!.map((stroke, si) =>
-                      stroke.length > 1
-                        ? stroke.slice(1).map((pt, i) => (
-                            <Line
-                              key={`s-${si}-${i}`}
-                              x1={sx(stroke[i].x)}
-                              y1={sy(stroke[i].y)}
-                              x2={sx(pt.x)}
-                              y2={sy(pt.y)}
-                              stroke={colors.textPrimary}
-                              strokeWidth={2.5}
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                          ))
-                        : null
-                    )}
-                  </Svg>
-                  <Text style={styles.signatureMeta}>{t('delivery.signedAt')} {new Date(order.signedAt!).toLocaleString()}</Text>
-                </Card>
-              </View>
-            </Animated.View>
-          );
-        })()}
-
-        <Modal visible={lightboxVisible} transparent animationType="fade" onRequestClose={() => setLightboxVisible(false)}>
-          <View style={styles.lightboxOverlay}>
-            <Pressable style={styles.lightboxCloseArea} onPress={() => setLightboxVisible(false)} />
-            <Image source={{ uri: lightboxUri }} style={styles.lightboxImage} resizeMode="contain" />
-            <Pressable style={styles.lightboxCloseBtn} onPress={() => setLightboxVisible(false)}>
-              <Text style={styles.lightboxCloseText}>✕</Text>
-            </Pressable>
-          </View>
-        </Modal>
-
-        {actionButtons.length > 0 && (
-          <Animated.View entering={FadeInDown.delay(240).springify()} style={styles.actionSection}>
-            {actionButtons.map((button, index) => (
-              <Button
-                key={index}
-                title={button.label}
-                onPress={button.onPress}
-                variant={button.variant || 'primary'}
-                size="lg"
-                fullWidth
-                icon={button.icon}
-              />
-            ))}
-          </Animated.View>
-        )}
-
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      {!isAdmin && showNextButton() && (
+        <View style={styles.bottomActions}>
+          {canGoPrev && (
+            <Button
+              title={t('delivery.previousStep')}
+              onPress={handlePrevStep}
+              variant="ghost"
+              icon={<ChevronLeft size={16} color={colors.primary} />}
+            />
+          )}
+          <Button
+            title={t('delivery.nextStep')}
+            onPress={handleNextStep}
+            icon={<ChevronRight size={16} color="#fff" />}
+            style={{ flex: 1 }}
+          />
+        </View>
+      )}
+
+      {/* 已簽收且未完成時顯示「完成貨單」按鈕在最底部 */}
+      {currentStep === 'signed' && order.signatureData && !isAdmin && !order.isCompleted && (
+        <View style={[styles.bottomActions, { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg }]}>
+          <Button
+            title={t('delivery.completeOrder')}
+            onPress={handleCompleteOrder}
+            icon={<CheckCircle size={16} color="#fff" />}
+            style={{ flex: 1 }}
+          />
+        </View>
+      )}
+
+      {/* 已完成配送後顯示提示 */}
+      {order.isCompleted && (
+        <View style={[styles.bottomActions, { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg }]}>
+          <View style={styles.completedBanner}>
+            <CheckCircle size={16} color={colors.success} />
+            <Text style={styles.completedBannerText}>{t('delivery.orderCompleted')}</Text>
+          </View>
+        </View>
+      )}
 
       <AssignDriverModal
         visible={assignModalVisible}
@@ -858,6 +1415,16 @@ export default function DeliveryDetailScreen() {
         onClose={() => setSignatureModalVisible(false)}
         onConfirm={handleSignatureConfirm}
       />
+
+      <Modal visible={lightboxVisible} transparent animationType="fade" onRequestClose={() => setLightboxVisible(false)}>
+        <View style={styles.lightboxOverlay}>
+          <Pressable style={styles.lightboxCloseArea} onPress={() => setLightboxVisible(false)} />
+          <Image source={{ uri: lightboxUri }} style={styles.lightboxImage} resizeMode="contain" />
+          <Pressable style={styles.lightboxCloseBtn} onPress={() => setLightboxVisible(false)}>
+            <Text style={styles.lightboxCloseText}>X</Text>
+          </Pressable>
+        </View>
+      </Modal>
 
       <Modal visible={photoPreviewVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
@@ -939,38 +1506,70 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  topBarTitle: { fontSize: typography.fontSize.lg, fontWeight: '700', color: colors.textPrimary },
-  headerCard: { marginHorizontal: spacing.lg, marginTop: spacing.lg, padding: spacing.lg },
-  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.md },
-  orderNoContainer: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  orderNo: { fontSize: typography.fontSize.lg, fontWeight: '700', color: colors.textPrimary },
-  badge: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: borderRadius.full },
-  badgeText: { fontSize: typography.fontSize.xs, fontWeight: '700' },
-  expiredBanner: {
+  topBarTitleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    backgroundColor: `${colors.danger}10`,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
   },
-  expiredBannerText: { flex: 1, color: colors.danger, fontSize: typography.fontSize.sm, fontWeight: '600' },
-  statusTimeline: { borderLeftWidth: 2, paddingLeft: spacing.md, gap: spacing.sm },
-  timelineItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  timelineDot: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: colors.border,
+  topBarTitle: { fontSize: typography.fontSize.lg, fontWeight: '700', color: colors.textPrimary },
+  stepTabBar: {
+    backgroundColor: colors.card,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  stepTabContent: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: spacing.xs,
+  },
+  stepTabItem: {
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    minWidth: 70,
+    position: 'relative',
+  },
+  stepTabItemCurrent: {
+    backgroundColor: colors.surface,
+  },
+  stepTabItemCompleted: {
+    opacity: 0.8,
+  },
+  stepTabItemLocked: {
+    opacity: 0.5,
+  },
+  stepTabNumber: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.card,
+    marginBottom: 4,
   },
-  timelineDotCurrent: { transform: [{ scale: 1.05 }] },
-  timelineLabel: { fontSize: typography.fontSize.sm, color: colors.textSecondary },
-  section: { marginTop: spacing.xl, paddingHorizontal: spacing.lg },
+  stepTabNumberText: {
+    color: '#fff',
+    fontSize: typography.fontSize.sm,
+    fontWeight: '700',
+  },
+  stepTabLabel: {
+    fontSize: typography.fontSize.xs,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  stepTabIndicator: {
+    position: 'absolute',
+    bottom: 0,
+    left: '20%',
+    right: '20%',
+    height: 3,
+    borderRadius: 2,
+  },
+  stepCard: { marginHorizontal: spacing.lg, marginTop: spacing.lg, padding: spacing.lg },
+  stepTitle: { fontSize: typography.fontSize.lg, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.xs },
+  stepDescription: { fontSize: typography.fontSize.sm, color: colors.textSecondary },
+  stepAction: { marginTop: spacing.md },
+  stepInfoSection: { marginTop: spacing.xl, paddingHorizontal: spacing.lg },
   sectionTitle: { fontSize: typography.fontSize.base, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.md },
   infoCard: { padding: spacing.lg },
   infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
@@ -989,10 +1588,6 @@ const styles = StyleSheet.create({
   routeStopTime: { fontSize: typography.fontSize.sm, color: colors.textSecondary, marginTop: 4 },
   routeConnector: { paddingLeft: 11, height: 20 },
   routeConnectorLine: { width: 2, flex: 1 },
-  signedRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  signedText: { fontSize: typography.fontSize.sm, color: colors.success, fontWeight: '600' },
-  signatureDisplayCard: { padding: spacing.md, alignItems: 'center', backgroundColor: colors.card, borderRadius: borderRadius.lg },
-  signatureMeta: { fontSize: typography.fontSize.xs, color: colors.textTertiary, marginTop: spacing.sm },
   photosGallery: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   photoItem: {
     width: '31%',
@@ -1017,7 +1612,32 @@ const styles = StyleSheet.create({
   lightboxImage: { width: '100%', height: '80%' },
   lightboxCloseBtn: { position: 'absolute', top: 60, right: 20, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)', justifyContent: 'center', alignItems: 'center' },
   lightboxCloseText: { color: '#fff', fontSize: 20, fontWeight: '600' },
-  actionSection: { marginTop: spacing.xl, paddingHorizontal: spacing.lg, gap: spacing.md },
+  bottomActions: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.card,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  completedBanner: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    backgroundColor: `${colors.success}15`,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: `${colors.success}30`,
+  },
+  completedBannerText: {
+    fontSize: typography.fontSize.md,
+    fontWeight: '600',
+    color: colors.success,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.45)',
@@ -1117,13 +1737,8 @@ const styles = StyleSheet.create({
     color: colors.danger,
     fontWeight: '600',
   },
-  signatureDot: {
-    position: 'absolute',
-    width: 3,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: colors.textPrimary,
-  },
+  signatureDisplayCard: { padding: spacing.md, alignItems: 'center', backgroundColor: colors.card, borderRadius: borderRadius.lg },
+  signatureMeta: { fontSize: typography.fontSize.xs, color: colors.textTertiary, marginTop: spacing.sm },
   notFound: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md, paddingHorizontal: spacing.xl },
   notFoundText: { fontSize: typography.fontSize.base, color: colors.textSecondary },
   previewScrollView: { paddingHorizontal: spacing.lg, maxHeight: 300 },
@@ -1142,4 +1757,13 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
   },
+  expiredBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: `${colors.danger}10`,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+  },
+  expiredBannerText: { flex: 1, color: colors.danger, fontSize: typography.fontSize.sm, fontWeight: '600' },
 });

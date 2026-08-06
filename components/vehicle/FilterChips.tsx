@@ -1,4 +1,4 @@
-import { ScrollView, Pressable, Text, StyleSheet } from 'react-native';
+import { View, Pressable, Text, StyleSheet } from 'react-native';
 import { colors, borderRadius, spacing, typography } from '@/constants/theme';
 
 interface FilterChipsProps {
@@ -16,11 +16,7 @@ export function FilterChips({ selected, onSelect, t }: FilterChipsProps) {
   ];
 
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.container}
-    >
+    <View style={styles.container}>
       {filters.map((f) => {
         const isSelected = selected === f.key;
         return (
@@ -28,14 +24,16 @@ export function FilterChips({ selected, onSelect, t }: FilterChipsProps) {
             key={f.key}
             onPress={() => onSelect(f.key)}
             style={[
-              styles.chip,
-              isSelected && styles.chipSelected,
+              styles.tab,
+              isSelected && styles.tabSelected,
+              f.key === 'all' && styles.tabFirst,
+              f.key === 'inactive' && styles.tabLast,
             ]}
           >
             <Text
               style={[
-                styles.chipText,
-                isSelected && styles.chipTextSelected,
+                styles.tabText,
+                isSelected && styles.tabTextSelected,
               ]}
             >
               {f.label}
@@ -43,34 +41,51 @@ export function FilterChips({ selected, onSelect, t }: FilterChipsProps) {
           </Pressable>
         );
       })}
-    </ScrollView>
+    </View>
   );
 }
 
+const SELECTED_BG = 'rgb(37, 99, 235)';
+
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
-    gap: spacing.sm,
+    flexDirection: 'row',
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    padding: 3,
   },
-  chip: {
-    paddingHorizontal: spacing.lg,
+  tab: {
+    flex: 1,
     paddingVertical: spacing.sm + 2,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: borderRadius.sm,
   },
-  chipSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+  tabFirst: {
+    borderTopLeftRadius: borderRadius.sm,
+    borderBottomLeftRadius: borderRadius.sm,
   },
-  chipText: {
+  tabLast: {
+    borderTopRightRadius: borderRadius.sm,
+    borderBottomRightRadius: borderRadius.sm,
+  },
+  tabSelected: {
+    backgroundColor: SELECTED_BG,
+    shadowColor: SELECTED_BG,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  tabText: {
     fontSize: typography.fontSize.sm,
-    fontWeight: '600',
+    fontWeight: '500',
     color: colors.textSecondary,
   },
-  chipTextSelected: {
+  tabTextSelected: {
+    fontWeight: '600',
     color: '#FFFFFF',
   },
 });

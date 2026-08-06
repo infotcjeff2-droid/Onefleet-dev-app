@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { storage } from '@/utils/storage';
-import { hasSupabaseEnv, pushFleetSnapshot } from '@/utils/fleetSync';
+import { hasSupabaseEnv, pushFleetSnapshot, hardDeleteUserProfile } from '@/utils/fleetSync';
 import { useAuthStore } from './authStore';
 
 export interface Driver {
@@ -77,38 +77,26 @@ export const useDriverStore = create<DriverState>((set, get) => ({
         (d: Driver) => !defaultDriverIds.has(d.id)
       );
 
-      // 從 managed_users 同步 driver 角色（已新增但尚未出現在 managed_drivers 的）
-      // 同時也更新已存在司機的 companyId（用戶可能在其他地方編輯了司機的公司歸屬）
+      // managed_drivers 為「司機清單」的單一真相來源；managed_users 只用於
+      // 同步「公司歸屬」(companyId) 等欄位,絕對不會把 managed_users 中的
+      // role='driver' 重新插入 managed_drivers（否則刪除後又會復活）。
       let merged: Driver[] = [...filtered];
       const currentUser = useAuthStore.getState().user;
       if (storedUsers) {
         const parsedUsers: StoredUser[] = JSON.parse(storedUsers);
-        const userDrivers: Driver[] = parsedUsers
-          .filter((user) => user.role === 'driver')
-          .map((user) => ({
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            phone: user.phone ?? '',
-            vehiclePlate: '',
-            status: 'available' as const,
-            avatar: user.avatar,
-            companyId: user.companyId,
-            userId: currentUser?.id,
-          }));
+        const driverUsers = parsedUsers.filter((user) => user.role === 'driver');
 
-        for (const userDriver of userDrivers) {
+        for (const userDriver of driverUsers) {
           const existingIndex = merged.findIndex(
             (driver) => driver.email.toLowerCase() === userDriver.email.toLowerCase()
           );
           if (existingIndex !== -1) {
-            // 更新已存在司機的 companyId（以 managed_users 為準）
+            // 只更新已存在司機的 companyId（以 managed_users 為準）
             if (userDriver.companyId !== undefined) {
               merged[existingIndex] = { ...merged[existingIndex], companyId: userDriver.companyId };
             }
-          } else {
-            merged.push(userDriver);
           }
+          // 重要：不再 push 新 driver，避免「刪除後又再出現」
         }
       }
 
@@ -172,11 +160,22 @@ export const useDriverStore = create<DriverState>((set, get) => ({
     }
   },
 
-  /** 刪除司機：從 drivers 陣列移除並寫入 storage（下次 load 不會回來） */
+  /**
+   * 刪除司機：從 drivers 陣列移除、寫入 storage，並從 Supabase user_profile 表
+   * 真刪除（drivers 在雲端是以 role='driver' 的 user_profile 記錄儲存）。
+   * 這樣 syncUsers / 重新整理頁面時,被刪的司機不會再從雲端被拉回來。
+   */
   deleteDriver: async (id) => {
     const updated = get().drivers.filter((driver) => driver.id !== id);
     set({ drivers: updated });
     await storage.setItem(DRIVER_STORAGE_KEY, JSON.stringify(updated));
+    if (hasSupabaseEnv) {
+      try {
+        await hardDeleteUserProfile(id);
+      } catch (err) {
+        console.warn('[driverStore] hardDeleteUserProfile failed:', err);
+      }
+    }
   },
 
   getDriverById: (id) => {

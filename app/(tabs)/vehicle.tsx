@@ -1,13 +1,20 @@
 import { View, StyleSheet, Image, Pressable } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, Redirect } from 'expo-router';
 import { VehicleList } from '@/components/vehicle/VehicleList';
 import { colors } from '@/constants/theme';
 import { Header } from '@/components/ui/Header';
 import { useTranslation } from '@/i18n';
+import { useAuthStore } from '@/store/authStore';
 
 export default function VehiclesScreen() {
   const { t } = useTranslation();
   const router = useRouter();
+  const { role } = useAuthStore();
+
+  // 司機不能訪問車輛頁面，直接重定向到首頁
+  if (role === 'driver') {
+    return <Redirect href="/(tabs)" />;
+  }
 
   return (
     <View style={styles.container}>

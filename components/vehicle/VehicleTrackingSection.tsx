@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable, Animated } from 'react-native';
 import { MapPin, Maximize2 } from 'lucide-react-native';
 import { Card } from '@/components/ui/Card';
@@ -8,17 +8,15 @@ import { FullScreenMonitor } from './FullScreenMonitor';
 import type { CameraFeedItem } from './CameraFeed';
 import { colors, spacing, typography } from '@/constants/theme';
 import { useTranslation } from '@/i18n';
-import { useVehicleStore } from '@/store/vehicleStore';
 
-type TrackingTab = 'live' | 'history';
+// 808GPS 設備的默認 4 通道配置（根據截圖：DSM, ADAS, 前鏡, 後鏡）
+const DEFAULT_CAMERA_LABELS = ['DSM 司機', 'ADAS 輔助', '前鏡頭', '後鏡頭'];
 
 interface VehicleTrackingSectionProps {
   devIdno: string;
   plateNumber?: string;
-  onStatusUpdate?: (status: { isOnline: boolean; hasGps: boolean; speed: number; address?: string }) => void;
-  /** 車輛 ID，用於查詢車隊其他車輛的影像串流 */
-  vehicleId?: string;
-  /** 影像串流列表（最多4台車）；若未提供則從同公司車隊自動帶入 */
+  onStatusUpdate?: (status: { isOnline: boolean; hasGps: boolean; isRealTime: boolean; speed: number; address?: string }) => void;
+  /** 自定義攝影機配置，若不提供則使用默認的 4 通道 */
   cameraFeeds?: CameraFeedItem[];
 }
 
@@ -26,43 +24,25 @@ export function VehicleTrackingSection({
   devIdno,
   plateNumber,
   onStatusUpdate,
-  vehicleId,
   cameraFeeds: propCameraFeeds,
 }: VehicleTrackingSectionProps) {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<TrackingTab>('live');
+  const [activeTab, setActiveTab] = useState<'live' | 'history' | 'camera'>('live');
   const [showFullScreen, setShowFullScreen] = useState(false);
   const fadeAnim = useRef(new Animated.Value(1)).current;
-  const previousTabRef = useRef<TrackingTab>('live');
-  const { vehicles } = useVehicleStore();
+  const previousTabRef = useRef<'live' | 'history' | 'camera'>('live');
 
-  // 相機饋送：優先使用 props，否則自動組成「當前車輛的多通道影像」列表
-  // 規則：顯示當前車輛的 6 個 channel（仿官網「實時錄像」六格版：AV 01 / AV 04 / ADAS前視 / ADAS駕駛 / 前視圖 / 後視圖）
-  const cameraFeeds: CameraFeedItem[] = propCameraFeeds ?? (() => {
-    if (!vehicleId) return [];
-    const currentVehicle = vehicles.find(v => v.id === vehicleId);
-    if (!currentVehicle) return [];
+  // 根據設備 ID 自動生成 4 通道的攝影機配置
+  const defaultCameraFeeds: CameraFeedItem[] = DEFAULT_CAMERA_LABELS.map((label, index) => ({
+    id: `${devIdno}-ch${index}`,
+    devIdno,
+    channel: index,
+    plateNumber: plateNumber || devIdno,
+    vehicleName: label,
+  }));
 
-    const plate = currentVehicle.plateNumber || currentVehicle.id;
-    const channels: Array<{ channel: number; label: string }> = [
-      { channel: 0, label: 'AV 01' },
-      { channel: 3, label: 'AV 04' },
-      { channel: 2, label: 'ADAS前視' },
-      { channel: 1, label: 'ADAS駕駛' },
-      { channel: 5, label: '前視圖' },
-      { channel: 4, label: '後視圖' },
-    ];
-
-    return channels.map((c, i) => ({
-      id: `${currentVehicle.id}-ch${c.channel}`,
-      devIdno: currentVehicle.devIdno,
-      plateNumber: `${plate}_${c.label}`,
-      vehicleName: c.label,
-      channel: c.channel,
-      isOnline: !!currentVehicle.devIdno,
-      order: i,
-    }));
-  })();
+  // 使用傳入的自定義配置，否則使用默認配置
+  const cameraFeeds = propCameraFeeds && propCameraFeeds.length > 0 ? propCameraFeeds : defaultCameraFeeds;
 
   useEffect(() => {
     if (previousTabRef.current === activeTab) return;
@@ -76,7 +56,7 @@ export function VehicleTrackingSection({
     }).start();
   }, [activeTab, fadeAnim]);
 
-  const renderTabButton = (tab: TrackingTab, label: string) => {
+  const renderTabButton = (tab: 'live' | 'history' | 'camera', label: string) => {
     const isActive = activeTab === tab;
     return (
       <Pressable
@@ -138,6 +118,7 @@ export function VehicleTrackingSection({
         </Animated.View>
       </Card>
 
+      {/* Full Screen Monitor (map + 4 camera channels) */}
       <FullScreenMonitor
         visible={showFullScreen}
         onClose={() => setShowFullScreen(false)}

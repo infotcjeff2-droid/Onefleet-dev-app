@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,10 +12,11 @@ import {
   KeyboardAvoidingView,
   Platform,
   Keyboard,
+  InteractionManager,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
-import { MapPin, Truck, User, Check, ChevronLeft, Shuffle, Package, Plus, Minus, X } from 'lucide-react-native';
+import { MapPin, Truck, User, Check, ChevronLeft, Shuffle, Package, Plus, Minus, X, Search, Users } from 'lucide-react-native';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { useDeliveryStore } from '@/store/deliveryStore';
@@ -23,9 +24,11 @@ import { useDriverStore, Driver } from '@/store/driverStore';
 import { useVehicleStore } from '@/store/vehicleStore';
 import { useUserManagementStore } from '@/store/userManagementStore';
 import { useInventoryStore } from '@/store/inventoryStore';
+import { useAuthStore } from '@/store/authStore';
+import { useCustomerStore } from '@/store/customerStore';
 import { colors, borderRadius, spacing, typography } from '@/constants/theme';
 import { useTranslation } from '@/i18n';
-import { DeliveryCargoItem } from '@/types';
+import { DeliveryCargoItem, Customer } from '@/types';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -98,8 +101,16 @@ interface SelectedItem {
   availableStock: number;
 }
 
+/** 取得物品扣除已選數量後的真實可用庫存 */
+function getEffectiveStock(itemId: string, selectedItems: SelectedItem[], warehouseStocks: { itemId: string; quantity: number }[]): number {
+  const stock = warehouseStocks.find((s) => s.itemId === itemId);
+  const baseStock = stock?.quantity ?? 0;
+  const selectedQty = selectedItems.find((s) => s.itemId === itemId)?.quantity ?? 0;
+  return baseStock - selectedQty;
+}
+
 export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormProps) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const router = useRouter();
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -107,14 +118,21 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
   const { drivers, loadDrivers, getVehiclesByDriverId } = useDriverStore();
   const { vehicles, loadVehicles } = useVehicleStore();
   const managedDrivers = useUserManagementStore((state) => state.users).filter((u) => u.role === 'driver');
-  const { items, loadItems, warehouseStocks, loadStocks } = useInventoryStore();
+  const { items, loadItems, warehouseStocks, loadStocks, warehouses, loadWarehouses } = useInventoryStore();
+  const { user, role } = useAuthStore();
+  const { customers, loadCustomers, addCustomer } = useCustomerStore();
+
+  // Driver 角色：直接用自己的 Clerk userId 作為 assignedDriverId，跳過司機選擇步驟
+  const isDriverRole = role === 'driver';
+  const myDriverId = user?.id ?? null;
 
   const [pickupAddress, setPickupAddress] = useState(initialData?.pickupAddress ?? '');
   const [dropoffAddress, setDropoffAddress] = useState(initialData?.dropoffAddress ?? '');
   const [isScheduled, setIsScheduled] = useState(initialData?.isScheduled ?? false);
-  const [selectedDriverId, setSelectedDriverId] = useState<string | null>(null);
-  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
-  const [step, setStep] = useState<'address' | 'driver'>('address');
+  // Driver 角色：初始化時就鎖定自己為司機，不需要選擇
+  const [selectedDriverId, setSelectedDriverId] = useState<string | null>(isDriverRole ? myDriverId : null);
+  // Driver 角色：直接跳到司機確認步驟
+  const [step, setStep] = useState<'address' | 'driver'>(isDriverRole ? 'driver' : 'address');
 
   // 物品選擇相關狀態
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]);
@@ -122,6 +140,17 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [notes, setNotes] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+
+  // 客戶選擇相關狀態
+  const [showCustomerPicker, setShowCustomerPicker] = useState(false);
+  const [showAddCustomer, setShowAddCustomer] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+  const [newCustomerName, setNewCustomerName] = useState('');
+  const [newCustomerPhone, setNewCustomerPhone] = useState('');
+  const [newCustomerAddress, setNewCustomerAddress] = useState('');
 
   // 鍵盤監聽 - 記錄鍵盤高度並滾動到目標位置
   useEffect(() => {
@@ -146,9 +175,15 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
     loadVehicles();
     loadItems();
     loadStocks();
+    loadCustomers();
+    if (loadWarehouses) loadWarehouses();
   }, []);
 
+  // 獲取默認倉庫 ID
+  const defaultWarehouseId = warehouses.find((wh) => wh.isDefault)?.id || warehouses[0]?.id || 'default-warehouse';
+
   // 合併司機列表
+  console.log('[AddDeliveryForm] drivers:', drivers.length, 'managedDrivers:', managedDrivers.length);
   const mergedDrivers: Driver[] = useMemo(() => [
     ...drivers,
     ...managedDrivers
@@ -162,6 +197,7 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
         status: 'available' as const,
       })),
   ], [drivers, managedDrivers]);
+  console.log('[AddDeliveryForm] mergedDrivers:', mergedDrivers.map(d => ({ id: d.id, name: d.name })));
 
   // 活躍車輛
   const activeVehicles = vehicles.filter((v) => v.status === 'active');
@@ -176,21 +212,16 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
     return selectedItems.map((item) => `${item.itemName} x${item.quantity}`).join(', ') || '';
   }, [selectedItems]);
 
-  // 選中的司機
-  const selectedDriver = mergedDrivers.find((d) => d.id === selectedDriverId);
+  // 選中的司機（driver 角色時，自己可能不在 mergedDrivers 中，需用 authStore 的 user.name）
+  const selectedDriver = mergedDrivers.find((d) => d.id === selectedDriverId) ?? (
+    isDriverRole && selectedDriverId ? { id: selectedDriverId, name: user?.name ?? '' } : null
+  );
 
   // 根據選中的司機獲取其車輛
   const driverVehicles = useMemo(() => {
     if (!selectedDriverId) return [];
     return getVehiclesByDriverId(selectedDriverId, vehicles);
   }, [selectedDriverId, vehicles, getVehiclesByDriverId]);
-
-  // 如果司機有綁定的車輛，自動選擇
-  useEffect(() => {
-    if (selectedDriverId && driverVehicles.length === 1) {
-      setSelectedVehicleId(driverVehicles[0].id);
-    }
-  }, [selectedDriverId, driverVehicles]);
 
   // 獲取物品的可用庫存
   const getItemStock = (itemId: string): number => {
@@ -202,9 +233,10 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
   const handleAddItem = (item: typeof items[0]) => {
     const existing = selectedItems.find((i) => i.itemId === item.id);
     if (existing) {
+      const currentEffectiveStock = getEffectiveStock(item.id, selectedItems, warehouseStocks);
       setSelectedItems((prev) =>
         prev.map((i) =>
-          i.itemId === item.id && i.quantity < getItemStock(item.id)
+          i.itemId === item.id && i.quantity < currentEffectiveStock
             ? { ...i, quantity: i.quantity + 1 }
             : i
         )
@@ -217,7 +249,7 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
           itemName: item.name,
           quantity: 1,
           unitWeight: item.unitWeight,
-          availableStock: getItemStock(item.id),
+          availableStock: getEffectiveStock(item.id, prev, warehouseStocks),
         },
       ]);
     }
@@ -227,8 +259,11 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
   const handleIncreaseItem = (itemId: string) => {
     setSelectedItems((prev) =>
       prev.map((i) => {
-        if (i.itemId === itemId && i.quantity < i.availableStock) {
-          return { ...i, quantity: i.quantity + 1 };
+        if (i.itemId === itemId) {
+          const effectiveStock = getEffectiveStock(itemId, prev, warehouseStocks);
+          if (i.quantity < effectiveStock) {
+            return { ...i, quantity: i.quantity + 1 };
+          }
         }
         return i;
       })
@@ -256,19 +291,39 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
   const isAddressValid = pickupAddress.trim().length > 0 && dropoffAddress.trim().length > 0;
   const isCargoValid = selectedItems.length > 0 && totalWeight > 0;
   const canProceedToStep2 = isAddressValid && isCargoValid;
+  
+  // 調試日誌
+  console.log('[AddDeliveryForm] Debug:', {
+    step,
+    isAddressValid,
+    isCargoValid,
+    canProceedToStep2,
+    selectedDriverId,
+    selectedItemsCount: selectedItems.length,
+    totalWeight,
+  });
 
   const handleNext = () => {
+    console.log('[handleNext] 函數被調用了!');
+    console.log('[handleNext] isAddressValid:', isAddressValid);
+    console.log('[handleNext] isCargoValid:', isCargoValid);
+    console.log('[handleNext] canProceedToStep2:', canProceedToStep2);
+    
     if (!canProceedToStep2) {
+      console.log('[handleNext] 驗證失敗，準備顯示 Alert');
       if (!isAddressValid) {
+        console.log('[handleNext] 顯示地址錯誤 Alert');
         Alert.alert(t('common.error'), '請填寫收貨和送貨地址');
         return;
       }
       if (!isCargoValid) {
+        console.log('[handleNext] 顯示物品錯誤 Alert');
         Alert.alert(t('common.error'), '請選擇至少一個配送物品');
         return;
       }
       return;
     }
+    console.log('[handleNext] 驗證通過，設置 step = driver');
     setStep('driver');
   };
 
@@ -281,12 +336,33 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
   };
 
   const handleConfirm = async () => {
-    if (!selectedDriverId || !selectedVehicleId) {
-      Alert.alert(t('common.error'), '請選擇司機和車輛');
+    console.log('[handleConfirm] 函數被調用了!');
+    
+    if (!selectedDriverId) {
+      Alert.alert(t('common.error'), '請選擇司機');
       return;
     }
 
+    // 檢查庫存是否足夠
+    const lowStockItems = selectedItems.filter((item) => {
+      const effectiveStock = getEffectiveStock(item.itemId, selectedItems, warehouseStocks);
+      return effectiveStock < 0;
+    });
+
+    if (lowStockItems.length > 0) {
+      Alert.alert(
+        t('common.error'),
+        `以下物品庫存不足：\n${lowStockItems.map((i) => `- ${i.itemName}`).join('\n')}\n\n請減少數量後再試。`,
+        [{ text: '確定' }]
+      );
+      return;
+    }
+
+    setIsSubmitting(true);
+    setShowSuccessModal(false); // 重置 Modal 狀態
+
     try {
+      console.log('[handleConfirm] 開始建立配送...');
       const now = new Date();
       const cargoItems: DeliveryCargoItem[] = selectedItems.map((item) => ({
         itemId: item.itemId,
@@ -296,8 +372,14 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
         totalWeight: item.quantity * item.unitWeight,
       }));
 
-      await addOrder({
-        orderNo: '',
+      // 若司機有綁定車輛，取第一輛
+      const assignedVehicleId = driverVehicles.length > 0 ? driverVehicles[0].id : undefined;
+      console.log('[handleConfirm] 司機車輛:', assignedVehicleId);
+
+      console.log('[handleConfirm] 呼叫 addOrder...');
+      console.log(`[handleConfirm] selectedDriverId: ${selectedDriverId}, selectedDriver: ${selectedDriver?.name}`);
+      
+      const result = await addOrder({
         customerName: customerName || (selectedDriver?.name ?? ''),
         customerPhone: customerPhone || (selectedDriver?.phone ?? ''),
         pickupAddress: pickupAddress.trim(),
@@ -309,30 +391,148 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
         status: 'assigned',
         assignedDriverId: selectedDriverId,
         assignedDriverName: selectedDriver?.name,
+        assignedVehicleId,
         cargoItems,
       });
+      
+      console.log('[handleConfirm] addOrder 完成, result:', result?.orderNo);
 
-      // 扣減庫存
+      // 扣減庫存（失敗不影響配送建立）
+      console.log(`[handleConfirm] 使用倉庫 ID: ${defaultWarehouseId}`);
       for (const item of selectedItems) {
-        // 從第一個倉庫扣減（簡化版）
-        const warehouseId = 'default-warehouse';
-        await useInventoryStore.getState().deductStock(warehouseId, item.itemId, item.quantity);
+        console.log(`[handleConfirm] 嘗試扣減庫存: warehouseId=${defaultWarehouseId}, itemId=${item.itemId}, qty=${item.quantity}`);
+        try {
+          const deductResult = await useInventoryStore.getState().deductStock(defaultWarehouseId, item.itemId, item.quantity);
+          console.log(`[handleConfirm] deductStock 結果: ${deductResult}`);
+        } catch (stockError) {
+          console.warn(`[handleConfirm] 庫存扣減失敗: item=${item.itemName}, qty=${item.quantity}`, stockError);
+        }
       }
 
-      router.back();
-    } catch {
-      Alert.alert(t('common.error'), t('common.error'));
+      console.log('[handleConfirm] 所有操作完成，即將顯示成功提示');
+      console.log('[handleConfirm] Platform.OS:', Platform.OS);
+      
+      // 顯示成功 Alert 並跳轉
+      setIsSubmitting(false);
+      
+      // 使用 setTimeout 確保 UI 更新後再顯示 Alert
+      setTimeout(() => {
+        console.log('[handleConfirm] 準備顯示 Alert');
+        
+        const successMessage = `配送訂單已成功建立！\n\n從：${pickupAddress}\n到：${dropoffAddress}`;
+        
+        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+          console.log('[handleConfirm] 使用 web confirm');
+          const confirmed = window.confirm(successMessage + '\n\n點擊確定前往配送頁面。');
+          console.log('[handleConfirm] confirmed:', confirmed);
+          if (confirmed) {
+            console.log('[handleConfirm] 跳轉到配送頁面');
+            router.replace('/delivery');
+          }
+        } else {
+          console.log('[handleConfirm] 使用 Alert.alert');
+          Alert.alert(
+            '成功',
+            successMessage,
+            [
+              {
+                text: 'OK',
+                onPress: () => {
+                  console.log('[handleConfirm] OK 按下，準備跳轉');
+                  router.replace('/delivery');
+                },
+              },
+            ]
+          );
+        }
+      }, 200);
+      
+    } catch (error) {
+      console.error('[handleConfirm] Error:', error);
+      setIsSubmitting(false);
+      setTimeout(() => {
+        console.log('[handleConfirm] 準備顯示錯誤 Alert');
+        const errorMessage = `建立配送訂單失敗：${error instanceof Error ? error.message : '未知錯誤'}`;
+        
+        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+          window.alert(errorMessage);
+        } else {
+          Alert.alert('錯誤', errorMessage);
+        }
+      }, 200);
     }
   };
 
   const handleDriverSelect = (driverId: string) => {
     setSelectedDriverId(driverId);
-    // 司機選擇後會自動觸發 useEffect 選擇其車輛
   };
 
-  const handleVehicleSelect = (vehicleId: string) => {
-    setSelectedVehicleId(vehicleId);
+  // 選擇客戶
+  const handleSelectCustomer = (customer: Customer) => {
+    setSelectedCustomer(customer);
+    setCustomerName(customer.name);
+    setCustomerPhone(customer.phone ?? '');
+    // 如果客戶有預設地址且送貨地址為空，自動填入
+    if (customer.address && !dropoffAddress.trim()) {
+      setDropoffAddress(customer.address);
+    }
+    setShowCustomerPicker(false);
+    setCustomerSearchQuery('');
   };
+
+  // 清除選擇的客戶
+  const handleClearCustomer = () => {
+    setSelectedCustomer(null);
+    setCustomerName('');
+    setCustomerPhone('');
+  };
+
+  // 新增客戶
+  const handleAddNewCustomer = async () => {
+    if (!newCustomerName.trim()) {
+      Alert.alert('錯誤', '請輸入客戶名稱');
+      return;
+    }
+
+    try {
+      const newCustomer = await addCustomer({
+        name: newCustomerName.trim(),
+        phone: newCustomerPhone.trim() || undefined,
+        address: newCustomerAddress.trim() || undefined,
+      });
+
+      handleSelectCustomer(newCustomer);
+      setShowAddCustomer(false);
+      setNewCustomerName('');
+      setNewCustomerPhone('');
+      setNewCustomerAddress('');
+    } catch (error) {
+      Alert.alert('錯誤', '新增客戶失敗，請重試');
+    }
+  };
+
+  // 篩選客戶
+  const filteredCustomers = useMemo(() => {
+    if (!customerSearchQuery.trim()) return customers;
+    const query = customerSearchQuery.toLowerCase();
+    return customers.filter(
+      (c) =>
+        c.name.toLowerCase().includes(query) ||
+        c.phone?.toLowerCase().includes(query)
+    );
+  }, [customers, customerSearchQuery]);
+
+  // CTA 按鈕處理
+  const handleCtaPress = useCallback(() => {
+    console.log('[handleCtaPress] 觸發, step:', step);
+    if (step === 'address') {
+      console.log('[handleCtaPress] 調用 handleNext');
+      handleNext();
+    } else {
+      console.log('[handleCtaPress] 調用 handleConfirm');
+      handleConfirm();
+    }
+  }, [step, handleNext, handleConfirm]);
 
   // 渲染步驟 1 - 地址和物品選擇
   const renderAddressStep = () => (
@@ -466,14 +666,18 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
           </Card>
         ) : (
           <>
-            {selectedItems.map((item) => (
-              <Card key={item.itemId} style={styles.itemCard}>
-                <View style={styles.itemInfo}>
-                  <Text style={styles.itemName}>{item.itemName}</Text>
-                  <Text style={styles.itemMeta}>
-                    單件重量: {item.unitWeight} kg | 庫存: {item.availableStock}
-                  </Text>
-                </View>
+            {selectedItems.map((item) => {
+              const effectiveStock = getEffectiveStock(item.itemId, selectedItems, warehouseStocks);
+              const isLowStock = effectiveStock <= 0;
+              return (
+                <Card key={item.itemId} style={[styles.itemCard, isLowStock && styles.itemCardLowStock]}>
+                  <View style={styles.itemInfo}>
+                    <Text style={styles.itemName}>{item.itemName}</Text>
+                    <Text style={[styles.itemMeta, isLowStock && styles.itemMetaLowStock]}>
+                      單件重量: {item.unitWeight} kg | 庫存: {effectiveStock}
+                      {isLowStock && ' ⚠️ 庫存不足'}
+                    </Text>
+                  </View>
                 <View style={styles.itemQuantity}>
                   <Pressable
                     style={styles.quantityBtn}
@@ -492,8 +696,9 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
                 <Pressable style={styles.removeBtn} onPress={() => handleRemoveItem(item.itemId)}>
                   <X size={16} color={colors.danger} />
                 </Pressable>
-              </Card>
-            ))}
+                </Card>
+              );
+            })}
 
             {/* 總重量 */}
             <Card style={styles.totalCard}>
@@ -528,12 +733,14 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
             <Text style={styles.summaryText}>總重量: {totalWeight.toFixed(2)} kg</Text>
           </View>
           <View style={styles.summaryRow}>
-            <MapPin size={16} color={colors.accent} />
-            <Text style={styles.summaryText} numberOfLines={1}>{pickupAddress}</Text>
+            <View style={[styles.pinDot, styles.pinDotPickup]} />
+            <Text style={styles.summaryLabel}>取貨點</Text>
+            <Text style={styles.summaryText} numberOfLines={2}>{pickupAddress}</Text>
           </View>
           <View style={styles.summaryRow}>
-            <MapPin size={16} color={colors.danger} />
-            <Text style={styles.summaryText} numberOfLines={1}>{dropoffAddress}</Text>
+            <View style={[styles.pinDot, styles.pinDotDropoff]} />
+            <Text style={styles.summaryLabel}>送貨點</Text>
+            <Text style={styles.summaryText} numberOfLines={2}>{dropoffAddress}</Text>
           </View>
         </Card>
       </View>
@@ -571,7 +778,7 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
                       {driver.name}
                     </Text>
                     <Text style={[styles.driverDetail, isSelected && styles.driverDetailSelected]}>
-                      {driver.phone} {driverCars.length > 0 ? `| ${driverCars.length} 輛車` : ''}
+                      {driver.phone}
                     </Text>
                   </View>
                 </View>
@@ -583,58 +790,6 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
           })
         )}
       </View>
-
-      {/* 車輛選擇（根據司機過濾） */}
-      {selectedDriverId && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>選擇車輛</Text>
-          {driverVehicles.length > 0 ? (
-            <>
-              <Text style={styles.sectionSubtitle}>
-                已過濾顯示 {selectedDriver?.name} 的車輛
-              </Text>
-              {driverVehicles.map((vehicle) => {
-                const isSelected = selectedVehicleId === vehicle.id;
-                return (
-                  <Pressable
-                    key={vehicle.id}
-                    style={[styles.vehicleCard, isSelected && styles.vehicleCardSelected]}
-                    onPress={() => handleVehicleSelect(vehicle.id)}
-                  >
-                    <View style={styles.vehicleCardLeft}>
-                      <View style={styles.vehicleIconContainer}>
-                        <Truck size={24} color={isSelected ? '#fff' : colors.primary} />
-                      </View>
-                      <View style={styles.vehicleInfo}>
-                        <Text style={[styles.vehicleName, isSelected && styles.vehicleNameSelected]}>
-                          {vehicle.make} {vehicle.model}
-                        </Text>
-                        <Text style={[styles.vehicleDetail, isSelected && styles.vehicleDetailSelected]}>
-                          {vehicle.plateNumber} | {vehicle.color}
-                        </Text>
-                        {vehicle.mileage && (
-                          <Text style={styles.vehicleMileage}>
-                            里程: {vehicle.mileage.toLocaleString()} km
-                          </Text>
-                        )}
-                      </View>
-                    </View>
-                    <View style={[styles.checkCircle, isSelected && styles.checkCircleSelected]}>
-                      {isSelected && <Check size={14} color="#fff" />}
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </>
-          ) : (
-            <Card style={styles.emptyCard}>
-              <Truck size={32} color={colors.textTertiary} />
-              <Text style={styles.emptyText}>此司機尚未綁定車輛</Text>
-              <Text style={styles.emptyHint}>請在車輛管理中將車輛分配給此司機</Text>
-            </Card>
-          )}
-        </View>
-      )}
     </Animated.View>
   );
 
@@ -686,11 +841,11 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
       {/* Bottom CTA */}
       <View style={styles.bottomCta}>
         <Button
-          title={step === 'address' ? '下一步' : t('delivery.createDelivery')}
+          title={isSubmitting ? '處理中...' : (step === 'address' ? '下一步' : t('delivery.createDelivery'))}
           variant="primary"
           size="lg"
-          onPress={step === 'address' ? handleNext : handleConfirm}
-          disabled={step === 'address' ? !canProceedToStep2 : !selectedDriverId || !selectedVehicleId}
+          onPress={handleCtaPress}
+          disabled={isSubmitting || (step === 'address' ? !canProceedToStep2 : false)}
         />
       </View>
 
@@ -719,23 +874,23 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
             <>
               <ScrollView style={styles.modalScroll}>
                 {items.map((item) => {
-                  const stock = getItemStock(item.id);
+                  const effectiveStock = getEffectiveStock(item.id, selectedItems, warehouseStocks);
                   const isAdded = selectedItems.some((i) => i.itemId === item.id);
                   return (
                     <Pressable
                       key={item.id}
                       style={[styles.pickItemCard, isAdded && styles.pickItemCardAdded]}
                       onPress={() => {
-                        if (!isAdded && stock > 0) {
+                        if (!isAdded && effectiveStock > 0) {
                           handleAddItem(item);
                         }
                       }}
-                      disabled={isAdded || stock === 0}
+                      disabled={isAdded || effectiveStock === 0}
                     >
                       <View style={styles.pickItemInfo}>
                         <Text style={styles.pickItemName}>{item.name}</Text>
                         <Text style={styles.pickItemMeta}>
-                          單件 {item.unitWeight} kg | 庫存 {stock}
+                          單件 {item.unitWeight} kg | 庫存 {effectiveStock}
                         </Text>
                       </View>
                       {isAdded ? (
@@ -743,7 +898,7 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
                           <Check size={14} color={colors.primary} />
                           <Text style={styles.addedText}>已添加</Text>
                         </View>
-                      ) : stock === 0 ? (
+                      ) : effectiveStock === 0 ? (
                         <View style={styles.outOfStockBadge}>
                           <Text style={styles.outOfStockText}>缺貨</Text>
                         </View>
@@ -769,6 +924,38 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
             </>
           )}
         </View>
+      </Modal>
+
+      {/* 成功提示 Modal */}
+      <Modal
+        visible={showSuccessModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowSuccessModal(false)}
+      >
+        <Pressable style={styles.successModalOverlay} onPress={() => setShowSuccessModal(false)}>
+          <Pressable style={styles.successModalContent} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.successIconContainer}>
+              <Check size={32} color={colors.success || '#00A87A'} />
+            </View>
+            <Text style={styles.successTitle}>{t('common.success')}</Text>
+            <Text style={styles.successMessage}>
+              {locale === 'zh-TW'
+                ? `配送訂單已成功建立！\n\n從：${pickupAddress}\n到：${dropoffAddress}`
+                : `Delivery order created successfully!\n\nFrom: ${pickupAddress}\nTo: ${dropoffAddress}`}
+            </Text>
+            <Pressable
+              style={styles.successButton}
+              onPress={() => {
+                setShowSuccessModal(false);
+                // 使用 replace 回到配送頁面並刷新
+                router.replace('/delivery' as any);
+              }}
+            >
+              <Text style={styles.successButtonText}>OK</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
       </Modal>
     </KeyboardAvoidingView>
   );
@@ -1023,6 +1210,15 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 2,
   },
+  itemCardLowStock: {
+    borderWidth: 2,
+    borderColor: colors.danger,
+    backgroundColor: '#FFF5F5',
+  },
+  itemMetaLowStock: {
+    color: colors.danger,
+    fontWeight: '700',
+  },
   itemQuantity: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1086,6 +1282,12 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     color: colors.textSecondary,
     flex: 1,
+  },
+  summaryLabel: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: '700',
+    color: colors.textTertiary,
+    minWidth: 42,
   },
   driverCard: {
     flexDirection: 'row',
@@ -1250,7 +1452,58 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.md,
+    padding: spacing.xl,
+  },
+  successModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successModalContent: {
+    backgroundColor: colors.card,
+    borderRadius: borderRadius.xl,
+    padding: spacing.xl,
+    marginHorizontal: spacing.xl,
+    alignItems: 'center',
+    minWidth: 280,
+    maxWidth: 340,
+  },
+  successIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.successGlow || 'rgba(0, 168, 122, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.lg,
+  },
+  successTitle: {
+    fontSize: typography.fontSize.xl,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+    textAlign: 'center',
+  },
+  successMessage: {
+    fontSize: typography.fontSize.base,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: spacing.lg,
+  },
+  successButton: {
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+    borderRadius: borderRadius.md,
+    minWidth: 120,
+    alignItems: 'center',
+  },
+  successButtonText: {
+    color: '#FFFFFF',
+    fontSize: typography.fontSize.base,
+    fontWeight: '600',
   },
   modalScroll: {
     flex: 1,

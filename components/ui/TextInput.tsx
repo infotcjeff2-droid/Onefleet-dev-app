@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { TextInput as RNTextInput, View, Text, StyleSheet, Pressable, ViewStyle, TextStyle } from 'react-native';
+import { TextInput as RNTextInput, View, Text, StyleSheet, Pressable, ViewStyle, TextStyle, Platform } from 'react-native';
 import { Eye, EyeOff } from 'lucide-react-native';
 import { colors, borderRadius, spacing, typography } from '@/constants/theme';
 
@@ -80,6 +80,8 @@ export function TextInput({
             icon ? styles.inputWithIcon : null,
             multiline ? { height: numberOfLines * 24 + spacing.lg * 2, textAlignVertical: 'top' } : null,
             inputStyle,
+            // Web: remove native outline
+            Platform.OS === 'web' && { outline: 'none' },
           ]}
           placeholder={placeholder}
           placeholderTextColor={colors.textTertiary}
@@ -98,6 +100,7 @@ export function TextInput({
           multiline={multiline}
           numberOfLines={numberOfLines}
           maxLength={maxLength}
+          selectionColor={colors.primary}
         />
         {secureTextEntry && (
           <Pressable

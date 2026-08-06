@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { View, Text, Image, StyleSheet, Dimensions, Pressable } from 'react-native';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import { useLocalSearchParams, useRouter, Stack, Redirect } from 'expo-router';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, interpolate, Extrapolation } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft } from 'lucide-react-native';
@@ -11,12 +11,19 @@ import { BentoGrid } from '@/components/vehicle/BentoGrid';
 import { SkeletonCard } from '@/components/ui/SkeletonCard';
 import { colors, spacing, typography, borderRadius, layout } from '@/constants/theme';
 import { useTranslation } from '@/i18n';
+import { useAuthStore } from '@/store/authStore';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HEADER_MAX_HEIGHT = 280;
 const HEADER_MIN_HEIGHT = 80;
 
 export default function VehicleDetailScreen() {
+  // 司機不能訪問車輛詳情頁面，直接重定向到首頁
+  const { role } = useAuthStore();
+  if (role === 'driver') {
+    return <Redirect href="/(tabs)" />;
+  }
+
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -27,27 +34,6 @@ export default function VehicleDetailScreen() {
 
   const vehicle = getVehicleById(id ?? '');
   const scrollY = useSharedValue(0);
-
-  useEffect(() => {
-    loadDrivers();
-    loadUsers();
-  }, [loadDrivers, loadUsers]);
-
-  if (isLoading || !vehicle) {
-    return (
-      <View style={styles.loadingContainer}>
-        <SkeletonCard style={{ margin: spacing.lg }} />
-      </View>
-    );
-  }
-
-  if (!vehicle) {
-    return (
-      <View style={styles.notFoundContainer}>
-        <Text style={styles.notFoundText}>{t('vehicles.notFound')}</Text>
-      </View>
-    );
-  }
 
   const headerAnimatedStyle = useAnimatedStyle(() => {
     const height = interpolate(
@@ -78,6 +64,19 @@ export default function VehicleDetailScreen() {
     );
     return { opacity };
   });
+
+  useEffect(() => {
+    loadDrivers();
+    loadUsers();
+  }, [loadDrivers, loadUsers]);
+
+  if (isLoading || !vehicle) {
+    return (
+      <View style={styles.loadingContainer}>
+        <SkeletonCard style={{ margin: spacing.lg }} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>

@@ -44,7 +44,16 @@ import { router } from 'expo-router';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
-function StatusBadge({ status, t }: { status: DeliveryStatus; t: (key: string) => string }) {
+function StatusBadge({ status, isCompleted, t }: { status: DeliveryStatus; isCompleted?: boolean; t: (key: string) => string }) {
+  // 已完成的配送單顯示特殊狀態
+  if (isCompleted) {
+    return (
+      <View style={[styles.badge, { backgroundColor: `${colors.success}20` }]}>
+        <Text style={[styles.badgeText, { color: colors.success }]}>{t('delivery.orderCompleted')}</Text>
+      </View>
+    );
+  }
+
   const statusConfig: Record<DeliveryStatus, { labelKey: string; color: string; bg: string }> = {
     pending: { labelKey: 'delivery.pending', color: colors.warning, bg: `${colors.warning}20` },
     assigned: { labelKey: 'delivery.assigned', color: colors.secondary, bg: `${colors.secondary}20` },
@@ -55,7 +64,7 @@ function StatusBadge({ status, t }: { status: DeliveryStatus; t: (key: string) =
   };
   const cfg = statusConfig[status];
   return (
-    <View style={[styles.badge, { backgroundColor: cfg.bg }]}> 
+    <View style={[styles.badge, { backgroundColor: cfg.bg }]}>
       <Text style={[styles.badgeText, { color: cfg.color }]}>{t(cfg.labelKey)}</Text>
     </View>
   );
@@ -82,6 +91,9 @@ function DeliveryCard({
 }) {
   const isExpired = item.status === 'expired';
 
+  // Get first pickup photo URI
+  const firstPickupPhoto = item.pickupPhotos && item.pickupPhotos.length > 0 ? item.pickupPhotos[0] : null;
+
   return (
     <Animated.View entering={FadeInDown.springify()}>
       <Card style={styles.deliveryCard} onPress={onPress}>
@@ -91,32 +103,56 @@ function DeliveryCard({
             <Text style={styles.orderNo}>{item.orderNo}</Text>
           </View>
           <View style={styles.cardHeaderRight}>
-            <StatusBadge status={item.status} t={t} />
+            <StatusBadge status={item.status} isCompleted={item.isCompleted} t={t} />
             <ChevronRight size={16} color={colors.textTertiary} />
           </View>
         </View>
 
         <View style={styles.cardBody}>
-          <View style={styles.infoRow}>
-            <User size={14} color={colors.textSecondary} />
-            <Text style={styles.infoText}>{item.customerName}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Package size={14} color={colors.textSecondary} />
-            <Text style={styles.infoText} numberOfLines={1}>{item.cargoDescription}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <MapPin size={14} color={colors.danger} />
-            <Text style={styles.infoText} numberOfLines={1}>{item.dropoffAddress}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Clock size={14} color={colors.textSecondary} />
-            <Text style={styles.infoText}>{item.pickupTime}</Text>
-          </View>
-          {item.assignedDriverName && (
+          {/* Left Column - Text Info */}
+          <View style={styles.cardBodyLeft}>
             <View style={styles.infoRow}>
-              <Truck size={14} color={colors.textSecondary} />
-              <Text style={styles.infoText}>{item.assignedDriverName}</Text>
+              <User size={16} color={colors.textSecondary} />
+              <Text style={styles.infoTextLarge}>{item.customerName}</Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Package size={16} color={colors.textSecondary} />
+              <Text style={styles.infoTextLarge} numberOfLines={1}>{item.cargoDescription}</Text>
+            </View>
+            <View style={styles.infoRow}>
+              <MapPin size={16} color={colors.danger} />
+              <Text style={styles.infoTextLarge} numberOfLines={1}>{item.dropoffAddress}</Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Clock size={16} color={colors.textSecondary} />
+              <Text style={styles.infoTextLarge}>
+                {(() => {
+                  const d = new Date(item.pickupTime);
+                  const year = d.getFullYear();
+                  const month = String(d.getMonth() + 1).padStart(2, '0');
+                  const day = String(d.getDate()).padStart(2, '0');
+                  const hours = String(d.getHours()).padStart(2, '0');
+                  const minutes = String(d.getMinutes()).padStart(2, '0');
+                  return `${year}-${month}-${day} ${hours}:${minutes}`;
+                })()}
+              </Text>
+            </View>
+            {item.assignedDriverName && (
+              <View style={styles.infoRow}>
+                <Truck size={16} color={colors.textSecondary} />
+                <Text style={styles.infoTextLarge}>{item.assignedDriverName}</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Right Column - Pickup Photo */}
+          {firstPickupPhoto && (
+            <View style={styles.cardBodyRight}>
+              <Image
+                source={{ uri: firstPickupPhoto.uri }}
+                style={styles.pickupPhotoThumb}
+                resizeMode="cover"
+              />
             </View>
           )}
         </View>
@@ -129,11 +165,11 @@ function DeliveryCard({
         )}
 
         <View style={styles.cardActions}>
-          {isAdmin && item.status === 'pending' && (
+          {isAdmin && !item.assignedDriverId && (
             <Button title={t('delivery.assignDriver')} size="sm" onPress={onAssign} fullWidth />
           )}
           {!isAdmin && item.status === 'assigned' && (
-            <Button title={t('delivery.startTransit')} size="sm" onPress={() => onStartTransit(item)} fullWidth icon={<Truck size={14} color="#fff" />} />
+            <Button title={t('delivery.stepPickedUp')} size="sm" onPress={() => onStartTransit(item)} fullWidth icon={<Package size={14} color="#fff" />} />
           )}
           {!isAdmin && item.status === 'in_transit' && (
             <Button title={t('delivery.markDelivered')} size="sm" onPress={onMarkDelivered} fullWidth variant="secondary" icon={<CheckCircle size={14} color={colors.primary} />} />
@@ -213,13 +249,18 @@ function AssignDriverModal({
 }) {
   const storeDrivers = useDriverStore((state) => state.drivers);
   const managedDrivers = useUserManagementStore((state) => state.users).filter((u) => u.role === 'driver');
-  const validDriverIds = new Set([...storeDrivers.map((d) => d.id), ...managedDrivers.map((u) => u.id)]);
+
+  // 優先使用 managedDrivers（使用 Clerk user ID），避免與 storeDrivers 衝突
   const drivers = [
-    ...storeDrivers,
     ...managedDrivers
       .filter((m) => !storeDrivers.some((d) => d.id === m.id))
-      .map((u) => ({ id: u.id, name: u.name, phone: '', vehiclePlate: '', status: 'available' as const })),
+      .map((u) => ({ id: u.id, name: u.name, phone: u.phone || '', vehiclePlate: '', status: 'available' as const })),
+    ...storeDrivers.map((d) => ({ ...d, vehiclePlate: d.vehiclePlate || '' })),
   ];
+
+  // 所有有效的司機 ID（用於驗證已指派司機的有效性）
+  const validDriverIds = new Set([...storeDrivers.map((d) => d.id), ...managedDrivers.map((u) => u.id)]);
+
   const [selectedDriverId, setSelectedDriverId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -448,7 +489,7 @@ function NewOrderModal({
   onSubmit: (order: Omit<DeliveryOrder, 'id' | 'createdAt'>) => void;
   t: (key: string) => string;
 }) {
-  const drivers = useDriverStore((state) => state.drivers);
+  const storeDrivers = useDriverStore((state) => state.drivers);
   const managedDrivers = useUserManagementStore((state) => state.users).filter((u) => u.role === 'driver');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -459,11 +500,12 @@ function NewOrderModal({
   const [notes, setNotes] = useState('');
   const [selectedDriverId, setSelectedDriverId] = useState<string | null>(null);
 
+  // 優先使用 managedDrivers（使用 Clerk user ID），避免與 storeDrivers 衝突
   const mergedDrivers: Driver[] = [
-    ...drivers,
     ...managedDrivers
-      .filter((managedDriver) => !drivers.some((driver) => driver.id === managedDriver.id))
-      .map((driver) => ({ id: driver.id, name: driver.name, phone: '', vehiclePlate: '', status: 'available' as const })),
+      .filter((m) => !storeDrivers.some((d) => d.id === m.id))
+      .map((driver) => ({ id: driver.id, name: driver.name, phone: driver.phone || '', vehiclePlate: '', status: 'available' as const })),
+    ...storeDrivers.map((d) => ({ ...d, vehiclePlate: d.vehiclePlate || '' })),
   ];
 
   const reset = () => {
@@ -565,10 +607,19 @@ export default function DeliveryScreen() {
   const loadUsers = useUserManagementStore((state) => state.loadUsers);
 
   useEffect(() => {
-    useDeliveryStore.getState().loadDeliveries();
-    loadDrivers();
-    loadUsers();
-  }, [loadDrivers, loadUsers]);
+    // 確保先載入本地數據，再同步遠端數據
+    const init = async () => {
+      console.log('[DeliveryScreen] init - loading deliveries...');
+      await useDeliveryStore.getState().loadDeliveries();
+      console.log('[DeliveryScreen] init - after loadDeliveries, deliveries:', useDeliveryStore.getState().deliveries.length);
+      console.log('[DeliveryScreen] init - syncing deliveries...');
+      await useDeliveryStore.getState().syncDeliveries();
+      console.log('[DeliveryScreen] init - after syncDeliveries, deliveries:', useDeliveryStore.getState().deliveries.length);
+      loadDrivers();
+      loadUsers();
+    };
+    init();
+  }, []);
 
   const isAdmin = role === 'admin' || role === 'company';
   const isDriver = role === 'driver';
@@ -581,17 +632,96 @@ export default function DeliveryScreen() {
   const [newOrderModalVisible, setNewOrderModalVisible] = useState(false);
 
   const normalizedDeliveries = deliveries.map((delivery) => ({ ...delivery, status: getEffectiveDeliveryStatus(delivery) }));
+  console.log('[DeliveryScreen] === DEBUG INFO ===');
+  console.log('[DeliveryScreen] isDriver:', isDriver, '| user.id:', user?.id, '| user.name:', user?.name);
+  console.log('[DeliveryScreen] All deliveries:', normalizedDeliveries.map(d => ({ id: d.id, assignedDriverId: d.assignedDriverId, status: d.status })));
   const displayDeliveries = isDriver && user
-    ? normalizedDeliveries.filter((delivery) => delivery.assignedDriverId === user.id)
-    : normalizedDeliveries;
+    ? normalizedDeliveries
+        .filter((delivery) => {
+          const match = delivery.assignedDriverId === user.id;
+          console.log('[DeliveryScreen] Filtering: delivery', delivery.id, 'assignedDriverId:', delivery.assignedDriverId, 'user.id:', user.id, 'match:', match);
+          return match;
+        })
+        .sort((a, b) => {
+          // 由新至舊排序（最新建立的在前）
+          const dateA = new Date(a.createdAt).getTime();
+          const dateB = new Date(b.createdAt).getTime();
+          return dateB - dateA;
+        })
+    : normalizedDeliveries.sort((a, b) => {
+        // 由新至舊排序（最新建立的在前）
+        const dateA = new Date(a.createdAt).getTime();
+        const dateB = new Date(b.createdAt).getTime();
+        return dateB - dateA;
+      });
+  console.log('[DeliveryScreen] displayDeliveries count:', displayDeliveries.length);
 
   const activeStatuses: DeliveryStatus[] = ['pending', 'assigned', 'in_transit'];
-  const todayDeliveries = displayDeliveries.filter((delivery) => delivery.pickupTime.slice(0, 10) === today && activeStatuses.includes(delivery.status));
-  const pastDeliveries = displayDeliveries.filter((delivery) => delivery.pickupTime.slice(0, 10) !== today || !activeStatuses.includes(delivery.status));
 
-  const tabs = [t('delivery.today'), t('delivery.past')];
-  const counts = [todayDeliveries.length, pastDeliveries.length];
-  const currentList = activeTab === 0 ? todayDeliveries : pastDeliveries;
+  // 今日：只顯示今天新增且狀態為 pending/assigned/in_transit 的單
+  const todayDeliveries = displayDeliveries.filter((delivery) =>
+    delivery.pickupTime.slice(0, 10) === today && activeStatuses.includes(delivery.status)
+  );
+
+  // 已簽收：顯示所有已簽收的單
+  const signedDeliveries = displayDeliveries.filter((delivery) => delivery.status === 'signed');
+
+  // 過往：顯示所有未簽收的單（包括 pending, assigned, in_transit, delivered, expired）
+  const pastDeliveries = displayDeliveries.filter((delivery) => delivery.status !== 'signed');
+
+  // 已簽收的單按月份分組
+  const getMonthKey = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+  };
+
+  // 取得當月、前一個月、前兩個月的月份鍵（按序號）
+  const getCurrentAndPrevMonths = () => {
+    const now = new Date();
+    const months: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    }
+    return months;
+  };
+
+  const availableMonthKeys = getCurrentAndPrevMonths();
+
+  // 動態生成月份名稱
+  const getMonthName = (monthKey: string) => {
+    const [year, month] = monthKey.split('-');
+    return `${year}年${parseInt(month)}月`;
+  };
+
+  const signedByMonth = signedDeliveries.reduce((acc, delivery) => {
+    const key = getMonthKey(delivery.signedAt || delivery.createdAt);
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(delivery);
+    return acc;
+  }, {} as Record<string, DeliveryOrder[]>);
+
+  // 只顯示有資料的月份（但在可選月份範圍內）
+  const availableMonths = availableMonthKeys.filter(key => signedByMonth[key] && signedByMonth[key].length > 0);
+
+  // 處理 Tab 切換和月份選擇
+  const [signedSelectedMonth, setSignedSelectedMonth] = useState<string>(availableMonths[0] || '');
+  const [monthSelectorVisible, setMonthSelectorVisible] = useState(false);
+
+  const tabs = [t('delivery.today'), t('delivery.signed'), t('delivery.past')];
+  const counts = [todayDeliveries.length, signedDeliveries.length, pastDeliveries.length];
+
+  // 根據 Tab 和月份過濾顯示的列表
+  const getCurrentList = () => {
+    if (activeTab === 0) return todayDeliveries;
+    if (activeTab === 1) {
+      // 已簽收：默認顯示本月，選擇月份後顯示該月
+      return signedSelectedMonth ? signedByMonth[signedSelectedMonth] || [] : [];
+    }
+    return pastDeliveries;
+  };
+
+  const currentList = getCurrentList();
 
   const handleAssign = (deliveryId: string) => {
     const delivery = normalizedDeliveries.find((item) => item.id === deliveryId);
@@ -611,8 +741,8 @@ export default function DeliveryScreen() {
   };
 
   const handleStartTransit = (item: DeliveryOrder) => {
-    updateStatus(item.id, 'in_transit');
-    router.replace(`/delivery/${item.id}`);
+    // 司機點擊「已取貨」，直接跳到 detail 頁面的取貨 tab
+    router.replace(`/delivery/${item.id}?action=pickup`);
   };
 
   const handleMarkDelivered = (deliveryId: string) => {
@@ -682,14 +812,34 @@ export default function DeliveryScreen() {
           ))}
         </View>
 
-        <TabBar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} counts={counts} />
+        <TabBar tabs={tabs} activeTab={activeTab} onTabChange={(i) => {
+          setActiveTab(i);
+          if (i === 1) {
+            // 切換到已簽收時，默認顯示本月
+            setSignedSelectedMonth(availableMonths[0] || '');
+          }
+        }} counts={counts} />
+
+        {/* 已簽收 Tab 的月份切換按鈕 */}
+        {activeTab === 1 && availableMonths.length > 1 && (
+          <Pressable style={styles.monthSwitchBtn} onPress={() => setMonthSelectorVisible(true)}>
+            <Text style={styles.monthSwitchBtnText}>
+              {getMonthName(signedSelectedMonth)} ▾
+            </Text>
+          </Pressable>
+        )}
 
         <View style={styles.section}>
-          {currentList.length === 0 ? (
+          {activeTab === 1 && availableMonths.length === 0 ? (
+            <Card style={styles.emptyCard}>
+              <CheckCircle size={32} color={colors.textTertiary} />
+              <Text style={styles.emptyText}>{t('delivery.noSignedOrders')}</Text>
+            </Card>
+          ) : currentList.length === 0 ? (
             <Card style={styles.emptyCard}>
               <Package size={32} color={colors.textTertiary} />
               <Text style={styles.emptyText}>
-                {activeTab === 0 ? t('delivery.noTodaysOrders') : t('delivery.noPastOrders')}
+                {activeTab === 0 ? t('delivery.noTodaysOrders') : activeTab === 1 ? t('delivery.noSignedOrders') : t('delivery.noPastOrders')}
               </Text>
             </Card>
           ) : (
@@ -709,6 +859,39 @@ export default function DeliveryScreen() {
           )}
         </View>
       </ScrollView>
+
+      {/* 月份選擇 Modal */}
+      <Modal visible={monthSelectorVisible} transparent animationType="fade">
+        <Pressable style={styles.monthModalOverlay} onPress={() => setMonthSelectorVisible(false)}>
+          <Animated.View entering={FadeInUp.springify()} style={styles.monthModalContent}>
+            <View style={styles.monthModalHeader}>
+              <Text style={styles.monthModalTitle}>{t('delivery.signedMonthSelect') || '選擇月份'}</Text>
+              <Pressable onPress={() => setMonthSelectorVisible(false)} hitSlop={12}>
+                <X size={20} color={colors.textSecondary} />
+              </Pressable>
+            </View>
+            <View style={styles.monthModalGrid}>
+              {availableMonths.map((monthKey) => (
+                <Pressable
+                  key={monthKey}
+                  style={[styles.monthModalButton, signedSelectedMonth === monthKey && styles.monthModalButtonActive]}
+                  onPress={() => {
+                    setSignedSelectedMonth(monthKey);
+                    setMonthSelectorVisible(false);
+                  }}
+                >
+                  <Text style={[styles.monthModalButtonText, signedSelectedMonth === monthKey && styles.monthModalButtonTextActive]}>
+                    {getMonthName(monthKey)}
+                  </Text>
+                  <Text style={[styles.monthModalCount, signedSelectedMonth === monthKey && styles.monthModalCountActive]}>
+                    {signedByMonth[monthKey].length} {t('delivery.signedOrders') || '單'}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </Animated.View>
+        </Pressable>
+      </Modal>
 
       <AssignDriverModal
         visible={assignModalVisible}
@@ -734,9 +917,11 @@ export default function DeliveryScreen() {
         t={t}
       />
 
-      <Pressable style={styles.fab} onPress={() => router.push('/delivery/add')}>
-        <Plus size={28} color="#fff" />
-      </Pressable>
+      {isAdmin && (
+        <Pressable style={styles.fab} onPress={() => router.push('/delivery/add')}>
+          <Plus size={28} color="#fff" />
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -795,6 +980,150 @@ const styles = StyleSheet.create({
   tabCountBadgeActive: { backgroundColor: colors.primary },
   tabCountText: { fontSize: 11, fontWeight: '700', color: colors.textSecondary },
   tabCountTextActive: { color: '#fff' },
+
+  // 月份選擇器樣式
+  monthSelectorContainer: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    backgroundColor: colors.card,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+  },
+  monthSelectorTitle: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+    textAlign: 'center',
+  },
+  monthSelectorGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    justifyContent: 'center',
+  },
+  monthButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: spacing.xs,
+    minWidth: 100,
+  },
+  monthButtonActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  monthButtonText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  monthButtonTextActive: {
+    color: '#fff',
+  },
+  monthCount: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textTertiary,
+  },
+  monthCountActive: {
+    color: 'rgba(255,255,255,0.8)',
+  },
+  backToMonthSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+  },
+  backToMonthSelectorText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+
+  // 月份切換按鈕（已簽收 Tab）
+  monthSwitchBtn: {
+    alignSelf: 'center',
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.card,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  monthSwitchBtnText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+
+  // 月份選擇 Modal 樣式
+  monthModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  monthModalContent: {
+    backgroundColor: colors.card,
+    borderRadius: borderRadius.xl,
+    padding: spacing.lg,
+    width: SCREEN_W * 0.85,
+    maxWidth: 400,
+  },
+  monthModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  monthModalTitle: {
+    fontSize: typography.fontSize.lg,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  monthModalGrid: {
+    gap: spacing.sm,
+  },
+  monthModalButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+  },
+  monthModalButtonActive: {
+    backgroundColor: colors.primaryGlow,
+    borderColor: colors.primary,
+  },
+  monthModalButtonText: {
+    fontSize: typography.fontSize.base,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  monthModalButtonTextActive: {
+    color: colors.primary,
+  },
+  monthModalCount: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textTertiary,
+  },
+  monthModalCountActive: {
+    color: colors.primary,
+  },
+
   section: { paddingHorizontal: spacing.lg, marginTop: spacing.xl, paddingBottom: 100 },
   deliveryCard: { marginBottom: spacing.md, padding: 0, overflow: 'hidden' },
   cardHeader: {
@@ -812,9 +1141,26 @@ const styles = StyleSheet.create({
   cardHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   badge: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: borderRadius.full },
   badgeText: { fontSize: 12, fontWeight: '700' },
-  cardBody: { padding: spacing.lg, gap: spacing.sm },
+  cardBody: {
+    flexDirection: 'row',
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  cardBodyLeft: { flex: 1, gap: spacing.sm },
+  cardBodyRight: {
+    width: 90,
+    height: 90,
+    borderRadius: borderRadius.md,
+    overflow: 'hidden',
+    backgroundColor: colors.surface,
+  },
+  pickupPhotoThumb: {
+    width: '100%',
+    height: '100%',
+  },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   infoText: { flex: 1, fontSize: typography.fontSize.sm, color: colors.textSecondary },
+  infoTextLarge: { flex: 1, fontSize: typography.fontSize.base, color: colors.textSecondary, fontWeight: '500' },
   expiredNotice: {
     flexDirection: 'row',
     alignItems: 'center',

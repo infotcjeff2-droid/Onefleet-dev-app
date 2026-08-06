@@ -1,13 +1,13 @@
 /**
  * supabaseSync.ts — Supabase 使用者同步工具
  *
- * 將 managed users 寫入 fleet_sync.users 欄位。
+ * 將 managed users 寫入 user_profile 表（取代舊的 fleet_sync.users）。
  * 需要 EXPO_PUBLIC_SUPABASE_URL 和 EXPO_PUBLIC_SUPABASE_ANON_KEY 環境變數。
  */
 
-import { ManagedUser } from '@/types';
+import { User } from '@/types';
 
-const TABLE_NAME = 'fleet_sync';
+const USER_PROFILE_TABLE = 'user_profile';
 
 function getSupabaseConfig() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -27,7 +27,8 @@ async function supabaseRequest<T>(
   method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
   path: string,
   body?: unknown,
-  params?: Record<string, string>
+  params?: Record<string, string>,
+  preferHeader?: string
 ): Promise<T> {
   const { url, anonKey } = getSupabaseConfig();
 
@@ -39,13 +40,19 @@ async function supabaseRequest<T>(
     }
   }
 
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${anonKey}`,
+    'Content-Type': 'application/json',
+    apikey: anonKey,
+  };
+
+  if (preferHeader) {
+    headers['Prefer'] = preferHeader;
+  }
+
   const options: RequestInit = {
     method,
-    headers: {
-      Authorization: `Bearer ${anonKey}`,
-      'Content-Type': 'application/json',
-      apikey: anonKey,
-    },
+    headers,
   };
 
   if (body !== undefined) {
@@ -53,6 +60,14 @@ async function supabaseRequest<T>(
   }
 
   const response = await fetch(`${url}${path}${queryString}`, options);
+
+  // 處理無內容的回應（如 204 No Content）
+  const contentLength = response.headers.get('content-length');
+  const contentType = response.headers.get('content-type');
+  if (response.status === 204 || contentLength === '0' || !contentType?.includes('application/json')) {
+    return {} as T;
+  }
+
   const data = await response.json() as T;
 
   if (!response.ok) {
@@ -68,59 +83,97 @@ export interface SupabaseSyncResult {
   syncedCount: number;
 }
 
-/**
- * 將 managed users 陣列寫入 Supabase fleet_sync 表的 users 欄位。
- *
- * 流程：
- * 1. 嘗試 upsert 一筆記錄（user_id = 'managed_users_pool'），內容為所有 users JSON
- * 2. 這筆記錄作為所有管理員共享的使用者資料池
- *
- * 注意：fleet_sync 表的 RLS 預設以 user_id 隔離資料，
- * 如要支援多管理員共享，需要在 Supabase SQL Editor 執行：
- *   CREATE POLICY "admins can read managed_users_pool" ON public.fleet_sync
- *     FOR SELECT USING (user_id = 'managed_users_pool');
- *   CREATE POLICY "admins can update managed_users_pool" ON public.fleet_sync
- *     FOR UPDATE USING (user_id = 'managed_users_pool');
- */
-const MANAGED_USERS_POOL_ID = 'managed_users_pool';
+interface DbUserProfile {
+  id: string;
+  email: string;
+  name: string;
+  name_zh: string | null;
+  name_en: string | null;
+  phone: string | null;
+  avatar: string | null;
+  address: string | null;
+  role: string;
+  company_id: string | null;
+  created_at: string;
+  updated_at: string;
+  is_deleted: boolean;
+}
 
+/**
+ * 將 managed users 陣列寫入 user_profile 表。
+ * 使用 upsert 語法，以 id 為唯一鍵。
+ */
 export async function syncUsersToSupabase(
-  users: ManagedUser[]
+  users: User[]
 ): Promise<SupabaseSyncResult> {
-  const payload = {
-    user_id: MANAGED_USERS_POOL_ID,
-    users: users.map((u) => ({
-      id: u.id,
-      name: u.name,
-      nameZh: u.nameZh,
-      nameEn: u.nameEn,
-      email: u.email,
-      role: u.role,
-      phone: u.phone,
-      avatar: u.avatar,
-      address: u.address,
-      companyId: u.companyId,
-      // 不回寫密碼到 Supabase（密碼只存在 Clerk）
-    })),
-    updated_at: new Date().toISOString(),
-  };
+  if (users.length === 0) {
+    return {
+      success: true,
+      message: '沒有使用者需要同步',
+      syncedCount: 0,
+    };
+  }
 
   try {
-    // Upsert to fleet_sync with conflict on user_id
-    await supabaseRequest(
-      'POST',
-      `/rest/v1/${TABLE_NAME}`,
-      payload,
-      { onConflict: 'user_id' }
-    );
+    const dbProfiles: DbUserProfile[] = users.map((u) => ({
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      name_zh: u.nameZh ?? null,
+      name_en: u.nameEn ?? null,
+      phone: u.phone ?? null,
+      avatar: u.avatar ?? null,
+      address: u.address ?? null,
+      role: u.role,
+      company_id: u.companyId ?? null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      is_deleted: false,
+    }));
+
+    // 使用 upsert 語法（POST + Prefer: return=minimal + onConflict）
+    // 先個別處理每個用戶，使用 upsert
+    let syncedCount = 0;
+    for (const profile of dbProfiles) {
+      // 嘗試 upsert 每個用戶
+      // 使用 PATCH 配合 filter 來更新現有記錄，或使用 POST 配合 prefer header
+      try {
+        // 先嘗試更新現有的
+        await supabaseRequest(
+          'PATCH',
+          `/rest/v1/${USER_PROFILE_TABLE}?id=eq.${encodeURIComponent(profile.id)}`,
+          profile,
+          undefined,
+          'return=minimal'
+        );
+        syncedCount++;
+      } catch (err) {
+        // 如果更新失敗（記錄不存在），則插入
+        try {
+          await supabaseRequest(
+            'POST',
+            `/rest/v1/${USER_PROFILE_TABLE}`,
+            profile,
+            undefined,
+            'return=minimal'
+          );
+          syncedCount++;
+        } catch (insertErr) {
+          console.error(`[supabaseSync] Failed to sync user ${profile.email}:`, insertErr);
+        }
+      }
+    }
+
+    console.log(`[supabaseSync] Synced ${syncedCount}/${dbProfiles.length} users`);
 
     return {
       success: true,
-      message: `已成功上傳 ${users.length} 筆使用者資料至 Supabase`,
-      syncedCount: users.length,
+      message: `已成功上傳 ${syncedCount} 筆使用者資料至 user_profile 表`,
+      syncedCount,
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[supabaseSync] syncUsersToSupabase error:', msg);
     return {
       success: false,
       message: `上傳失敗：${msg}`,
@@ -130,24 +183,31 @@ export async function syncUsersToSupabase(
 }
 
 /**
- * 從 Supabase 讀取共享的使用者資料池
+ * 從 user_profile 表讀取所有未刪除的使用者
  */
-export async function fetchUsersFromSupabase(): Promise<ManagedUser[]> {
+export async function fetchUsersFromSupabase(): Promise<User[]> {
   try {
-    const data = await supabaseRequest<{
-      data: Array<{ user_id: string; users: ManagedUser[] }>;
-    }>(
+    const data = await supabaseRequest<{ data: DbUserProfile[] }>(
       'GET',
-      `/rest/v1/${TABLE_NAME}?user_id=eq.${MANAGED_USERS_POOL_ID}&select=user_id,users`,
+      `/rest/v1/${USER_PROFILE_TABLE}?is_deleted=eq.false&order=created_at.asc`,
       undefined
     );
 
-    const row = data?.data?.[0];
-    if (row?.users && Array.isArray(row.users)) {
-      return row.users;
-    }
-    return [];
-  } catch {
+    const rows = data?.data || [];
+    return rows.map((row) => ({
+      id: row.id,
+      email: row.email,
+      name: row.name,
+      nameZh: row.name_zh ?? undefined,
+      nameEn: row.name_en ?? undefined,
+      phone: row.phone ?? undefined,
+      avatar: row.avatar ?? undefined,
+      address: row.address ?? undefined,
+      role: row.role as User['role'],
+      companyId: row.company_id ?? undefined,
+    }));
+  } catch (err) {
+    console.error('[supabaseSync] fetchUsersFromSupabase error:', err);
     return [];
   }
 }

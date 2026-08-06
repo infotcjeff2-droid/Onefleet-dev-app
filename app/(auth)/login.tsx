@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Pressable, Image, LayoutChangeEvent, Switch } from 'react-native';
+import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Pressable, Image, LayoutChangeEvent, Switch, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Link, useRouter, Redirect } from 'expo-router';
 import Animated, {
@@ -19,6 +19,8 @@ import { SocialButtons } from '@/components/auth/SocialButtons';
 import { LoginBackground } from '@/components/ui/LoginBackground';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 import { useTranslation } from '@/i18n';
+
+const isWeb = Platform.OS === 'web';
 
 const GRADIENT_COLORS = [
   '#ff6b6b',
@@ -139,7 +141,7 @@ type AuthTab = 'signin' | 'signup';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const { isAuthenticated, isLoading, login, checkAuth } = useAuthStore();
   const loadUsers = useUserManagementStore((s) => s.loadUsers);
 
@@ -193,6 +195,14 @@ export default function LoginScreen() {
     } else {
       setError(result.error || t('auth.loginFailed'));
       setPassword('');
+      if (isWeb) {
+        window.alert(`❌ 登入失敗\n\n${result.error || t('auth.loginFailed')}\n\n請檢查您的電子郵件和密碼後再試一次。`);
+      } else {
+        Alert.alert(
+          locale === 'zh-TW' ? '❌ 登入失敗' : '❌ Login Failed',
+          result.error || t('auth.loginFailed')
+        );
+      }
     }
   };
 

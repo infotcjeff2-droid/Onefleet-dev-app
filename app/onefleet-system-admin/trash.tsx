@@ -20,6 +20,8 @@ import {
   Users,
   Package,
   ChevronRight,
+  Check,
+  Square,
 } from 'lucide-react-native';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -61,6 +63,7 @@ export default function TrashScreen() {
   const loadTrash = useTrashStore((s) => s.loadTrash);
   const cleanupExpired = useTrashStore((s) => s.cleanupExpired);
   const removeFromTrash = useTrashStore((s) => s.removeFromTrash);
+  const removeManyFromTrash = useTrashStore((s) => s.removeManyFromTrash);
   const clearAll = useTrashStore((s) => s.clearAll);
 
   const restoreUser = useUserManagementStore((s) => s.addUser);
@@ -68,6 +71,8 @@ export default function TrashScreen() {
 
   const [filter, setFilter] = useState<TrashEntityKind | 'all'>('all');
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
 
   useEffect(() => {
     loadTrash().then(() => cleanupExpired());
@@ -99,6 +104,23 @@ export default function TrashScreen() {
       .filter((it) => filter === 'all' || it.kind === filter)
       .sort((a, b) => b.deletedAt - a.deletedAt);
   }, [items, filter]);
+
+  // 篩選或列表變動時，清掉不在清單內的選取
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const visibleIds = new Set(activeItems.map((it) => it.trashId));
+      const next = new Set<string>();
+      prev.forEach((id) => {
+        if (visibleIds.has(id)) next.add(id);
+      });
+      return next.size === prev.size ? prev : next;
+    });
+  }, [activeItems]);
+
+  const allSelected =
+    activeItems.length > 0 && selectedIds.size === activeItems.length;
+  const someSelected =
+    selectedIds.size > 0 && selectedIds.size < activeItems.length;
 
   const counts = useMemo(() => {
     const now = Date.now();
@@ -191,7 +213,47 @@ export default function TrashScreen() {
       `⚠️ 警告：這會永久刪除垃圾桶內全部 ${items.length} 項資料，且無法復原！`,
       async () => {
         await clearAll();
+        setSelectedIds(new Set());
+        setSelectionMode(false);
         Alert.alert('✅ 已清空', '垃圾桶已全部清除');
+      }
+    );
+  };
+
+  const toggleSelection = (trashId: string) => {
+    setSelectionMode(true);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(trashId)) next.delete(trashId);
+      else next.add(trashId);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(activeItems.map((it) => it.trashId)));
+    }
+    setSelectionMode(true);
+  };
+
+  const exitSelection = () => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  };
+
+  const handleBatchDelete = () => {
+    if (selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+    confirmAndRun(
+      '批次永久刪除',
+      `⚠️ 此操作無法復原！\n\n確定要永久刪除選定的 ${ids.length} 項資料嗎？`,
+      async () => {
+        await removeManyFromTrash(ids);
+        Alert.alert('✅ 已永久刪除', `已刪除 ${ids.length} 項資料`);
+        exitSelection();
       }
     );
   };
@@ -290,6 +352,58 @@ export default function TrashScreen() {
           })}
         </View>
 
+        {/* 批次操作列（只在有項目時顯示） */}
+        {activeItems.length > 0 && (
+          <Animated.View entering={FadeInDown.delay(50).duration(300)}>
+            <Card style={styles.batchBar}>
+              <Pressable
+                onPress={toggleSelectAll}
+                style={({ pressed }) => [
+                  styles.selectAllBtn,
+                  { opacity: pressed ? 0.6 : 1 },
+                ]}
+                hitSlop={8}
+              >
+                {allSelected ? (
+                  <View style={[styles.checkbox, styles.checkboxChecked, { backgroundColor: colors.primary, borderColor: colors.primary }]}>
+                    <Check size={14} color="#FFFFFF" strokeWidth={3} />
+                  </View>
+                ) : someSelected ? (
+                  <View style={[styles.checkbox, styles.checkboxIndeterminate, { borderColor: colors.primary }]}>
+                    <View style={[styles.indeterminateBar, { backgroundColor: colors.primary }]} />
+                  </View>
+                ) : (
+                  <View style={[styles.checkbox, { borderColor: colors.border }]}>
+                    <Square size={12} color={colors.textTertiary} />
+                  </View>
+                )}
+                <Text style={[styles.selectAllText, { color: colors.textPrimary }]}>
+                  {allSelected ? '取消全選' : '全選'}
+                </Text>
+              </Pressable>
+              {selectedIds.size > 0 && (
+                <>
+                  <Text style={[styles.selectedCount, { color: colors.textTertiary }]}>
+                    已選 {selectedIds.size} 項
+                  </Text>
+                  <Pressable
+                    onPress={exitSelection}
+                    style={({ pressed }) => [
+                      styles.exitSelectionBtn,
+                      { opacity: pressed ? 0.6 : 1 },
+                    ]}
+                    hitSlop={8}
+                  >
+                    <Text style={[styles.exitSelectionText, { color: colors.textTertiary }]}>
+                      取消
+                    </Text>
+                  </Pressable>
+                </>
+              )}
+            </Card>
+          </Animated.View>
+        )}
+
         {/* 列表 */}
         {activeItems.length === 0 ? (
           <Card style={styles.emptyCard}>
@@ -317,6 +431,24 @@ export default function TrashScreen() {
                 return (
                   <View key={item.trashId}>
                     <View style={styles.trashItem}>
+                      <Pressable
+                        onPress={() => toggleSelection(item.trashId)}
+                        style={({ pressed }) => [
+                          styles.itemCheckboxWrap,
+                          { opacity: pressed ? 0.5 : 1 },
+                        ]}
+                        hitSlop={8}
+                      >
+                        {selectedIds.has(item.trashId) ? (
+                          <View style={[styles.checkbox, styles.checkboxChecked, { backgroundColor: colors.primary, borderColor: colors.primary }]}>
+                            <Check size={14} color="#FFFFFF" strokeWidth={3} />
+                          </View>
+                        ) : (
+                          <View style={[styles.checkbox, { borderColor: colors.border }]}>
+                            <Square size={12} color={colors.textTertiary} />
+                          </View>
+                        )}
+                      </Pressable>
                       <View
                         style={[
                           styles.trashKindIcon,
@@ -398,13 +530,22 @@ export default function TrashScreen() {
             loading={refreshing}
             style={{ flex: 1 }}
           />
-          <Button
-            title="🗑️ 清空垃圾桶"
-            variant="ghost"
-            onPress={handleClearAll}
-            disabled={items.length === 0}
-            style={{ flex: 1 }}
-          />
+          {selectionMode && selectedIds.size > 0 ? (
+            <Button
+              title={`🗑️ 批次刪除 (${selectedIds.size})`}
+              variant="danger"
+              onPress={handleBatchDelete}
+              style={{ flex: 1 }}
+            />
+          ) : (
+            <Button
+              title="🗑️ 清空垃圾桶"
+              variant="ghost"
+              onPress={handleClearAll}
+              disabled={items.length === 0}
+              style={{ flex: 1 }}
+            />
+          )}
         </View>
 
         <View style={styles.spacer} />
@@ -522,6 +663,60 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     paddingHorizontal: spacing.lg,
     gap: spacing.md,
+  },
+  itemCheckboxWrap: {
+    padding: 2,
+  },
+  batchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  selectAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: 4,
+    paddingHorizontal: 4,
+  },
+  selectAllText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '700',
+  },
+  selectedCount: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: '600',
+    marginLeft: 'auto',
+  },
+  exitSelectionBtn: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+  },
+  exitSelectionText: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: '700',
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxChecked: {},
+  checkboxIndeterminate: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  indeterminateBar: {
+    width: 12,
+    height: 2,
+    borderRadius: 1,
   },
   trashKindIcon: {
     width: 36,

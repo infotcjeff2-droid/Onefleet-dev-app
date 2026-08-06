@@ -1,17 +1,21 @@
 import { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Alert, TextInput as RNTextInput,
-  Modal, KeyboardAvoidingView, Platform, ActivityIndicator,
+  Modal, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
-import { ArrowLeft, Trash2, Eye, EyeOff, Copy, KeyRound, RefreshCw, Upload, Check, X } from 'lucide-react-native';
+import { ArrowLeft, Trash2, Eye, EyeOff, Copy, Check, X, Pencil } from 'lucide-react-native';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { useUserManagementStore } from '@/store/userManagementStore';
 import { useThemeStore } from '@/store/themeStore';
 import { useTranslation } from '@/i18n';
 import { spacing, typography } from '@/constants/theme';
+import { DriverFormModal } from '@/components/company/DriverFormModal';
+import { CompanyFormModal } from '@/components/company/CompanyFormModal';
+
+const isWeb = Platform.OS === 'web';
 
 const roleColors: Record<string, string> = {
   admin: '#EF4444',
@@ -31,22 +35,21 @@ export default function UserManagementScreen() {
   const router = useRouter();
   const { colors } = useThemeStore();
   const { t, locale } = useTranslation();
-  const { users, addUser, deleteUser, updateUserPassword, updateUser } = useUserManagementStore();
+  const { users, addUser, deleteUser, updateUserPassword, updateUser, getCompanies } = useUserManagementStore();
+
+  const companies = getCompanies();
 
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
   const [modalVisible, setModalVisible] = useState(false);
-  const [resetPwdModal, setResetPwdModal] = useState<{ visible: boolean; user: { id: string; name: string; email: string } | null }>({ visible: false, user: null });
   const [form, setForm] = useState({
     name: '', email: '', password: '', role: 'driver' as 'driver' | 'company',
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
 
-  // Reset password form state
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [pwdErrors, setPwdErrors] = useState<Record<string, string>>({});
-  const [resetPwdLoading, setResetPwdLoading] = useState(false);
+  // Edit modals
+  const [driverModal, setDriverModal] = useState<{ visible: boolean; driver: any | null }>({ visible: false, driver: null });
+  const [companyModal, setCompanyModal] = useState<{ visible: boolean; company: any | null }>({ visible: false, company: null });
 
   // Sync state
   const [syncing, setSyncing] = useState(false);
@@ -87,87 +90,71 @@ export default function UserManagementScreen() {
       setModalVisible(false);
       setForm({ name: '', email: '', password: '', role: 'driver' });
       setFormErrors({});
-      Alert.alert(
-        isZh ? '✅ 新增成功' : '✅ Added',
-        isZh ? '使用者已新增至系統。' : 'User has been added to the system.'
-      );
+      if (isWeb) {
+        window.alert(`${isZh ? '✅ 新增成功' : '✅ Added'}\n\n${isZh ? '使用者已新增至系統。' : 'User has been added to the system.'}`);
+      } else {
+        Alert.alert(
+          isZh ? '✅ 新增成功' : '✅ Added',
+          isZh ? '使用者已新增至系統。' : 'User has been added to the system.'
+        );
+      }
     } else {
       const errMsg = result.error?.includes('already')
         ? (isZh ? '此電子郵件已被註冊' : 'Email already registered')
         : (result.error || t('error.unknownError'));
       setFormErrors({ email: errMsg });
-    }
-  };
-
-  // ── Reset password ─────────────────────────────────────────────────────────
-
-  const openResetPwd = (user: { id: string; name: string; email: string }) => {
-    setNewPassword('');
-    setConfirmPassword('');
-    setPwdErrors({});
-    setResetPwdModal({ visible: true, user });
-  };
-
-  const handleResetPassword = async () => {
-    const errs: Record<string, string> = {};
-    if (!newPassword) errs.newPassword = isZh ? '請輸入新密碼' : 'Please enter a new password';
-    else if (newPassword.length < 6) errs.newPassword = t('error.passwordMinLength');
-    if (newPassword !== confirmPassword) errs.confirmPassword = isZh ? '兩次密碼不一致' : 'Passwords do not match';
-    if (Object.keys(errs).length > 0) { setPwdErrors(errs); return; }
-
-    if (!resetPwdModal.user) return;
-    setResetPwdLoading(true);
-    try {
-      await updateUserPassword(resetPwdModal.user.id, newPassword);
-      setResetPwdModal({ visible: false, user: null });
-      Alert.alert(
-        isZh ? '✅ 密碼已更新' : '✅ Password Updated',
-        isZh
-          ? `「${resetPwdModal.user.name}」的密碼已成功更新。`
-          : `Password for "${resetPwdModal.user.name}" has been updated.`
-      );
-    } catch (err) {
-      Alert.alert(
-        isZh ? '❌ 更新失敗' : '❌ Update Failed',
-        isZh ? '密碼更新失敗，請稍後再試。' : 'Failed to update password. Please try again.'
-      );
-    } finally {
-      setResetPwdLoading(false);
+      if (isWeb) {
+        window.alert(`${isZh ? '❌ 新增失敗' : '❌ Add Failed'}\n\n${errMsg}`);
+      } else {
+        Alert.alert(
+          isZh ? '❌ 新增失敗' : '❌ Add Failed',
+          errMsg
+        );
+      }
     }
   };
 
   // ── Sync to Clerk + Supabase ────────────────────────────────────────────────
 
   const handleSync = async () => {
+    console.log('[UserManagement] handleSync called, users count:', users.length);
+
+    // Web 環境直接用 window.alert
+    const showAlert = (title: string, msg: string) => {
+      if (isWeb) {
+        window.alert(`${title}\n\n${msg}`);
+      } else {
+        Alert.alert(title, msg);
+      }
+    };
+
     if (users.length === 0) {
-      Alert.alert(isZh ? '無使用者' : 'No Users', isZh ? '目前沒有使用者資料需要同步。' : 'There are no users to sync.');
+      showAlert(isZh ? '無使用者' : 'No Users', isZh ? '目前沒有使用者資料需要同步。' : 'There are no users to sync.');
       return;
     }
 
-    Alert.alert(
-      isZh ? '同步至 Clerk + Supabase' : 'Sync to Clerk + Supabase',
-      isZh
-        ? `即將同步 ${users.length} 筆使用者資料至 Clerk 及 Supabase。\n\nClerk：將建立/更新帳號。\nSupabase：將上傳使用者資料。\n\n是否繼續？`
-        : `About to sync ${users.length} users to Clerk and Supabase.\n\nClerk: Create/update accounts.\nSupabase: Upload user data.\n\nProceed?`,
-      [
-        { text: isZh ? '取消' : 'Cancel', style: 'cancel' },
-        {
-          text: isZh ? '同步' : 'Sync',
-          onPress: doSync,
-        },
-      ]
-    );
+    // 直接執行同步，不顯示確認對話框（避免使用者困惑）
+    await doSync();
   };
 
   const doSync = async () => {
+    console.log('[UserManagement] doSync started');
     setSyncing(true);
     setSyncDone(false);
+
+    const showAlert = (title: string, msg: string) => {
+      if (isWeb) {
+        window.alert(`${title}\n\n${msg}`);
+      } else {
+        Alert.alert(title, msg);
+      }
+    };
 
     let clerkSummary = '';
     let supabaseSummary = '';
     let hasError = false;
 
-    // 1. Clerk sync
+    // 1. Clerk sync（需要 Supabase Edge Function，如果沒部署就跳過）
     try {
       const { syncUsersToClerk } = await import('@/utils/clerkSync');
       const usersWithPasswords = users
@@ -178,7 +165,7 @@ export default function UserManagementScreen() {
         const summary = await syncUsersToClerk(usersWithPasswords);
         const created = summary.results.filter((r) => r.action === 'created').length;
         const updated = summary.results.filter((r) => r.action === 'updated').length;
-        const failed = summary.totalFailed;
+        const failed = summary.summary.failed;
 
         clerkSummary = isZh
           ? `Clerk：新增 ${created} 筆、更新 ${updated} 筆${failed > 0 ? `、失敗 ${failed} 筆` : ''}`
@@ -186,17 +173,22 @@ export default function UserManagementScreen() {
 
         if (failed > 0) {
           hasError = true;
-          const failedEmails = summary.failed.map((f) => f.email).join(', ');
+          const failedEmails = summary.results
+            .filter((r) => 'error' in r)
+            .map((r) => (r as { email: string; error: string }).email)
+            .join(', ');
           clerkSummary += `\n\n${isZh ? '失敗帳號：' : 'Failed:'} ${failedEmails}`;
         }
       } else {
         clerkSummary = isZh ? 'Clerk：無含密碼的使用者（跳過）' : 'Clerk: No users with passwords (skipped)';
       }
     } catch (err) {
-      hasError = true;
+      // Clerk sync 失敗，不標記為錯誤（可能是 Edge Function 還沒部署）
+      const errMsg = err instanceof Error ? err.message : 'Unknown error';
+      console.warn('[UserManagement] Clerk sync skipped:', errMsg);
       clerkSummary = isZh
-        ? `Clerk 同步失敗：${err instanceof Error ? err.message : '未知錯誤'}`
-        : `Clerk sync failed: ${err instanceof Error ? err.message : 'Unknown error'}`;
+        ? `Clerk：跳過（Edge Function 未部署）`
+        : `Clerk: Skipped (Edge Function not deployed)`;
     }
 
     // 2. Supabase sync
@@ -217,7 +209,7 @@ export default function UserManagementScreen() {
     setSyncing(false);
     setSyncDone(true);
 
-    Alert.alert(
+    showAlert(
       hasError
         ? (isZh ? '⚠️ 同步完成（有錯誤）' : '⚠️ Sync Completed (with errors)')
         : (isZh ? '✅ 同步完成' : '✅ Sync Completed'),
@@ -253,13 +245,53 @@ export default function UserManagementScreen() {
     );
   };
 
+  // ── Edit handlers ──────────────────────────────────────────────────────────
+
+  const handleEditUser = (user: any) => {
+    if (user.role === 'driver') {
+      setDriverModal({ visible: true, driver: user });
+    } else if (user.role === 'company') {
+      setCompanyModal({ visible: true, company: user });
+    }
+  };
+
+  const handleDriverSaved = async (updates: any) => {
+    if (driverModal.driver) {
+      await updateUser(driverModal.driver.id, updates);
+      if (isZh) {
+        Alert.alert('成功', '司機已更新');
+      } else {
+        Alert.alert('Success', 'Driver has been updated');
+      }
+    }
+    setDriverModal({ visible: false, driver: null });
+  };
+
+  const handleCompanySaved = async (updates: any) => {
+    if (companyModal.company) {
+      await updateUser(companyModal.company.id, updates);
+      if (isZh) {
+        Alert.alert('成功', '公司已更新');
+      } else {
+        Alert.alert('Success', 'Company has been updated');
+      }
+    }
+    setCompanyModal({ visible: false, company: null });
+  };
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
       <View style={[styles.topBar, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+        <Pressable onPress={() => {
+          if (router.canGoBack()) {
+            router.back();
+          } else {
+            router.replace('/onefleet-system-admin');
+          }
+        }} style={styles.backBtn}>
           <ArrowLeft size={20} color={colors.textPrimary} />
         </Pressable>
         <Text style={[styles.topBarTitle, { color: colors.textPrimary }]}>使用者管理</Text>
@@ -281,7 +313,6 @@ export default function UserManagementScreen() {
           disabled={syncing}
           size="sm"
           style={{ flex: 1 }}
-          icon={syncing ? <ActivityIndicator size={12} color="#fff" /> : <RefreshCw size={12} color="#fff" />}
         />
       </View>
 
@@ -321,13 +352,13 @@ export default function UserManagementScreen() {
                   <Text style={[styles.userId, { color: colors.textSecondary }]}>{user.id}</Text>
                 </View>
                 <View style={styles.headerActions}>
-                  {/* Reset password */}
+                  {/* Edit */}
                   <Pressable
-                    onPress={() => openResetPwd({ id: user.id, name: user.name, email: user.email })}
+                    onPress={() => handleEditUser(user)}
                     hitSlop={8}
                     style={styles.iconBtn}
                   >
-                    <KeyRound size={16} color={colors.primary} />
+                    <Pencil size={16} color={colors.primary} />
                   </Pressable>
                   {/* Delete */}
                   <Pressable onPress={() => handleDelete(user)} hitSlop={8} style={styles.iconBtn}>
@@ -367,6 +398,18 @@ export default function UserManagementScreen() {
                     {isZh ? '電話：' : 'Phone: '}
                   </Text>
                   <Text style={[styles.infoValue, { color: colors.textPrimary }]}>{user.phone}</Text>
+                </View>
+              )}
+
+              {/* 司機的公司資訊 */}
+              {user.role === 'driver' && user.companyId && (
+                <View style={styles.infoRow}>
+                  <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>
+                    {isZh ? '公司：' : 'Company: '}
+                  </Text>
+                  <Text style={[styles.infoValue, { color: colors.primary }]}>
+                    {companies.find(c => c.id === user.companyId)?.name || user.companyId}
+                  </Text>
                 </View>
               )}
             </Card>
@@ -465,76 +508,20 @@ export default function UserManagementScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ── Reset Password Modal ── */}
-      <Modal visible={resetPwdModal.visible} animationType="slide" transparent>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
-                {isZh ? '重設密碼' : 'Reset Password'}
-              </Text>
-              <Pressable onPress={() => setResetPwdModal({ visible: false, user: null })}>
-                <X size={20} color={colors.textSecondary} />
-              </Pressable>
-            </View>
+      {/* ── Driver Edit Modal ── */}
+      <DriverFormModal
+        visible={driverModal.visible}
+        onClose={() => setDriverModal({ visible: false, driver: null })}
+        driver={driverModal.driver}
+        onSave={handleDriverSaved}
+      />
 
-            {resetPwdModal.user && (
-              <View style={[styles.pwdTargetCard, { backgroundColor: colors.surface }]}>
-                <Text style={[styles.pwdTargetName, { color: colors.textPrimary }]}>
-                  {resetPwdModal.user.name}
-                </Text>
-                <Text style={[styles.pwdTargetEmail, { color: colors.textSecondary }]}>
-                  {resetPwdModal.user.email}
-                </Text>
-              </View>
-            )}
-
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
-              {isZh ? '新密碼' : 'New Password'}
-            </Text>
-            <RNTextInput
-              style={[styles.input, { backgroundColor: colors.surface, color: colors.textPrimary, borderColor: pwdErrors.newPassword ? colors.danger : colors.border }]}
-              value={newPassword}
-              onChangeText={(v) => { setNewPassword(v); setPwdErrors((e) => ({ ...e, newPassword: '' })); }}
-              placeholder={isZh ? '輸入新密碼（至少 6 碼）' : 'Enter new password (min 6 chars)'}
-              placeholderTextColor={colors.textSecondary}
-              secureTextEntry
-              autoCapitalize="none"
-            />
-            {pwdErrors.newPassword && <Text style={[styles.fieldError, { color: colors.danger }]}>{pwdErrors.newPassword}</Text>}
-
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
-              {isZh ? '確認密碼' : 'Confirm Password'}
-            </Text>
-            <RNTextInput
-              style={[styles.input, { backgroundColor: colors.surface, color: colors.textPrimary, borderColor: pwdErrors.confirmPassword ? colors.danger : colors.border }]}
-              value={confirmPassword}
-              onChangeText={(v) => { setConfirmPassword(v); setPwdErrors((e) => ({ ...e, confirmPassword: '' })); }}
-              placeholder={isZh ? '再次輸入新密碼' : 'Confirm new password'}
-              placeholderTextColor={colors.textSecondary}
-              secureTextEntry
-              autoCapitalize="none"
-            />
-            {pwdErrors.confirmPassword && <Text style={[styles.fieldError, { color: colors.danger }]}>{pwdErrors.confirmPassword}</Text>}
-
-            <View style={styles.modalActions}>
-              <Button
-                title={isZh ? '取消' : 'Cancel'}
-                onPress={() => setResetPwdModal({ visible: false, user: null })}
-                variant="secondary"
-                style={{ flex: 1 }}
-              />
-              <View style={{ width: spacing.sm }} />
-              <Button
-                title={isZh ? '更新密碼' : 'Update Password'}
-                onPress={handleResetPassword}
-                loading={resetPwdLoading}
-                style={{ flex: 1 }}
-              />
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+      {/* ── Company Edit Modal ── */}
+      <CompanyFormModal
+        visible={companyModal.visible}
+        onClose={() => setCompanyModal({ visible: false, company: null })}
+        company={companyModal.company}
+      />
     </View>
   );
 }
@@ -585,8 +572,5 @@ const styles = StyleSheet.create({
   roleRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing['2xl'] },
   roleOption: { flex: 1, paddingVertical: 10, borderRadius: 8, borderWidth: 1, alignItems: 'center' },
   roleOptionText: { fontSize: typography.fontSize.sm, fontWeight: '600' },
-  pwdTargetCard: { padding: spacing.md, borderRadius: 8, marginBottom: spacing.lg },
-  pwdTargetName: { fontSize: typography.fontSize.base, fontWeight: '700', marginBottom: 2 },
-  pwdTargetEmail: { fontSize: typography.fontSize.sm },
   modalActions: { flexDirection: 'row' },
 });

@@ -1,12 +1,18 @@
 import { create } from 'zustand';
 import { Vehicle } from '@/types';
 import { storage } from '@/utils/storage';
-import { fetchFleetSnapshot, hasSupabaseEnv, pushFleetSnapshot } from '@/utils/fleetSync';
+import {
+  fetchVehiclesFromSupabase,
+  syncVehiclesToSupabase,
+  addVehicleToSupabase,
+  updateVehicleInSupabase,
+  deleteVehicleFromSupabase,
+  hasSupabaseEnv,
+} from '@/utils/fleetSync';
 import { useGps808Store } from './gps808Store';
 import { fetchGpsVehicles } from './gps808Store';
-import { useAuthStore } from './authStore';
 
-const STORAGE_KEY = 'vehicles';
+const LOCAL_STORAGE_KEY = 'vehicles_v_legacy'; // 保留舊本地 key
 
 interface VehicleState {
   vehicles: Vehicle[];
@@ -28,23 +34,23 @@ interface VehicleState {
 
 const generateId = () => `v${Date.now()}`;
 
-async function persistVehicles(vehicles: Vehicle[]) {
-  await storage.setItem(getStorageKey(), JSON.stringify(vehicles));
-}
-
-function getStorageKey(): string {
-  const userId = useAuthStore.getState().user?.id ?? 'guest';
-  return `${STORAGE_KEY}_${userId}`;
-}
-
-function pushVehiclesInBackground(vehicles: Vehicle[], onError: (message: string) => void) {
-  if (!hasSupabaseEnv) {
-    return;
+// 從本地存儲遷移舊數據到 Supabase
+async function migrateLocalVehicles(): Promise<Vehicle[]> {
+  try {
+    const stored = await storage.getItem(LOCAL_STORAGE_KEY);
+    if (stored) {
+      const localVehicles: Vehicle[] = JSON.parse(stored);
+      if (Array.isArray(localVehicles) && localVehicles.length > 0) {
+        console.log(`[VehicleStore] 找到 ${localVehicles.length} 輛本地車輛，正在遷移到 Supabase...`);
+        await syncVehiclesToSupabase(localVehicles);
+        console.log('[VehicleStore] 本地車輛已遷移到 Supabase');
+        return localVehicles;
+      }
+    }
+  } catch (err) {
+    console.error('[VehicleStore] 遷移本地車輛失敗:', err);
   }
-
-  void pushFleetSnapshot({ vehicles }).catch((err) => {
-    onError(err instanceof Error ? err.message : 'Vehicle sync failed');
-  });
+  return [];
 }
 
 export const useVehicleStore = create<VehicleState>((set, get) => ({
@@ -60,48 +66,65 @@ export const useVehicleStore = create<VehicleState>((set, get) => ({
 
   loadVehicles: async () => {
     try {
-      // 優先從 GPS 808 系統獲取車輛列表（如果已連接）
-      const gpsStore = useGps808Store.getState();
-      if (gpsStore.isConnected) {
-        const gpsVehicles = await fetchGpsVehicles();
-        if (gpsVehicles.length > 0) {
-          const currentUser = useAuthStore.getState().user;
-          // 將 GPS 車輛轉換為本地格式
-          const mappedVehicles: Vehicle[] = gpsVehicles.map((gv, index) => ({
-            id: gv.devIdno || `gps-${index}`,
-            make: gv.companyName || 'GPS Device',
-            model: gv.plateType ? `Type ${gv.plateType}` : 'Unknown',
-            plateNumber: gv.vehiIdno || 'Unknown',
-            color: 'N/A',
-            year: 2024,
-            vin: gv.devIdno || '',
-            status: gv.onlineStatus === 1 ? 'active' : 'inactive',
-            gpsDeviceId: gv.devIdno,
-            createdAt: new Date().toISOString(),
-            imageUrl: '',
-            userId: currentUser?.id,
-          }));
-          set({ vehicles: mappedVehicles, isLoading: false });
-          await persistVehicles(mappedVehicles);
+      set({ isLoading: true, syncError: null });
+
+      // 如果有 Supabase，從雲端讀取
+      if (hasSupabaseEnv) {
+        try {
+          let vehicles = await fetchVehiclesFromSupabase();
+
+          // 如果雲端為空，嘗試遷移本地數據
+          if (vehicles.length === 0) {
+            const localVehicles = await migrateLocalVehicles();
+            if (localVehicles.length > 0) {
+              vehicles = localVehicles;
+            }
+          }
+
+          // GPS 合併
+          const gpsStore = useGps808Store.getState();
+          if (gpsStore.isConnected) {
+            const gpsVehicles = await fetchGpsVehicles();
+            if (gpsVehicles.length > 0) {
+              const mappedGpsVehicles: Vehicle[] = gpsVehicles.map((gv, index) => ({
+                id: gv.devIdno || `gps-${index}`,
+                make: gv.companyName || 'GPS Device',
+                model: gv.plateType ? `Type ${gv.plateType}` : 'Unknown',
+                plateNumber: gv.vehiIdno || 'Unknown',
+                color: 'N/A',
+                year: 2024,
+                vin: gv.devIdno || '',
+                status: gv.onlineStatus === 1 ? 'active' : 'inactive',
+                gpsDeviceId: gv.devIdno,
+                devIdno: gv.devIdno,
+                createdAt: new Date().toISOString(),
+                imageUrl: '',
+              }));
+
+              const localGpsIds = new Set(mappedGpsVehicles.map((v) => v.gpsDeviceId));
+              const uniqueVehicles = vehicles.filter(
+                (v) => !v.gpsDeviceId || !localGpsIds.has(v.gpsDeviceId)
+              );
+              vehicles = [...mappedGpsVehicles, ...uniqueVehicles];
+            }
+          }
+
+          set({ vehicles, isLoading: false });
           return;
+        } catch (err) {
+          console.error('[VehicleStore] Supabase 讀取失敗:', err);
+          set({ syncError: '無法連接到雲端服務' });
+          // Fall through 到本地存儲
         }
       }
 
-      // 否則從本地存儲讀取，並根據 userId 過濾
-      const currentUser = useAuthStore.getState().user;
-      const stored = await storage.getItem(getStorageKey());
+      // 沒有 Supabase 或讀取失敗，使用本地存儲
+      const stored = await storage.getItem(LOCAL_STORAGE_KEY);
+      let localVehicles: Vehicle[] = [];
       if (stored) {
-        const parsed = JSON.parse(stored);
-        // 嚴格過濾：只顯示目前使用者的車輛
-        // 沒有 userId 的歷史車輛仍顯示（遷移期寬容），但有 userId 的車輛必須完全匹配
-        const userVehicles = currentUser?.id
-          ? parsed.filter((v: Vehicle) => !v.userId || v.userId === currentUser.id)
-          : parsed.filter((v: Vehicle) => !v.userId);
-        set({ vehicles: userVehicles, isLoading: false });
-      } else {
-        // 首次載入，車輛列表為空
-        set({ vehicles: [], isLoading: false });
+        localVehicles = JSON.parse(stored);
       }
+      set({ vehicles: localVehicles, isLoading: false });
     } catch {
       set({ vehicles: [], isLoading: false });
     }
@@ -112,56 +135,82 @@ export const useVehicleStore = create<VehicleState>((set, get) => ({
       return;
     }
 
+    // 如果有同步錯誤，不要執行 sync（避免覆蓋雲端數據）
+    if (get().syncError) {
+      console.log('[VehicleStore] 有同步錯誤，跳過 syncVehicles');
+      return;
+    }
+
+    const vehicles = get().vehicles;
+    if (vehicles.length === 0) {
+      console.log('[VehicleStore] 沒有車輛需要同步');
+      return;
+    }
+
     set({ isSyncing: true, syncError: null });
     try {
-      const remote = await fetchFleetSnapshot();
-      const currentUser = useAuthStore.getState().user;
-      if (remote) {
-        // 只同步該用戶的車輛（沒有 userId 的歷史資料保留不刪）
-        const userVehicles = currentUser?.id
-          ? remote.vehicles.filter((v) => !v.userId || v.userId === currentUser.id)
-          : remote.vehicles.filter((v) => !v.userId);
-        set({ vehicles: userVehicles });
-        await persistVehicles(userVehicles);
-      } else {
-        const localVehicles = get().vehicles;
-        await persistVehicles(localVehicles);
-        await pushFleetSnapshot({ vehicles: localVehicles });
-      }
+      await syncVehiclesToSupabase(vehicles);
     } catch (err) {
-      set({ syncError: err instanceof Error ? err.message : 'Vehicle sync failed' });
+      const message = err instanceof Error ? err.message : 'Vehicle sync failed';
+      console.error('[VehicleStore] syncVehicles 失敗:', message);
+      set({ syncError: message });
     } finally {
       set({ isSyncing: false });
     }
   },
 
   addVehicle: async (vehicleData) => {
-    const currentUser = useAuthStore.getState().user;
     const newVehicle: Vehicle = {
       ...vehicleData,
       id: generateId(),
       createdAt: new Date().toISOString(),
-      userId: currentUser?.id,
     };
+
+    // 先更新本地狀態
     const updated = [...get().vehicles, newVehicle];
     set({ vehicles: updated });
-    await persistVehicles(updated);
-    pushVehiclesInBackground(updated, (message) => set({ syncError: message }));
+
+    // 同步到 Supabase
+    if (hasSupabaseEnv) {
+      try {
+        await addVehicleToSupabase(newVehicle);
+      } catch (err) {
+        console.error('[VehicleStore] addVehicle 到 Supabase 失敗:', err);
+        set({ syncError: '車輛已添加但同步失敗' });
+      }
+    }
+
     return newVehicle;
   },
 
   updateVehicle: async (id, updates) => {
-    const updated = get().vehicles.map((v) => (v.id === id ? { ...v, ...updates } : v));
+    const updated = get().vehicles.map((v) =>
+      v.id === id ? { ...v, ...updates } : v
+    );
     set({ vehicles: updated });
-    await persistVehicles(updated);
-    pushVehiclesInBackground(updated, (message) => set({ syncError: message }));
+
+    if (hasSupabaseEnv) {
+      try {
+        await updateVehicleInSupabase(id, updates);
+      } catch (err) {
+        console.error('[VehicleStore] updateVehicle 到 Supabase 失敗:', err);
+        set({ syncError: '車輛已更新但同步失敗' });
+      }
+    }
   },
 
   deleteVehicle: async (id) => {
     const updated = get().vehicles.filter((v) => v.id !== id);
     set({ vehicles: updated });
-    await persistVehicles(updated);
-    pushVehiclesInBackground(updated, (message) => set({ syncError: message }));
+
+    if (hasSupabaseEnv) {
+      try {
+        await deleteVehicleFromSupabase(id);
+      } catch (err) {
+        console.error('[VehicleStore] deleteVehicle 到 Supabase 失敗:', err);
+        set({ syncError: '車輛已刪除但同步失敗' });
+      }
+    }
   },
 
   getVehicleById: (id) => get().vehicles.find((v) => v.id === id),

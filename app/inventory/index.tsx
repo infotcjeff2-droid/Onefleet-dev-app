@@ -18,6 +18,7 @@ import { useInventoryStore } from '@/store/inventoryStore';
 import { useThemeStore } from '@/store/themeStore';
 import { useTranslation } from '@/i18n';
 import { InventoryItem } from '@/types';
+import { uploadImage } from '@/utils/supabaseStorage';
 import {
   Package,
   Plus,
@@ -31,6 +32,7 @@ import {
   Hash,
   ChevronDown,
   Upload,
+  Loader,
 } from 'lucide-react-native';
 
 const ITEM_CATEGORIES = [
@@ -182,40 +184,75 @@ export default function InventoryManagement() {
       return;
     }
 
-    const payload = {
-      name: form.name.trim(),
-      sku: form.sku.trim() || undefined,
-      category: form.category.trim() || undefined,
-      unitWeight: parseFloat(form.unitWeight) || 0,
-      totalQuantity: parseInt(form.totalQuantity, 10) || 0,
-      imageUrl: form.imageUrl.trim() || undefined,
-      defaultWarehouseId: form.defaultWarehouseId || undefined,
-    };
+    // 檢查 imageUrl 是否為本地 URI（需要上傳）
+    const needsUpload = form.imageUrl && 
+      !form.imageUrl.startsWith('http') && 
+      !form.imageUrl.includes('supabase');
 
     try {
       let savedItemId: string | null = null;
+      let finalImageUrl = form.imageUrl;
 
       if (editingItem) {
-        await updateItem(editingItem.id, payload);
+        // 編輯模式：先上傳圖片（如需要），再更新物品
+        if (needsUpload) {
+          try {
+            finalImageUrl = await uploadImage(form.imageUrl, editingItem.id, 'vehicle');
+          } catch (uploadError) {
+            console.error('[Inventory] Image upload failed:', uploadError);
+          }
+        } else {
+          finalImageUrl = form.imageUrl;
+        }
+
+        await updateItem(editingItem.id, {
+          name: form.name.trim(),
+          sku: form.sku.trim() || undefined,
+          category: form.category.trim() || undefined,
+          unitWeight: parseFloat(form.unitWeight) || 0,
+          totalQuantity: parseInt(form.totalQuantity, 10) || 0,
+          imageUrl: finalImageUrl || undefined,
+          defaultWarehouseId: form.defaultWarehouseId || undefined,
+        });
         savedItemId = editingItem.id;
       } else {
-        const newItem = await addItem(payload);
+        // 新增模式：先建立物品，再上傳圖片，最後更新物品
+        const newItem = await addItem({
+          name: form.name.trim(),
+          sku: form.sku.trim() || undefined,
+          category: form.category.trim() || undefined,
+          unitWeight: parseFloat(form.unitWeight) || 0,
+          totalQuantity: parseInt(form.totalQuantity, 10) || 0,
+          imageUrl: undefined, // 先不設圖片 URL
+          defaultWarehouseId: form.defaultWarehouseId || undefined,
+        });
         savedItemId = newItem.id;
+
+        // 如果有選擇圖片，上傳並更新
+        if (form.imageUrl) {
+          try {
+            finalImageUrl = await uploadImage(form.imageUrl, newItem.id, 'vehicle');
+            await updateItem(newItem.id, { imageUrl: finalImageUrl });
+          } catch (uploadError) {
+            console.error('[Inventory] Image upload failed:', uploadError);
+          }
+        }
       }
 
       // 若有預設倉庫且數量 > 0，把初始數量加到該倉庫的 stock
+      const payloadTotalQty = parseInt(form.totalQuantity, 10) || 0;
       if (
-        payload.defaultWarehouseId &&
+        form.defaultWarehouseId &&
         savedItemId &&
-        payload.totalQuantity > 0
+        payloadTotalQty > 0
       ) {
         // 編輯模式下，僅在數量變動時才更新（避免重複疊加）
         if (editingItem) {
           const prevQty = editingItem.totalQuantity ?? 0;
-          const delta = payload.totalQuantity - prevQty;
+          const delta = payloadTotalQty - prevQty;
           if (delta > 0) {
             await useInventoryStore.getState().addStock(
-              payload.defaultWarehouseId,
+              form.defaultWarehouseId,
               savedItemId,
               delta
             );
@@ -223,7 +260,7 @@ export default function InventoryManagement() {
             // 若數量減少，扣減對應庫存
             const deductQty = Math.abs(delta);
             await useInventoryStore.getState().deductStock(
-              payload.defaultWarehouseId,
+              form.defaultWarehouseId,
               savedItemId,
               deductQty
             );
@@ -231,9 +268,9 @@ export default function InventoryManagement() {
         } else {
           // 新增模式：直接加入全部數量
           await useInventoryStore.getState().addStock(
-            payload.defaultWarehouseId,
+            form.defaultWarehouseId,
             savedItemId,
-            payload.totalQuantity
+            payloadTotalQty
           );
         }
       }
@@ -298,7 +335,20 @@ export default function InventoryManagement() {
         quality: 0.8,
       });
       if (!result.canceled && result.assets && result.assets[0]) {
-        setForm((f) => ({ ...f, imageUrl: result.assets[0].uri }));
+        const localUri = result.assets[0].uri;
+        // 生成臨時 ID 用於上傳（尚未保存物品，先用時間戳）
+        const tempId = editingItem?.id ?? `temp_${Date.now()}`;
+        
+        try {
+          // 上傳圖片到 Supabase Storage
+          const uploadedUrl = await uploadImage(localUri, tempId, 'vehicle');
+          setForm((f) => ({ ...f, imageUrl: uploadedUrl }));
+        } catch (uploadError) {
+          console.error('[Inventory] Image upload failed:', uploadError);
+          // 如果上傳失敗，保留本地 URI（僅本地使用，refresh 後會失效）
+          setForm((f) => ({ ...f, imageUrl: localUri }));
+          Alert.alert('上傳提示', '圖片上傳失敗，將使用本地圖片（refresh 後可能消失）');
+        }
       }
     } catch (err) {
       Alert.alert('錯誤', '圖片選擇失敗，請重試');
@@ -476,7 +526,12 @@ export default function InventoryManagement() {
                 disabled={isUploadingImage}
                 activeOpacity={0.85}
               >
-                {form.imageUrl ? (
+                {isUploadingImage ? (
+                  <View style={styles.pickerPlaceholder}>
+                    <Loader size={32} color={colors.primary} />
+                    <Text style={styles.pickerText}>上傳中…</Text>
+                  </View>
+                ) : form.imageUrl ? (
                   <Image
                     source={{ uri: form.imageUrl }}
                     style={styles.pickerImage}
@@ -485,9 +540,7 @@ export default function InventoryManagement() {
                 ) : (
                   <View style={styles.pickerPlaceholder}>
                     <Upload size={32} color={colors.textTertiary} />
-                    <Text style={styles.pickerText}>
-                      {isUploadingImage ? '上載中…' : '點擊從相簿選擇圖片'}
-                    </Text>
+                    <Text style={styles.pickerText}>點擊從相簿選擇圖片</Text>
                   </View>
                 )}
               </TouchableOpacity>

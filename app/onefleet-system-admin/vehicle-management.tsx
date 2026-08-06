@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,7 @@ import {
   SafeAreaView,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { useRouter } from 'expo-router';
+import { useRouter, Redirect } from 'expo-router';
 import {
   Plus,
   X,
@@ -34,6 +34,7 @@ import { useDriverStore } from '@/store/driverStore';
 import { useUserManagementStore } from '@/store/userManagementStore';
 import { useGps808Store } from '@/store/gps808Store';
 import { useThemeStore } from '@/store/themeStore';
+import { useAuthStore } from '@/store/authStore';
 import { useTranslation } from '@/i18n';
 import { spacing, typography, borderRadius, layout } from '@/constants/theme';
 import { Button } from '@/components/ui/Button';
@@ -333,8 +334,10 @@ function VehicleFormModal({
       }
       onClose();
       onSaved();
-    } catch {
-      setError(t('error.unknownError'));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg);
+      Alert.alert(t('common.error'), msg);
     } finally {
       setLoading(false);
     }
@@ -342,10 +345,14 @@ function VehicleFormModal({
 
   const inputStyle = { backgroundColor: colors.background, borderColor: colors.border, color: colors.textPrimary };
   const labelStyle = { color: colors.textSecondary };
-  const InputWrap = ({ children }: { children: React.ReactNode }) => (
-    <View style={[styles.formInputWrap, inputStyle]}>{children}</View>
+
+  // ✅ inputProps 用 useMemo 確保每次渲染 style reference 保持穩定
+  //    否則 inputStyle 每次都是新物件，導致 RNTextInput style reference 改變，游標消失
+  const inputProps = useMemo(
+    () => ({ style: [styles.formInput, inputStyle] as object, placeholderTextColor: colors.textTertiary }),
+    // 依賴 inputStyle 的實際值，而非整個物件參照
+    [inputStyle.backgroundColor, inputStyle.borderColor, inputStyle.color, colors.textTertiary],
   );
-  const inputProps = { style: [styles.formInput, inputStyle] as object, placeholderTextColor: colors.textTertiary };
 
   const bodyTypeOptions = BODY_TYPES.map((bt) => ({
     value: bt,
@@ -438,52 +445,52 @@ function VehicleFormModal({
 
             <View style={styles.formField}>
               <Text style={[styles.formLabel, labelStyle]}>{t('vehicles.make')} *</Text>
-              <InputWrap>
+              <View style={[styles.formInputWrap, inputStyle]}>
                 <RNTextInput {...inputProps} value={form.make} onChangeText={(v) => set('make', v)} placeholder={t('vehicles.makePlaceholder')} />
-              </InputWrap>
+              </View>
             </View>
 
             <View style={styles.formField}>
               <Text style={[styles.formLabel, labelStyle]}>{t('vehicles.model')} *</Text>
-              <InputWrap>
+              <View style={[styles.formInputWrap, inputStyle]}>
                 <RNTextInput {...inputProps} value={form.model} onChangeText={(v) => set('model', v)} placeholder={t('vehicles.modelPlaceholder')} />
-              </InputWrap>
+              </View>
             </View>
 
             <View style={styles.formRow}>
               <View style={[styles.formField, { flex: 1 }]}>
                 <Text style={[styles.formLabel, labelStyle]}>{t('vehicles.year')}</Text>
-                <InputWrap>
+                <View style={[styles.formInputWrap, inputStyle]}>
                   <RNTextInput {...inputProps} value={String(form.year)} onChangeText={(v) => set('year', parseInt(v) || 0)} keyboardType="number-pad" placeholder={t('vehicles.yearPlaceholder')} />
-                </InputWrap>
+                </View>
               </View>
               <View style={[styles.formField, { flex: 1 }]}>
                 <Text style={[styles.formLabel, labelStyle]}>{t('vehicles.color')}</Text>
-                <InputWrap>
+                <View style={[styles.formInputWrap, inputStyle]}>
                   <RNTextInput {...inputProps} value={form.color} onChangeText={(v) => set('color', v)} placeholder={t('vehicles.colorPlaceholder')} />
-                </InputWrap>
+                </View>
               </View>
             </View>
 
             <View style={styles.formField}>
               <Text style={[styles.formLabel, labelStyle]}>{t('vehicles.plateNumber')} *</Text>
-              <InputWrap>
+              <View style={[styles.formInputWrap, inputStyle]}>
                 <RNTextInput {...inputProps} value={form.plateNumber} onChangeText={(v) => set('plateNumber', v.toUpperCase())} placeholder={t('vehicles.platePlaceholder')} autoCapitalize="characters" />
-              </InputWrap>
+              </View>
             </View>
 
             <View style={styles.formField}>
               <Text style={[styles.formLabel, labelStyle]}>{t('vehicles.vin')}</Text>
-              <InputWrap>
+              <View style={[styles.formInputWrap, inputStyle]}>
                 <RNTextInput {...inputProps} value={form.vin} onChangeText={(v) => set('vin', v)} placeholder={t('vehicles.vinPlaceholder')} autoCapitalize="characters" />
-              </InputWrap>
+              </View>
             </View>
 
             <View style={styles.formField}>
               <Text style={[styles.formLabel, labelStyle]}>{t('vehicles.devIdno')}</Text>
-              <InputWrap>
+              <View style={[styles.formInputWrap, inputStyle]}>
                 <RNTextInput {...inputProps} value={form.devIdno} onChangeText={(v) => set('devIdno', v)} placeholder="e.g. 808GPS-001" autoCapitalize="none" />
-              </InputWrap>
+              </View>
               <Text style={[styles.formHint, { color: colors.textTertiary }]}>{t('vehicles.devIdnoHelp')}</Text>
             </View>
 
@@ -520,9 +527,9 @@ function VehicleFormModal({
             <View style={styles.formRow}>
               <View style={[styles.formField, { flex: 1 }]}>
                 <Text style={[styles.formLabel, labelStyle]}>{t('vehicles.mileage')}</Text>
-                <InputWrap>
+                <View style={[styles.formInputWrap, inputStyle]}>
                   <RNTextInput {...inputProps} value={String(form.mileage)} onChangeText={(v) => set('mileage', parseInt(v) || 0)} keyboardType="number-pad" placeholder={t('vehicles.mileagePlaceholder')} />
-                </InputWrap>
+                </View>
               </View>
             </View>
 
@@ -538,23 +545,23 @@ function VehicleFormModal({
 
             <View style={styles.formField}>
               <Text style={[styles.formLabel, labelStyle]}>{t('vehicles.purchaseDate')}</Text>
-              <InputWrap>
+              <View style={[styles.formInputWrap, inputStyle]}>
                 <RNTextInput {...inputProps} value={form.purchaseDate} onChangeText={(v) => set('purchaseDate', v)} placeholder="YYYY-MM-DD" />
-              </InputWrap>
+              </View>
             </View>
 
             <View style={styles.formField}>
               <Text style={[styles.formLabel, labelStyle]}>{t('vehicles.insuranceExpiry')}</Text>
-              <InputWrap>
+              <View style={[styles.formInputWrap, inputStyle]}>
                 <RNTextInput {...inputProps} value={form.insuranceExpiry} onChangeText={(v) => set('insuranceExpiry', v)} placeholder="YYYY-MM-DD" />
-              </InputWrap>
+              </View>
             </View>
 
             <View style={styles.formField}>
               <Text style={[styles.formLabel, labelStyle]}>{t('vehicles.registrationExpiry')}</Text>
-              <InputWrap>
+              <View style={[styles.formInputWrap, inputStyle]}>
                 <RNTextInput {...inputProps} value={form.registrationExpiry} onChangeText={(v) => set('registrationExpiry', v)} placeholder="YYYY-MM-DD" />
-              </InputWrap>
+              </View>
             </View>
 
             <View style={styles.formField}>
@@ -636,6 +643,12 @@ function DeleteConfirmModal({
 }
 
 export default function VehicleManagementScreen() {
+  const { role } = useAuthStore();
+  // 司機不能訪問車輛管理頁面，直接重定向到首頁
+  if (role === 'driver') {
+    return <Redirect href="/(tabs)" />;
+  }
+
   const router = useRouter();
   const { colors } = useThemeStore();
   const { t } = useTranslation();
@@ -673,8 +686,19 @@ export default function VehicleManagementScreen() {
 
   const handleConfirmDelete = async () => {
     if (deleteConfirmVehicle) {
-      await deleteVehicle(deleteConfirmVehicle.id);
-      setDeleteConfirmVehicle(null);
+      try {
+        await deleteVehicle(deleteConfirmVehicle.id);
+        setDeleteConfirmVehicle(null);
+        Alert.alert(
+          t('common.success'),
+          `${deleteConfirmVehicle.make} ${deleteConfirmVehicle.model} ${locale === 'zh-TW' ? '已成功刪除' : 'has been deleted successfully'}`
+        );
+      } catch (error) {
+        Alert.alert(
+          t('common.error'),
+          `${locale === 'zh-TW' ? '刪除失敗' : 'Failed to delete'}: ${error instanceof Error ? error.message : (locale === 'zh-TW' ? '未知錯誤' : 'Unknown error')}`
+        );
+      }
     }
   };
 

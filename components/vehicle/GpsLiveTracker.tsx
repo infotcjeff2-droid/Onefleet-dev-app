@@ -22,7 +22,7 @@ const DEFAULT_MAP_LNG = 114.1694;
 interface GpsLiveTrackerProps {
   devIdno: string;
   plateNumber?: string;
-  onStatusUpdate?: (status: { isOnline: boolean; hasGps: boolean; speed: number; address?: string }) => void;
+  onStatusUpdate?: (status: { isOnline: boolean; hasGps: boolean; isRealTime: boolean; speed: number; address?: string }) => void;
   bare?: boolean;
 }
 
@@ -34,6 +34,11 @@ interface GpsData {
   gpsTime: number;
   onlineStatus: number;
   address?: string;
+  /**
+   * 是否為「即時」GPS 訊號（lat/lng 都 > 0）。
+   * false 表示失去 GPS 定位，僅有「最後已知位置」。
+   */
+  isRealTime: boolean;
 }
 
 function parseCoord(val: unknown): number {
@@ -294,7 +299,8 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate, bare = fa
   const onStatusUpdateRef = useRef(onStatusUpdate);
   onStatusUpdateRef.current = onStatusUpdate;
 
-  const hasValidGps = gpsData !== null && gpsData.lat !== 0;
+  const hasValidGps = gpsData !== null && (gpsData.lat !== 0 || gpsData.lng !== 0);
+  const isRealTimeGps = gpsData?.isRealTime ?? false;
 
   const displayLat = hasValidGps ? gpsData.lat : DEFAULT_MAP_LAT;
   const displayLng = hasValidGps ? gpsData.lng : DEFAULT_MAP_LNG;
@@ -305,8 +311,10 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate, bare = fa
     label: plateNumber || devIdno,
     zoom: hasValidGps ? 18 : 12,
     showMarker: true,
-    noSignal: !hasValidGps,
-    noGpsSignalText: t('vehicles.noGpsSignal'),
+    noSignal: !isRealTimeGps,
+    noGpsSignalText: hasValidGps
+      ? t('vehicles.noGpsSignalLastKnown')
+      : t('vehicles.noGpsSignal'),
     address: hasValidGps ? gpsData.address : undefined,
     currentLang: locale,
   });
@@ -327,6 +335,9 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate, bare = fa
 
       let lat = 0;
       let lng = 0;
+      let lastKnownLat = 0;
+      let lastKnownLng = 0;
+      let hasRealTimeFix = false;
       let speed = 0;
       let direction = 0;
       let gpsTime = Date.now();
@@ -341,38 +352,72 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate, bare = fa
         console.log('[GpsLiveTracker] Full status keys:', Object.keys(s));
         console.log('[GpsLiveTracker] status.ps (address):', s.ps);
         console.log('[GpsLiveTracker] Full status:', JSON.stringify(s));
-        
-        // Try status.lng/lat (1e6 format: 113921858 = 113.921858, 22568745 = 22.568745)
+
+        // Debug: log all coordinate-related fields
+        console.log('[GpsLiveTracker] lat raw:', s.lat, 'type:', typeof s.lat);
+        console.log('[GpsLiveTracker] lng raw:', s.lng, 'type:', typeof s.lng);
+        console.log('[GpsLiveTracker] mlat raw:', s.mlat, 'type:', typeof s.mlat);
+        console.log('[GpsLiveTracker] mlng raw:', s.mlng, 'type:', typeof s.mlng);
+        console.log('[GpsLiveTracker] lang raw:', s.lang, 'type:', typeof s.lang);
+
+        // 解析即時 GPS 座標（status.lng / status.lat）
+        // 格式：1e6 整數（例如 114157293 = 114.157293）
         let rawLat = parseCoord(s.lat);
         let rawLng = parseCoord(s.lng);
+        console.log('[GpsLiveTracker] After parseCoord - rawLat:', rawLat, 'rawLng:', rawLng);
         if (rawLat !== 0 && rawLng !== 0) {
-          // Values > 180 are in 1e6 format
+          // 數值 > 180 視為 1e6 格式，需除以 1e6
           lat = Math.abs(rawLat) > 180 ? rawLat / 1_000_000 : rawLat;
           lng = Math.abs(rawLng) > 180 ? rawLng / 1_000_000 : rawLng;
+          hasRealTimeFix = true;
+          console.log('[GpsLiveTracker] Using real-time lat/lng - lat:', lat, 'lng:', lng);
         }
-        
-        // Try status.mlat/mlng (string format: "22.565703" = 22.565703)
-        if (lat === 0 || lng === 0) {
-          const rawMlat = parseCoord(s.mlat);
-          const rawMlng = parseCoord(s.mlng);
-          const rawLang = parseCoord(s.lang);
-          
-          if (rawMlat !== 0 && rawMlng !== 0) {
-            lat = Math.abs(rawMlat) > 180 ? rawMlat / 1_000_000 : rawMlat;
-            lng = Math.abs(rawMlng) > 180 ? rawMlng / 1_000_000 : rawMlng;
-          } else if (rawMlat !== 0 && rawLang !== 0) {
-            lat = Math.abs(rawMlat) > 180 ? rawMlat / 1_000_000 : rawMlat;
-            lng = Math.abs(rawLang) > 180 ? rawLang / 1_000_000 : rawLang;
-          }
+
+        // 解析「最後已知位置」（status.mlat / status.mlng / status.lang）
+        // 格式：通常為 decimal 字串（例如 "22.342830" / "114.157293"）
+        // 808GPS API 在車輛失去 GPS 定位時仍會保留此值，應作為「最後位置」顯示
+        const rawMlat = parseCoord(s.mlat);
+        const rawMlng = parseCoord(s.mlng);
+        const rawLang = parseCoord(s.lang);
+        console.log('[GpsLiveTracker] mlat/mlng fallback - rawMlat:', rawMlat, 'rawMlng:', rawMlng, 'rawLang:', rawLang);
+
+        if (rawMlat !== 0 && rawMlng !== 0) {
+          lastKnownLat = Math.abs(rawMlat) > 180 ? rawMlat / 1_000_000 : rawMlat;
+          lastKnownLng = Math.abs(rawMlng) > 180 ? rawMlng / 1_000_000 : rawMlng;
+          console.log('[GpsLiveTracker] Using mlat/mlng (last known) - lat:', lastKnownLat, 'lng:', lastKnownLng);
+        } else if (rawMlat !== 0 && rawLang !== 0) {
+          lastKnownLat = Math.abs(rawMlat) > 180 ? rawMlat / 1_000_000 : rawMlat;
+          lastKnownLng = Math.abs(rawLang) > 180 ? rawLang / 1_000_000 : rawLang;
+          console.log('[GpsLiveTracker] Using mlat/lang (last known) - lat:', lastKnownLat, 'lng:', lastKnownLng);
         }
-        
+
+        // 若無即時定位但有最後已知位置，採用最後已知位置作為顯示座標
+        if (!hasRealTimeFix && (lastKnownLat !== 0 || lastKnownLng !== 0)) {
+          lat = lastKnownLat;
+          lng = lastKnownLng;
+          console.log('[GpsLiveTracker] No real-time GPS, falling back to last known position');
+        }
+
         speed = parseSpeed(s.sp);
         direction = parseCoord(s.hx);
         onlineStatus = parseCoord(s.ol);
-        
+
         const gt = s.gt as number | string | undefined;
         gpsTime = typeof gt === 'number' ? gt : typeof gt === 'string' ? new Date(gt).getTime() : Date.now();
-        
+
+        // 判斷 GPS 訊號是否「即時」（gt 時間必須在合理範圍內）
+        // 808GPS 平台: 若車輛失去 GPS 定位，gt 仍可能保留「最後已知定位時間」
+        // 若 gt 與當前時間相差 > 5 分鐘，視為「無即時 GPS 訊號」
+        const GPS_FRESHNESS_MS = 5 * 60 * 1000; // 5 分鐘
+        if (hasRealTimeFix && gpsTime > 0) {
+          const now = Date.now();
+          const age = now - gpsTime;
+          if (age > GPS_FRESHNESS_MS) {
+            console.log('[GpsLiveTracker] GPS 訊號過期 (', Math.round(age / 1000), 's), 視為失去即時定位');
+            hasRealTimeFix = false;
+          }
+        }
+
         // Parse address from ps field (geocoded location string)
         const address = s.ps as string | undefined;
         console.log('[GpsLiveTracker] Address from ps:', JSON.stringify(address));
@@ -412,15 +457,17 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate, bare = fa
             // queryVehicleList returns weidu/jindu in 1e6 format or as numeric strings
             const rawLat = parseCoord(device.weidu ?? device.lat);
             const rawLng = parseCoord(device.jindu ?? device.lng);
-            
+
             // Convert from 1e6 format to decimal (if value is too large)
             lat = Math.abs(rawLat) > 180 ? rawLat / 1e6 : rawLat;
             lng = Math.abs(rawLng) > 180 ? rawLng / 1e6 : rawLng;
-            
+            // queryVehicleList 回傳的是「列表快照」，並非即時 GPS 定位
+            hasRealTimeFix = false;
+
             speed = parseSpeed(device.speed);
             direction = parseCoord(device.direction);
             onlineStatus = parseCoord(device.onlineStatus);
-            
+
             const gt = (device as { gpsTime?: number }).gpsTime;
             if (gt) gpsTime = gt;
             break;
@@ -445,10 +492,11 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate, bare = fa
             listRawResponse = JSON.stringify({ ...device, _source: 'findVehicleInfoByDeviceId', _allVehiclesCount: allVehicles.length }, null, 2);
             const rawLat = parseCoord(device.weidu ?? device.lat);
             const rawLng = parseCoord(device.jindu ?? device.lng);
-            
+
             lat = Math.abs(rawLat) > 180 ? rawLat / 1e6 : rawLat;
             lng = Math.abs(rawLng) > 180 ? rawLng / 1e6 : rawLng;
-            
+            hasRealTimeFix = false;
+
             speed = parseSpeed(device.speed);
             direction = parseCoord(device.direction);
             onlineStatus = parseCoord(device.onlineStatus);
@@ -467,7 +515,7 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate, bare = fa
         }
       }
 
-      console.log('[GpsLiveTracker] Final coords:', lat, lng);
+      console.log('[GpsLiveTracker] Final coords after fallback:', lat, lng);
 
       setGpsData({
         lat,
@@ -477,7 +525,9 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate, bare = fa
         gpsTime,
         onlineStatus,
         address: gpsDataAddress,
+        isRealTime: hasRealTimeFix,
       });
+      console.log('[GpsLiveTracker] setGpsData called with:', { lat, lng, address: gpsDataAddress, isRealTime: hasRealTimeFix });
       setLastRefresh(new Date());
       setError(null);
     } catch (err) {
@@ -500,11 +550,12 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate, bare = fa
       onStatusUpdateRef.current({
         isOnline: isConnected,
         hasGps: hasValidGps,
+        isRealTime: isRealTimeGps,
         speed: gpsData?.speed ?? 0,
         address: gpsData?.address,
       });
     }
-  }, [isConnected, hasValidGps, gpsData]);
+  }, [isConnected, hasValidGps, isRealTimeGps, gpsData]);
 
   if (!isConnected) {
     const unavailableBody = (
@@ -558,8 +609,14 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate, bare = fa
           <Text style={styles.label}>{t('vehicles.liveTracking')}</Text>
         </View>
         <View style={styles.headerRight}>
-          <View style={[styles.statusDot, { backgroundColor: hasValidGps ? '#22C55E' : '#EF4444' }]} />
-          <Text style={styles.statusText}>{hasValidGps ? t('vehicles.live') : t('vehicles.noSignal')}</Text>
+          <View style={[styles.statusDot, { backgroundColor: isRealTimeGps ? '#22C55E' : (hasValidGps ? '#F59E0B' : '#EF4444') }]} />
+          <Text style={styles.statusText}>
+            {isRealTimeGps
+              ? t('vehicles.live')
+              : hasValidGps
+                ? t('vehicles.noGpsSignalLastKnown')
+                : t('vehicles.noSignal')}
+          </Text>
           <Pressable onPress={fetchGps} style={styles.refreshBtn} disabled={isLoading}>
             <RefreshCw size={12} color={isLoading ? colors.textTertiary : colors.primary} />
           </Pressable>

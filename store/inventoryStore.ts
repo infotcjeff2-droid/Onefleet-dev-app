@@ -345,14 +345,28 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
 
   deductStock: async (warehouseId, itemId, quantity) => {
     const stocks = get().warehouseStocks;
+    console.log(`[deductStock] warehouseStocks 總數: ${stocks.length}`);
+    console.log(`[deductStock] 查找: warehouseId=${warehouseId}, itemId=${itemId}`);
+
     const stockIndex = stocks.findIndex(
       (s) => s.warehouseId === warehouseId && s.itemId === itemId
     );
 
-    if (stockIndex === -1) return false;
+    console.log(`[deductStock] stockIndex: ${stockIndex}`);
+
+    if (stockIndex === -1) {
+      console.warn(`[deductStock] 找不到庫存記錄`);
+      return false;
+    }
 
     const currentStock = stocks[stockIndex];
-    if (currentStock.quantity < quantity) return false;
+    console.log(`[deductStock] currentStock:`, currentStock);
+    console.log(`[deductStock] current qty: ${currentStock.quantity}, requested: ${quantity}`);
+
+    if (currentStock.quantity < quantity) {
+      console.warn(`[deductStock] 庫存不足`);
+      return false;
+    }
 
     const updated = [...stocks];
     updated[stockIndex] = {
@@ -361,8 +375,11 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
       updatedAt: new Date().toISOString(),
     };
 
+    console.log(`[deductStock] 新數量: ${updated[stockIndex].quantity}`);
+
     set({ warehouseStocks: updated });
     await persistStocks(updated);
+    console.log(`[deductStock] 完成`);
     return true;
   },
 

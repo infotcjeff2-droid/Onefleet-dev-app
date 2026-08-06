@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>808GPS HTTP-FLV 播放器</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      background-color: #0f0f1a;
+      color: #ffffff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    #video-container {
+      width: 100%;
+      max-width: 800px;
+      background-color: #000;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    }
+    video {
+      width: 100%;
+      display: block;
+      background-color: #000;
+    }
+    #status {
+      margin-top: 20px;
+      padding: 15px 20px;
+      background-color: #1a1a2e;
+      border-radius: 8px;
+      text-align: center;
+      max-width: 800px;
+      width: 100%;
+    }
+    #status.success {
+      border-left: 4px solid #22C55E;
+    }
+    #status.error {
+      border-left: 4px solid #EF4444;
+    }
+    #status.loading {
+      border-left: 4px solid #F59E0B;
+    }
+    #status h3 {
+      font-size: 16px;
+      margin-bottom: 8px;
+    }
+    #status p {
+      font-size: 14px;
+      color: #9CA3AF;
+    }
+    .error-detail {
+      margin-top: 10px;
+      padding: 10px;
+      background-color: rgba(239, 68, 68, 0.1);
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+      word-break: break-all;
+      text-align: left;
+    }
+    #debug-info {
+      margin-top: 10px;
+      padding: 10px;
+      background-color: rgba(59, 130, 246, 0.05);
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 11px;
+      color: #9CA3AF;
+      word-break: break-all;
+      text-align: left;
+      max-height: 100px;
+      overflow-y: auto;
+    }
+    #controls {
+      margin-top: 20px;
+      display: flex;
+      gap: 10px;
+      max-width: 800px;
+      width: 100%;
+    }
+    button {
+      flex: 1;
+      padding: 12px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    button.primary {
+      background-color: #3B82F6;
+      color: white;
+    }
+    button.primary:hover {
+      background-color: #2563EB;
+    }
+    button.secondary {
+      background-color: #374151;
+      color: white;
+    }
+    button.secondary:hover {
+      background-color: #4B5563;
+    }
+    .info {
+      margin-top: 20px;
+      font-size: 12px;
+      color: #6B7280;
+      text-align: center;
+      max-width: 800px;
+    }
+    .info code {
+      background-color: #1a1a2e;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <div id="video-container">
+    <video id="video" controls playsinline autoplay muted></video>
+  </div>
+
+  <div id="status" class="loading">
+    <h3>連線中...</h3>
+    <p>正在連接到 FLV 串流伺服器</p>
+  </div>
+
+  <div id="debug-info"></div>
+
+  <div id="controls">
+    <button class="primary" id="btn-retry">重新連線</button>
+    <button class="secondary" id="btn-fullscreen">全螢幕</button>
+  </div>
+
+  <p class="info">
+    使用 <code>flv.js</code> 播放 HTTP-FLV 串流 | 808GPS 設備影像
+  </p>
+
+  <script src="https://cdn.jsdelivr.net/npm/flv.js@1.6.2/dist/flv.min.js"></script>
+  <script>
+    // 從 URL 參數獲取串流 URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const streamUrl = urlParams.get('url');
+    const devIdno = urlParams.get('devIdno') || 'Unknown';
+    const channel = urlParams.get('channel') || '0';
+    const quality = urlParams.get('quality') || 'sd';
+    const protocol = urlParams.get('protocol') || 'flv';
+
+    const video = document.getElementById('video');
+    const status = document.getElementById('status');
+    const debugInfo = document.getElementById('debug-info');
+    const btnRetry = document.getElementById('btn-retry');
+    const btnFullscreen = document.getElementById('btn-fullscreen');
+
+    let player = null;
+    let logs = [];
+
+    function addLog(msg) {
+      const time = new Date().toLocaleTimeString();
+      logs.push(`[${time}] ${msg}`);
+      if (logs.length > 20) logs.shift();
+      debugInfo.innerHTML = logs.join('<br>');
+      console.log(msg);
+    }
+
+    function updateStatus(type, title, message, detail) {
+      status.className = type;
+      let html = `<h3>${title}</h3><p>${message}</p>`;
+      if (detail) {
+        html += `<div class="error-detail">${detail}</div>`;
+      }
+      status.innerHTML = html;
+    }
+
+    function initPlayer(url) {
+      // 清理舊的播放器
+      if (player) {
+        try { player.destroy(); } catch (e) {}
+        player = null;
+      }
+
+      addLog(`Initializing player with URL: ${url.substring(0, 150)}...`);
+
+      if (typeof flvjs === 'undefined') {
+        updateStatus('error', 'flv.js 載入失敗', '請檢查網路連線', 'flv.js library not loaded');
+        return;
+      }
+
+      if (!flvjs.isSupported()) {
+        updateStatus('error', '不支援', '瀏覽器不支援 FLV 播放', '需要支援 MSE 的現代瀏覽器（Chrome, Firefox, Edge）');
+        return;
+      }
+
+      // 先測試 URL 是否可訪問，並檢查是否回傳錯誤
+      fetch(url, { method: 'HEAD' })
+        .then(response => {
+          addLog(`HEAD response: ${response.status}, content-type: ${response.headers.get('content-type')}`);
+          if (!response.ok || response.headers.get('content-type')?.includes('json')) {
+            // 失敗或錯誤響應
+            return fetch(url).then(r => r.json()).catch(() => ({ error: response.statusText }));
+          }
+          return null;
+        })
+        .then(errorData => {
+          if (errorData && errorData.error) {
+            addLog(`Backend error: ${JSON.stringify(errorData)}`);
+            let detail = `後端錯誤：${errorData.error}`;
+            if (errorData.upstreamResponse) {
+              try {
+                const upstream = JSON.parse(errorData.upstreamResponse);
+                detail += `\n\n上游回應：${JSON.stringify(upstream, null, 2)}`;
+              } catch (e) {
+                detail += `\n\n上游回應：${errorData.upstreamResponse}`;
+              }
+            }
+            updateStatus('error',
+              '無法取得影像串流',
+              errorData.upstreamResponse?.includes('param error')
+                ? '需要登入 808GPS 或設備不支援影像'
+                : '請檢查網路和設備狀態',
+              detail
+            );
+            return;
+          }
+          // 成功：開始播放
+          startPlayback(url);
+        })
+        .catch(err => {
+          addLog(`Fetch error: ${err.message}`);
+          // 仍然嘗試播放（有些瀏覽器不支援 HEAD）
+          startPlayback(url);
+        });
+    }
+
+    function startPlayback(url) {
+      updateStatus('loading', '連線中...', `正在連接到 ${devIdno} CH${channel} (${protocol.toUpperCase()})`);
+
+      try {
+        player = flvjs.createPlayer({
+          type: 'flv',
+          url: url,
+          isLive: true,
+          hasAudio: true,
+          hasVideo: true,
+          cors: true,
+          withCredentials: false,
+        }, {
+          enableWorker: false, // 關閉 worker 以避免 cross-origin worker 問題
+          enableStashBuffer: false,
+          stashInitialSize: 128,
+          autoCleanupSourceBuffer: true,
+          autoCleanupMinBackwardDuration: 3,
+          autoCleanupMaxBackwardDuration: 10,
+          statisticsInfoReportInterval: 2000,
+        });
+
+        player.attachMediaElement(video);
+
+        // 監聽各類事件以便 debug
+        player.on(flvjs.Events.LOADING_COMPLETE, () => {
+          addLog('LOADING_COMPLETE');
+        });
+
+        player.on(flvjs.Events.RECOVERED_EARLY_EOF, () => {
+          addLog('RECOVERED_EARLY_EOF');
+        });
+
+        player.on(flvjs.Events.MEDIA_INFO, (mediaInfo) => {
+          addLog(`MEDIA_INFO: ${JSON.stringify(mediaInfo).substring(0, 200)}`);
+        });
+
+        player.on(flvjs.Events.STATISTICS_DATA, (data) => {
+          // 每 2 秒輸出一次統計資訊
+          if (data && Math.random() < 0.1) {
+            addLog(`STATS: speed=${(data.speed || 0).toFixed(0)}B/s, decoded=${data.decodedFrames || 0}`);
+          }
+        });
+
+        player.on(flvjs.Events.ERROR, function(errType, errDetail, errInfo) {
+          addLog(`ERROR: ${errType} - ${errDetail}`);
+          console.error('FLV Full Error:', errType, errDetail, errInfo);
+
+          let detail = `${errType}: ${errDetail}`;
+          if (errInfo) detail += `\n\n${JSON.stringify(errInfo, null, 2)}`;
+
+          let message = '播放錯誤';
+          if (errType === 'NetworkError') {
+            message = '網路錯誤 - 無法載入串流';
+          } else if (errType === 'MediaError') {
+            if (errDetail === 'FormatUnsupported') {
+              message = '媒體格式不支援';
+              detail = '伺服器回傳的不是有效的 FLV 串流。可能是：\n- 設備未登入 808GPS\n- 設備不支援影像功能\n- jsessionId 已過期';
+            } else {
+              message = '媒體錯誤 - 串流格式不支援';
+            }
+          } else if (errType === 'BusinessError') {
+            message = '業務錯誤 - 設備可能不支援即時影像';
+          }
+
+          updateStatus('error', message, errDetail, detail);
+        });
+
+        player.on(flvjs.Events.DESTROYING, () => {
+          addLog('DESTROYING');
+        });
+
+        addLog('Loading stream...');
+        player.load();
+
+        player.play().then(() => {
+          addLog('Playback started');
+          updateStatus('success', '播放中', `${devIdno} CH${channel} - ${quality === 'hd' ? '高清' : '標清'}`);
+        }).catch(err => {
+          addLog(`Play() rejected: ${err.message}`);
+          updateStatus('loading', '等待點擊播放', '請點擊影片開始播放', err.message);
+          video.addEventListener('click', function playOnce() {
+            if (player) {
+              player.play().then(() => {
+                updateStatus('success', '播放中', `${devIdno} CH${channel}`);
+              });
+            }
+            video.removeEventListener('click', playOnce);
+          }, { once: true });
+        });
+
+      } catch (err) {
+        addLog(`Init exception: ${err.message}`);
+        updateStatus('error', '初始化失敗', err.message, err.stack);
+      }
+    }
+
+    // 初始化
+    if (streamUrl) {
+      addLog(`Stream URL: ${streamUrl}`);
+      initPlayer(streamUrl);
+    } else {
+      updateStatus('error', '無串流 URL', '請提供 url 參數', '例如: flv-player.html?url=/api/gps/flv-stream?...');
+    }
+
+    // 重試按鈕
+    btnRetry.addEventListener('click', function() {
+      if (streamUrl) {
+        initPlayer(streamUrl);
+      }
+    });
+
+    // 全螢幕按鈕
+    btnFullscreen.addEventListener('click', function() {
+      if (video.requestFullscreen) {
+        video.requestFullscreen();
+      } else if (video.webkitRequestFullscreen) {
+        video.webkitRequestFullscreen();
+      } else if (video.webkitEnterFullscreen) {
+        video.webkitEnterFullscreen();
+      }
+    });
+
+    // 頁面卸載時清理
+    window.addEventListener('beforeunload', function() {
+      if (player) {
+        try { player.destroy(); } catch (e) {}
+      }
+    });
+  </script>
+</body>
+</html>

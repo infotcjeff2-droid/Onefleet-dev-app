@@ -75,6 +75,8 @@ function extractChineseAddress(str: string): string {
 interface GpsStatusState {
   isOnline: boolean;
   hasGps: boolean;
+  /** 是否為「即時」GPS 訊號（gt 時間在合理範圍內）。false 表示失去即時 GPS 定位。 */
+  isRealTime: boolean;
   speed: number;
   address?: string;
 }
@@ -88,6 +90,7 @@ export function BentoGrid({ vehicle }: BentoGridProps) {
   const [gpsStatus, setGpsStatus] = useState<GpsStatusState>({
     isOnline: false,
     hasGps: false,
+    isRealTime: false,
     speed: 0,
     address: undefined,
   });
@@ -101,6 +104,7 @@ export function BentoGrid({ vehicle }: BentoGridProps) {
   const getGpsStatusLabel = () => {
     if (!isConnected) return t('vehicles.gpsNotConnected');
     if (!gpsStatus.hasGps) return t('vehicles.noSignal');
+    if (!gpsStatus.isRealTime) return t('vehicles.noGpsSignalLastKnown');
     if (gpsStatus.speed > 5) return t('vehicles.moving');
     return t('vehicles.parked');
   };
@@ -108,6 +112,7 @@ export function BentoGrid({ vehicle }: BentoGridProps) {
   const getGpsStatusVariant = (): 'active' | 'warning' | 'danger' | 'inactive' => {
     if (!isConnected) return 'danger';
     if (!gpsStatus.hasGps) return 'warning';
+    if (!gpsStatus.isRealTime) return 'warning';
     if (gpsStatus.speed > 5) return 'active';
     return 'inactive';
   };
@@ -115,6 +120,7 @@ export function BentoGrid({ vehicle }: BentoGridProps) {
   const getGpsStatusColor = () => {
     if (!isConnected) return { dot: '#EF4444', bg: 'rgba(239, 68, 68, 0.1)' };
     if (!gpsStatus.hasGps) return { dot: '#F59E0B', bg: 'rgba(245, 158, 11, 0.1)' };
+    if (!gpsStatus.isRealTime) return { dot: '#F59E0B', bg: 'rgba(245, 158, 11, 0.1)' };
     if (gpsStatus.speed > 5) return { dot: '#22C55E', bg: 'rgba(34, 197, 94, 0.1)' };
     return { dot: '#3B82F6', bg: 'rgba(59, 130, 246, 0.1)' };
   };

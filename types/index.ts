@@ -29,6 +29,8 @@ export interface Vehicle {
   assignedDriverId?: string;
   /** 所屬用戶 ID（用於跨設備同步） */
   userId?: string;
+  /** 設備的影像通道數量（如 4 通道的 VL-6012，6 通道的其他設備），預設由 API 動態獲取 */
+  numChannels?: number;
 }
 
 export type UserRole = 'admin' | 'company' | 'driver' | 'user';
@@ -89,8 +91,15 @@ export interface DeliveryOrder {
   customerName: string;
   customerPhone: string;
   pickupAddress: string;
+  pickupContact?: string;
+  pickupLatitude?: number;
+  pickupLongitude?: number;
   pickupTime: string;
   dropoffAddress: string;
+  dropoffContact?: string;
+  dropoffPhone?: string;
+  dropoffLatitude?: number;
+  dropoffLongitude?: number;
   dropoffTime?: string;
   cargoDescription: string;
   cargoWeight: number;
@@ -98,6 +107,7 @@ export interface DeliveryOrder {
   status: DeliveryStatus;
   assignedDriverId?: string;
   assignedDriverName?: string;
+  assignedAt?: string;
   signatureData?: string;
   signedAt?: string;
   signatureStrokes?: SignatureStroke[][];
@@ -107,6 +117,24 @@ export interface DeliveryOrder {
   cargoItems?: DeliveryCargoItem[];
   /** 所屬用戶 ID（用於跨設備同步） */
   userId?: string;
+  /** 所屬公司 ID（用於多租戶隔離） */
+  companyId?: string;
+  /** 配送費用 */
+  deliveryFee?: number;
+  /** 代收貨款金額 */
+  codAmount?: number;
+  /** 已取貨時間戳 */
+  pickedUpAt?: string;
+  /** 開始運輸時間戳 */
+  inTransitAt?: string;
+  /** 已送達時間戳 */
+  deliveredAt?: string;
+  /** 取貨相片 */
+  pickupPhotos?: DeliveryPhoto[];
+  /** 是否已完成配送單（完成後不能再修改） */
+  isCompleted?: boolean;
+  /** 完成配送時間戳 */
+  completedAt?: string;
 }
 
 /** 配送物品 - 包含從庫存選擇的物品 */
@@ -224,6 +252,33 @@ export interface ReplenishmentOrder {
   updatedAt: string;
   /** 所屬用戶 ID */
   userId?: string;
+}
+
+// ============ Customer Types ============
+export interface DeliveryAddress {
+  label: string;
+  address: string;
+  contact?: string;
+  phone?: string;
+}
+
+export interface Customer {
+  id: string;
+  name: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  deliveryAddresses?: DeliveryAddress[];
+  notes?: string;
+  totalOrders?: number;
+  lastOrderAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  /** 所屬用戶 ID */
+  userId?: string;
+  /** 所屬公司 ID */
+  companyId?: string;
+  isDeleted?: boolean;
 }
 
 // ============ Dispatch & Route Types ============

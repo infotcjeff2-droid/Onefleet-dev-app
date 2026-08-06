@@ -73,7 +73,7 @@ interface AddVehicleFormProps {
 
 export function AddVehicleForm({ editId }: AddVehicleFormProps) {
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
 
   const STEPS = [
     t('vehicles.stepBasicInfo'),
@@ -233,6 +233,8 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
       };
 
       let finalImageUrl = '';
+      let hasError = false;
+      let errorMsg = '';
 
       if (isEditMode && editId) {
         // 編輯模式：先上傳圖片（如果有的話），然後更新
@@ -241,16 +243,17 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
           try {
             finalImageUrl = await uploadVehicleImage(pendingUri, editId);
           } catch (err) {
-            const msg = err instanceof Error ? err.message : '未知錯誤';
-            Alert.alert(
-              t('common.error'),
-              `圖片上傳失敗：${msg}\n車輛資料仍會儲存（無圖片）`,
-            );
+            hasError = true;
+            errorMsg = err instanceof Error ? err.message : '未知錯誤';
           }
         } else if (form.imageUrl) {
           finalImageUrl = form.imageUrl;
         }
         await updateVehicle(editId, { ...vehicleData, imageUrl: finalImageUrl });
+        Alert.alert(
+          t('common.success'),
+          locale === 'zh-TW' ? '✅ 車輛資料已成功更新！' : '✅ Vehicle updated successfully!'
+        );
       } else {
         // 新增模式：先創建車輛取得 ID，用 ID 上傳圖片，再更新車輛
         const newVehicle = await addVehicle(vehicleData);
@@ -261,17 +264,23 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
             finalImageUrl = await uploadVehicleImage(pendingUri, newVehicle.id);
             await updateVehicle(newVehicle.id, { imageUrl: finalImageUrl });
           } catch (err) {
-            const msg = err instanceof Error ? err.message : '未知錯誤';
-            Alert.alert(
-              t('common.error'),
-              `圖片上傳失敗：${msg}\n車輛資料已儲存（無圖片）`,
-            );
+            hasError = true;
+            errorMsg = err instanceof Error ? err.message : '未知錯誤';
           }
         }
+        Alert.alert(
+          t('common.success'),
+          locale === 'zh-TW' ? '✅ 新車輛已成功新增！' : '✅ New vehicle added successfully!'
+        );
       }
       router.canGoBack() ? router.back() : router.replace('/(tabs)');
-    } catch {
-      Alert.alert(t('common.error'), isEditMode ? t('vehicles.updateFailed') : t('vehicles.addFailed'));
+    } catch (error) {
+      Alert.alert(
+        t('common.error'),
+        isEditMode
+          ? (locale === 'zh-TW' ? '❌ 車輛更新失敗，請稍後再試。' : '❌ Failed to update vehicle. Please try again.')
+          : (locale === 'zh-TW' ? '❌ 新增車輛失敗，請稍後再試。' : '❌ Failed to add vehicle. Please try again.')
+      );
     } finally {
       setIsSubmitting(false);
     }

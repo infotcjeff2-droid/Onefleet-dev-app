@@ -1,44 +1,17 @@
 import React, { useEffect, useRef, useState, memo, useCallback } from 'react';
-import { View, Text, StyleSheet, Platform, ActivityIndicator, Pressable } from 'react-native';
-import { WebView } from 'react-native-webview';
+import { View, Text, StyleSheet, ActivityIndicator, Pressable } from 'react-native';
 import { WifiOff, Video } from 'lucide-react-native';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { gps808Api } from '@/utils/gps808Api';
 import { useGps808Store } from '@/store/gps808Store';
+import { FlvPlayer } from './FlvPlayer';
 import { colors, borderRadius, spacing, typography } from '@/constants/theme';
 import { defaultColors } from '@/store/themeStore';
 
-const IS_WEB = Platform.OS === 'web';
+const IS_WEB = typeof window !== 'undefined';
 
-/** 隔離 WebView TS/eslint 問題的包裝元件（react-native-webview types 落後 React 19） */
-const NativeVideoPlayer = ({ uri, onError }: { uri: string; onError: () => void }) => {
-  const webViewRef = useRef<WebView>(null);
-  // @ts-expect-error WebView overloads don't cover React 19 JSX factory
-  return <WebView
-    ref={webViewRef as unknown as React.RefObject<WebView>}
-    source={{ uri }}
-    javaScriptEnabled
-    domStorageEnabled
-    originWhitelist={['*']}
-    mixedContentMode="always"
-    allowsFullscreenVideo
-    startInLoadingState
-    onError={onError}
-    renderLoading={() => (
-      <View
-        style={{
-          ...StyleSheet.absoluteFillObject,
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: 'rgba(0, 0, 0, 0.5)',
-          zIndex: 10,
-        }}
-      >
-        <LoadingSpinner size={20} />
-      </View>
-    )}
-  />;
-};
+// 畫質類型
+export type StreamQuality = 'sd' | 'hd';
 
 export interface CameraFeedItem {
   id: string;
@@ -58,61 +31,111 @@ interface CameraFeedProps {
   item: CameraFeedItem;
   isSelected?: boolean;
   onPress?: () => void;
+  /** 當前畫質設定 */
+  quality?: StreamQuality;
+  /** 畫質變更回調 */
+  onQualityChange?: (quality: StreamQuality) => void;
+  /** 顯示畫質控制按鈕 */
+  showQualityControl?: boolean;
 }
 
-type FeedState = 'loading' | 'streaming' | 'offline' | 'error' | 'no-device';
+type FeedState = 'loading' | 'streaming' | 'device-offline' | 'offline' | 'error' | 'no-device';
 
-function CameraFeedComponent({ item, isSelected = false, onPress }: CameraFeedProps) {
+function CameraFeedComponent({
+  item,
+  isSelected = false,
+  onPress,
+  quality = 'sd',
+  onQualityChange,
+  showQualityControl = false,
+}: CameraFeedProps) {
   const { plateNumber, vehicleName, streamUrl, devIdno, channel = 0 } = item;
   const [feedState, setFeedState] = useState<FeedState>(
     devIdno ? 'loading' : streamUrl ? 'loading' : 'offline'
   );
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isDeviceOnline, setIsDeviceOnline] = useState<boolean | null>(null);
   const { isConnected } = useGps808Store();
 
   const displayLabel = plateNumber || vehicleName || item.id;
 
-  // 自動透過 devIdno 取得影像 URL
-  const resolveStreamUrl = useCallback(async () => {
+  // 初始化和監控設備狀態與串流
+  useEffect(() => {
     if (!devIdno || !isConnected) {
-      setFeedState('offline');
+      setFeedState('device-offline');
       return;
     }
-    setFeedState('loading');
-    setErrorMsg(null);
-    try {
-      const result = await gps808Api.getLiveVideoUrl(devIdno, { channel });
-      if (result.result === 0 && result.videoUrl) {
-        setResolvedUrl(result.videoUrl);
-        setFeedState('streaming');
-      } else {
-        setErrorMsg(result.error || '無法取得影像');
+
+    // 檢查設備狀態
+    const checkStatus = async () => {
+      try {
+        const result = await gps808Api.getDeviceStatus(devIdno, false);
+        if (result.result === 0 && result.status) {
+          const online = result.status.ol === 1 || result.status.ol === '1';
+          setIsDeviceOnline(online);
+          return online;
+        }
+        setIsDeviceOnline(false);
+        return false;
+      } catch {
+        setIsDeviceOnline(false);
+        return false;
+      }
+    };
+
+    // 取得串流 URL
+    const resolveUrl = async () => {
+      setFeedState('loading');
+      setErrorMsg(null);
+
+      try {
+        const jsession = await gps808Api.getStoredSession();
+
+        if (jsession && IS_WEB) {
+          const streamParam = quality === 'sd' ? 1 : 0;
+          const url = `http://localhost:3001/api/gps/flv-stream?devIdno=${devIdno}&channel=${channel}&stream=${streamParam}&jsessionId=${jsession}`;
+          setResolvedUrl(url);
+          setFeedState('streaming');
+        } else {
+          const result = await gps808Api.getLiveVideoUrl(devIdno, {
+            channel,
+            quality,
+            protocol: 'flv',
+          });
+
+          if (result.result === 0 && result.videoUrl) {
+            setResolvedUrl(result.videoUrl);
+            setFeedState('streaming');
+          } else {
+            setErrorMsg(result.error || '無法取得影像 URL');
+            setFeedState('error');
+          }
+        }
+      } catch (err) {
+        setErrorMsg(String(err));
         setFeedState('error');
       }
-    } catch (err) {
-      setErrorMsg(String(err));
-      setFeedState('error');
-    }
+    };
+
+    // 同時檢查狀態和取得 URL
+    checkStatus().then((online) => {
+      if (online !== false) {
+        resolveUrl();
+      } else {
+        setFeedState('device-offline');
+      }
+    });
   }, [devIdno, channel, isConnected]);
 
-  useEffect(() => {
-    // Native 端用 WebView，Web 端用 iframe。兩者共享同一套 resolveStreamUrl 流程。
-    if (devIdno && isConnected) {
-      // eslint-disable-next-line -- resolveStreamUrl is async; setState fires in promise callback, not synchronously
-      resolveStreamUrl();
-    } else if (streamUrl) {
-      setResolvedUrl(streamUrl);
-      setFeedState('streaming');
-    } else {
-      setFeedState('offline');
-    }
-  }, [devIdno, streamUrl, isConnected, resolveStreamUrl]);
+  // 為了穩定性，quality 變更時不立即更新 URL
+  // 如需切換畫質，可透過重新選擇設備來刷新
 
   const getStatusColor = () => {
     if (feedState === 'streaming') return '#22C55E';
     if (feedState === 'loading') return '#F59E0B';
     if (feedState === 'error') return '#EF4444';
+    if (feedState === 'device-offline') return '#EF4444';
     return '#6B7280';
   };
 
@@ -127,30 +150,32 @@ function CameraFeedComponent({ item, isSelected = false, onPress }: CameraFeedPr
         );
 
       case 'streaming':
+      case 'streaming-pending':
         if (!resolvedUrl) return null;
-        // Web 端用 iframe（React Native WebView 不支援 Web）
-        if (IS_WEB) {
-          return (
-            <View style={iframeStyles.container}>
-              <iframe
-                key={resolvedUrl}
-                src={resolvedUrl}
-                style={iframeStyles.iframe}
-                allow="fullscreen"
-                title={displayLabel}
-                sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-              />
-            </View>
-          );
-        }
         return (
-          <NativeVideoPlayer
-            uri={resolvedUrl}
-            onError={() => {
+          <FlvPlayer
+            src={resolvedUrl}
+            mode="live"
+            autoplay
+            muted={true}
+            controls={true}
+            aspectRatio="full"
+            onError={(err) => {
               setFeedState('error');
-              setErrorMsg('載入失敗');
+              setErrorMsg(err);
             }}
           />
+        );
+
+      case 'device-offline':
+        return (
+          <View style={styles.placeholder}>
+            <View style={styles.placeholderIcon}>
+              <WifiOff size={28} color={colors.textTertiary} />
+            </View>
+            <Text style={styles.placeholderLabel}>設備離線</Text>
+            <Text style={styles.placeholderSub}>請確認設備已開機並連接網路</Text>
+          </View>
         );
 
       case 'error':
@@ -160,7 +185,10 @@ function CameraFeedComponent({ item, isSelected = false, onPress }: CameraFeedPr
               <WifiOff size={28} color="#EF4444" />
             </View>
             <Text style={[styles.placeholderLabel, { color: '#EF4444' }]}>
-              {errorMsg || '連線失敗'}
+              {errorMsg?.includes('404') ? '影像服務未開通' 
+                : errorMsg?.includes('權限') ? '無影像查看權限'
+                : errorMsg?.includes('未連接') ? '影像串流未連接'
+                : errorMsg || '連線失敗'}
             </Text>
             <Text style={styles.retryText}>
               {devIdno ? '點擊重試' : '無影像設備'}
@@ -177,10 +205,10 @@ function CameraFeedComponent({ item, isSelected = false, onPress }: CameraFeedPr
               <Video size={28} color={colors.textTertiary} />
             </View>
             <Text style={styles.placeholderLabel}>
-              {!devIdno ? '無影像串流' : isConnected ? '設備離線' : '尚未連線'}
+              {!devIdno ? '無影像串流' : IS_WEB ? '即時影像研究中' : (isConnected ? '設備離線' : '尚未連線')}
             </Text>
             <Text style={styles.placeholderSub}>
-              {devIdno ? '點擊「連線」後重試' : '此車無攝影機'}
+              {devIdno ? IS_WEB ? '請使用錄像下載功能' : '點擊「連線」後重試' : '此車無攝影機'}
             </Text>
           </View>
         );
@@ -204,32 +232,48 @@ function CameraFeedComponent({ item, isSelected = false, onPress }: CameraFeedPr
             {displayLabel}
           </Text>
         </View>
-        {feedState === 'streaming' && (
-          <View style={styles.streamBadge}>
-            <Text style={styles.streamBadgeText}>LIVE</Text>
-          </View>
-        )}
-        {feedState === 'loading' && (
-          <View style={[styles.streamBadge, { backgroundColor: '#F59E0B' }]}>
-            <Text style={styles.streamBadgeText}>...</Text>
-          </View>
-        )}
+        <View style={styles.headerRight}>
+          {feedState === 'streaming' && (
+            <View style={styles.streamBadge}>
+              <Text style={styles.streamBadgeText}>LIVE</Text>
+            </View>
+          )}
+          {feedState === 'streaming-pending' && (
+            <View style={[styles.streamBadge, { backgroundColor: '#3B82F6' }]}>
+              <Text style={styles.streamBadgeText}>就緒</Text>
+            </View>
+          )}
+          {feedState === 'loading' && (
+            <View style={[styles.streamBadge, { backgroundColor: '#F59E0B' }]}>
+              <Text style={styles.streamBadgeText}>...</Text>
+            </View>
+          )}
+          {showQualityControl && (feedState === 'streaming' || feedState === 'streaming-pending') && (
+            <Pressable
+              style={styles.qualityBtn}
+              onPress={() => {
+                const newQuality = quality === 'sd' ? 'hd' : 'sd';
+                onQualityChange?.(newQuality);
+              }}
+              hitSlop={4}
+            >
+              <Text style={styles.qualityBtnText}>
+                {quality === 'sd' ? 'SD' : 'HD'}
+              </Text>
+            </Pressable>
+          )}
+        </View>
       </View>
 
-      {/* Video / Placeholder Area */}
-      <View style={styles.videoArea}>{renderContent()}</View>
+      {/* Video / Placeholder Area — streaming 時禁用 pointerEvents 讓 FlvPlayer 可點擊 */}
+      <View style={styles.videoArea} pointerEvents={feedState === 'streaming' ? 'box-none' : 'auto'}>
+        {renderContent()}
+      </View>
     </Pressable>
   );
 }
 
 export const CameraFeed = memo(CameraFeedComponent);
-
-// iframe 樣式使用純 JS 物件（不受 React Native StyleSheet 型別限制）
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const iframeStyles: Record<string, any> = {
-  container: { flex: 1, overflow: 'hidden', backgroundColor: '#0f0f1a' },
-  iframe: { flex: 1, border: 0, display: 'flex' as const },
-};
 
 const styles = StyleSheet.create({
   container: {
@@ -287,9 +331,46 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     letterSpacing: 0.5,
   },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  qualityBtn: {
+    backgroundColor: 'rgba(59, 130, 246, 0.8)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  qualityBtnText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
   videoArea: {
     flex: 1,
     minHeight: 80,
+  },
+  playButtonOverlay: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  playButtonLarge: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(59, 130, 246, 0.9)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  playButtonText: {
+    fontSize: typography.fontSize.xs,
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
   placeholder: {
     flex: 1,

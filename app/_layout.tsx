@@ -19,10 +19,13 @@ import { useEffect } from 'react';
 import { ClerkProvider } from '@clerk/expo';
 import { tokenCache } from '@/utils/tokenCache';
 import { useSyncClerkToSupabase } from '@/hooks/useSyncClerkToSupabase';
+import { useEnsureUserProfile } from '@/hooks/useEnsureUserProfile';
 
 function AppContent() {
   // 同步 Clerk session → Supabase auth（讓子 auth.uid() 能識別 Clerk user ID）
   useSyncClerkToSupabase();
+  // 確保 OAuth 使用者首次登入時自動在 Supabase 建立 user_profile
+  useEnsureUserProfile();
 
   const checkAuth = useAuthStore((s) => s.checkAuth);
   const authLoading = useAuthStore((s) => s.isLoading);
@@ -39,7 +42,7 @@ function AppContent() {
   useEffect(() => {
     checkAuth();
     loadUsers().then(() => syncUsers());
-    loadVehicles().then(() => syncVehicles());
+    loadVehicles(); // 不要自動 sync，避免 RLS 問題導致數據被清空
     loadDeliveries().then(() => syncDeliveries());
     loadGpsConfig();
     loadGoogleMapsConfig();

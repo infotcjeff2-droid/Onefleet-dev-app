@@ -1,7 +1,16 @@
 import { create } from 'zustand';
 import { User, UserRole } from '@/types';
 import { storage } from '@/utils/storage';
-import { fetchFleetSnapshot, hasSupabaseEnv, pushFleetSnapshot } from '@/utils/fleetSync';
+import {
+  fetchUserProfiles,
+  syncUserProfiles,
+  addUserProfile as addUserProfileToDb,
+  updateUserProfile as updateUserProfileInDb,
+  softDeleteUserProfile,
+  hardDeleteUserProfile,
+  hasSupabaseEnv,
+} from '@/utils/fleetSync';
+import type { TrashItem } from './trashStore';
 
 const STORAGE_KEY = 'managed_users';
 
@@ -18,7 +27,10 @@ interface UserManagementState {
   addUser: (name: string, email: string, password: string, role: 'driver' | 'company', phone?: string, avatar?: string, nameZh?: string, nameEn?: string, address?: string, companyId?: string) => Promise<{ success: boolean; error?: string }>;
   updateUser: (id: string, updates: Partial<Pick<ManagedUser, 'name' | 'email' | 'phone' | 'role' | 'avatar' | 'nameZh' | 'nameEn' | 'address' | 'companyId'>>) => Promise<void>;
   updateUserPassword: (id: string, password: string) => Promise<void>;
-  deleteUser: (id: string) => Promise<void>;
+  /** 軟刪除並丟入垃圾桶；回傳垃圾桶項目快照(若該 id 不存在則回傳 null) */
+  softDeleteUser: (id: string) => Promise<TrashItem | null>;
+  /** 別名,委派給 softDeleteUser;UI 中既有 deleteUser() 呼叫端不必改動 */
+  deleteUser: (id: string) => Promise<TrashItem | null>;
   getUserByEmail: (email: string) => ManagedUser | undefined;
   getCompanies: () => ManagedUser[];
   getCompanyById: (id: string) => ManagedUser | undefined;
@@ -50,8 +62,10 @@ async function pushUsers(users: ManagedUser[]) {
   if (!hasSupabaseEnv) {
     return;
   }
-
-  await pushFleetSnapshot({ users });
+  // 同步到 user_profile 表（含 password 欄位）
+  // 注意：ManagedUser 的 password 仍是明碼(本地也是明碼儲存);
+  // 未來應改為只上傳雜湊後的密碼,但目前 Auth 流程仍是明碼比對。
+  await syncUserProfiles(users);
 }
 
 function pushUsersInBackground(users: ManagedUser[], onError: (message: string) => void) {
@@ -99,36 +113,65 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
 
     set({ isSyncing: true, syncError: null });
     try {
-      const remote = await fetchFleetSnapshot();
+      // 從 user_profile 表取得遠端使用者
+      const remoteUsers = await fetchUserProfiles();
       const localUsers = sanitizeUsers(get().users);
 
-      if (remote && Array.isArray(remote.users) && remote.users.length > 0) {
+      if (remoteUsers.length > 0) {
         // 先把遠端資料也消毒，避免漏欄位的髒資料混入合併結果
-        const sanitizedRemoteUsers = sanitizeUsers(remote.users as ManagedUser[]);
+        const sanitizedRemoteUsers = sanitizeUsers(remoteUsers as ManagedUser[]);
 
-        // 採聯集合併（以 email 為唯一鍵），避免遠端空陣列覆蓋本地、也避免本地剛新增被遠端舊版覆蓋
-        const mergedMap = new Map<string, ManagedUser>();
+        // 合併策略：以 id 為主鍵（同一個 Clerk id / App 內部 id 對應同一筆）
+        // 遠端優先（雲端是真相），但
+        //   1. 同 id 合併時，若本地有 password 但遠端沒有 → 用本地 password
+        //      （避免 sync 把本地密碼「清空」,造成另一台裝置登入失敗）
+        //   2. 本地有而遠端沒有的 id 仍保留（包含剛被刪的本地副本、剛新增但尚未同步的）
+        const mergedById = new Map<string, ManagedUser>();
+        const remoteByEmail = new Map<string, ManagedUser>();
+
         for (const user of sanitizedRemoteUsers) {
-          mergedMap.set(user.email.toLowerCase(), user);
+          mergedById.set(user.id, user);
+          remoteByEmail.set(user.email.toLowerCase(), user);
         }
-        for (const user of localUsers) {
-          mergedMap.set(user.email.toLowerCase(), user);
-        }
-        const merged = Array.from(mergedMap.values());
 
-        // 若本地比遠端多（剛新增但同步失敗），回寫遠端
-        const remoteEmails = new Set(sanitizedRemoteUsers.map((u) => u.email.toLowerCase()));
-        const hasNewLocal = localUsers.some((u) => !remoteEmails.has(u.email.toLowerCase()));
+        for (const local of localUsers) {
+          const remoteById = mergedById.get(local.id);
+          if (remoteById) {
+            // 同一 id：遠端優先,但若本地有 password 而遠端沒有則補回去
+            if ((!remoteById.password || remoteById.password.length === 0) && local.password) {
+              mergedById.set(local.id, { ...remoteById, password: local.password });
+            }
+            continue;
+          }
+          const remoteByEmailMatch = remoteByEmail.get(local.email.toLowerCase());
+          if (remoteByEmailMatch) {
+            // 同 email 但不同 id：以遠端 id 為準（雲端已用新 id 重建）。
+            // 若本地有 password,補到遠端 row。
+            if (local.password && (!remoteByEmailMatch.password || remoteByEmailMatch.password.length === 0)) {
+              mergedById.set(remoteByEmailMatch.id, { ...remoteByEmailMatch, password: local.password });
+            }
+            continue;
+          }
+          // 本地有、雲端沒有 → 保留（剛新增但尚未同步、或剛被刪除的本地副本）
+          mergedById.set(local.id, local);
+        }
+
+        const merged = Array.from(mergedById.values());
+
+        // 若本地比遠端多（剛新增但同步失敗），回寫雲端
+        const remoteIds = new Set(sanitizedRemoteUsers.map((u) => u.id));
+        const hasNewLocal = merged.some((u) => !remoteIds.has(u.id));
 
         set({ users: merged });
         await persistUsers(merged);
         if (hasNewLocal) {
-          await pushFleetSnapshot({ users: merged });
+          // 推回雲端時包含 password 欄位（雲端 auth 需要）
+          await syncUserProfiles(merged);
         }
       } else if (localUsers.length > 0) {
-        // 遠端沒有資料，把本地推上去
+        // 遠端沒有資料，把本地推上去（含 password）
         await persistUsers(localUsers);
-        await pushFleetSnapshot({ users: localUsers });
+        await syncUserProfiles(localUsers);
       }
     } catch (err) {
       set({ syncError: err instanceof Error ? err.message : 'User sync failed' });
@@ -183,8 +226,17 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
   },
 
   /**
-   * 軟刪除：把使用者丟到垃圾桶（30 天保留），而非直接清除
-   * 回傳被丟入垃圾桶的快照，方便 UI 做 alert 提示
+   * 軟刪除：把使用者丟到垃圾桶（30 天保留），同時也從 Supabase user_profile 表
+   * 硬刪除以避免 syncUsers() 後又被拉回來。
+   *
+   * 行為：
+   * 1. 從本地 `managed_users` 移除該 user 並 persist。
+   * 2. 嘗試從 Supabase `user_profile` 表硬刪除該 row（DELETE, 不是 is_deleted=true）。
+   * 3. 若 Supabase 沒設環境變數 → 直接結束（只在本地運作）。
+   * 4. 若 Supabase 刪除失敗 → 退而求其次用 `pushUsers()` 把目前「剩餘 users」上傳，
+   *    但因為已經從本地移除該 user,理論上不會再復活。
+   * 5. 加進垃圾桶，仍然保留 30 天可從垃圾桶還原。
+   * 回傳垃圾桶快照，UI 可用於 alert 提示。
    */
   softDeleteUser: async (id) => {
     const target = get().users.find((u) => u.id === id);
@@ -192,14 +244,27 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
     const updated = sanitizeUsers(get().users.filter((user) => user.id !== id));
     set({ users: updated, syncError: null, isSyncing: hasSupabaseEnv });
     await persistUsers(updated);
-    try {
-      await pushUsers(updated);
-    } catch (err) {
-      set({ syncError: err instanceof Error ? err.message : 'User sync failed' });
-      throw err;
-    } finally {
-      set({ isSyncing: false });
+
+    if (hasSupabaseEnv) {
+      try {
+        // 軟刪除（只把 is_deleted 設為 true），讓資料仍留在 user_profile 表內。
+        // 若 30 天後垃圾桶過期且使用者未還原，再由 cleanupExpired() 排程 hardDelete。
+        await softDeleteUserProfile(id);
+        console.log(`[userManagement] soft-deleted user ${id} in user_profile`);
+      } catch (err) {
+        console.warn('[userManagement] softDelete failed, will fallback to push remaining:', err);
+        try {
+          // 退而求其次:用本地剩餘 users 推一次上去（不會包含被刪的）
+          await pushUsers(updated);
+        } catch (pushErr) {
+          set({ syncError: pushErr instanceof Error ? pushErr.message : 'User sync failed' });
+          throw pushErr;
+        }
+      } finally {
+        set({ isSyncing: false });
+      }
     }
+
     // 動態載入垃圾桶 store 避免循環依賴
     const { useTrashStore } = await import('@/store/trashStore');
     const snapshot: Record<string, unknown> = { ...target };
@@ -209,21 +274,7 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
 
   /** 保留舊名稱以維持向後相容；新行為走 softDeleteUser 流程丟到垃圾桶 */
   deleteUser: async (id) => {
-    const { useTrashStore } = await import('@/store/trashStore');
-    const target = get().users.find((u) => u.id === id);
-    if (!target) return;
-    const updated = sanitizeUsers(get().users.filter((user) => user.id !== id));
-    set({ users: updated, syncError: null, isSyncing: hasSupabaseEnv });
-    await persistUsers(updated);
-    try {
-      await pushUsers(updated);
-    } catch (err) {
-      set({ syncError: err instanceof Error ? err.message : 'User sync failed' });
-      throw err;
-    } finally {
-      set({ isSyncing: false });
-    }
-    await useTrashStore.getState().addToTrash('user', { ...target });
+    return await get().softDeleteUser(id);
   },
 
   getUserByEmail: (email) => {

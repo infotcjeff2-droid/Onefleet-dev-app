@@ -160,6 +160,7 @@ export function CompanyList() {
         <Pressable
           style={[styles.addBtn, { backgroundColor: `${colors.primary}20` }]}
           onPress={handleAdd}
+          activeOpacity={0.7}
         >
           <Plus size={14} color={colors.primary} />
           <Text style={[styles.addBtnText, { color: colors.primary }]}>

@@ -160,9 +160,11 @@ export interface Gps808DeviceStatus {
   pk?: number | string;       // park time
   lc?: number | string;       // mileage
   dn?: string;                // driver name
-  jn?: string;                // driver job
+  jn?: string;               // driver job
   /** When lat/lng are both 0, this contains the status code (e.g., 1 = offline) */
   gpsS?: number | string;
+  /** Number of video channels supported by the device (e.g., 4 for VL-6012, 6 for others) */
+  ChanNum?: number | string;
 }
 
 /** Track history data point */
@@ -448,6 +450,9 @@ export const gps808Api = {
         // status is an array: { result: 0, status: [{ id, vid, lng, lat, ... }] }
         const statusArray = Array.isArray(res.status) ? res.status : [];
         const firstStatus = (statusArray[0] as unknown as Gps808DeviceStatus) ?? {};
+        // 除錯：列印原始 status 物件以便驗證 lat/lng 格式
+        // eslint-disable-next-line no-console
+        console.log('[gps808Api.getDeviceStatus] raw status[0]:', firstStatus);
         return { result: 0, status: firstStatus };
       }
       return { result: res.result, error: res.error || `API error: result=${res.result}` };
@@ -474,6 +479,30 @@ export const gps808Api = {
     const params: Record<string, string> = { devIdno };
     if (lastUpdateTime) params.lastUpdateTime = lastUpdateTime;
     return apiCall<Gps808Driver>('/StandardApiAction_findDriverInfoByDeviceId.action', params);
+  },
+
+  /**
+   * Get the number of video channels supported by a device.
+   * Returns the ChanNum from device status, with a sensible default fallback.
+   * Most devices support 4 channels (VL-6012), some support 6 channels.
+   */
+  async getDeviceChannelCount(devIdno: string): Promise<number> {
+    try {
+      const res = await this.getDeviceStatus(devIdno, false);
+      if (res.result === 0 && res.status) {
+        const chanNum = res.status.ChanNum;
+        if (chanNum !== undefined && chanNum !== null && chanNum !== '') {
+          const parsed = typeof chanNum === 'string' ? parseInt(chanNum, 10) : chanNum;
+          if (!isNaN(parsed) && parsed > 0) {
+            return parsed;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[GPS808] Failed to get device channel count:', err);
+    }
+    // Default to 4 channels if unable to determine
+    return 4;
   },
 
   /**
@@ -577,45 +606,151 @@ export const gps808Api = {
    *
    * @param devIdno 設備號（devIdno）
    * @param options.channel 通道號（預設 0）
-   * @param options.stream 碼流（預設 0=主碼流）
+   * @param options.stream 碼流（預設 0=主碼流/高清, 1=子碼流/標清）
    * @param options.type 類型（預設 1=即時影像）
+   * @param options.quality 畫質（sd=標清, hd=高清）
+   * @param options.protocol 串流協議（flv=HTTP-FLV, hls=HLS, auto=自動）
    * @param options.ip 伺服器 IP（可選，若留空則由後端解析）
    * @param options.port 伺服器 Port（可選，若留空則由後端解析）
    */
-  getLiveVideoUrl(
+  async getLiveVideoUrl(
     devIdno: string,
     options?: {
       channel?: number;
       stream?: number;
       type?: number;
+      quality?: 'sd' | 'hd';
+      protocol?: 'flv' | 'hls' | 'auto';
       ip?: string;
       port?: string;
     },
-  ): Promise<{ result: number; videoUrl?: string; error?: string }> {
+  ): Promise<{
+    result: number;
+    videoUrl?: string;
+    flvUrl?: string;
+    hlsUrl?: string;
+    error?: string;
+  }> {
+    // 畫質對應串流參數
+    // stream=0: 主碼流 (HD/高清, ~4Mbps)
+    // stream=1: 子碼流 (SD/標清, ~1.5Mbps)
+    const stream = options?.quality === 'sd' ? 1 : (options?.stream ?? 0);
+    const protocol = options?.protocol ?? 'flv';
+    const channel = options?.channel ?? 0;
+
     const params: Record<string, string | number> = {
       devIdno,
-      channel: options?.channel ?? 0,
-      stream: options?.stream ?? 0,
+      channel,
+      stream,
       type: options?.type ?? 1,
     };
     if (options?.ip) params.ip = options.ip;
     if (options?.port) params.port = options.port;
 
-    // 影像串流 URL 必須直接指向 808GPS 伺服器（不使用 proxy）
-    // 因為瀏覽器的 CORS 限制和影像串流特性，需要直接連線到影片伺服器
-    const videoBaseUrl = 'https://console.onefleet.hk';
+    const jsession = await storage.getItem(JSESSION_KEY);
+    if (jsession) params.jsessionId = jsession;
 
+    // 構建 URL 參數
     const searchParams = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => searchParams.set(k, String(v)));
-    return storage
-      .getItem(JSESSION_KEY)
-      .then((jsession) => {
-        if (jsession) searchParams.set('jsessionId', jsession);
+    const queryString = searchParams.toString();
+
+    // 808GPS 服務器 URL
+    const baseUrl = 'https://console.onefleet.hk';
+
+    // 根據 808GPS 官方文檔，即時影像 URL 格式：
+    // HLS: http://console.onefleet.hk:6604/hls/1_{devIdno}_{channel}_{stream}.m3u8?jsession={jsession}
+    // FLV/HTTP-FLV: http://console.onefleet.hk:6604/3/3?AVType=1&jsession=...&DevIDNO=...&Channel=...&Stream=...
+    // 透過 Web 代理打通 CORS
+    const hlsUrl = jsession
+      ? `http://console.onefleet.hk:6604/hls/1_${devIdno}_${channel}_${stream}.m3u8?jsession=${jsession}`
+      : `http://console.onefleet.hk:6604/hls/1_${devIdno}_${channel}_${stream}.m3u8`;
+    const flvUrl = jsession
+      ? `http://console.onefleet.hk:6604/3/3?AVType=1&jsession=${jsession}&DevIDNO=${devIdno}&Channel=${channel}&Stream=${stream}`
+      : `http://console.onefleet.hk:6604/3/3?AVType=1&DevIDNO=${devIdno}&Channel=${channel}&Stream=${stream}`;
+
+    // Web 端：透過代理服務器回傳影像 URL（避免瀏覽器 CORS 限制）
+    if (IS_WEB) {
+      try {
+        const apiEndpoint = `/api/gps/video-url?${queryString}`;
+        const response = await fetch(apiEndpoint);
+        
+        if (response.ok) {
+          const data = await response.json();
+          
+          if (data.result === 0) {
+            const videoUrl = data.videoUrl || '';
+            const mediaIp = data.ip || '';
+            const mediaPort = data.port || '';
+            
+            let apiFlvUrl = data.flvUrl || '';
+            if (!apiFlvUrl && mediaIp && mediaPort) {
+              apiFlvUrl = `rtmp://${mediaIp}:${mediaPort}/live/${devIdno}_${channel}`;
+            }
+            
+            const apiHlsUrl = data.hlsUrl || '';
+            
+            return {
+              result: 0,
+              videoUrl: videoUrl || apiFlvUrl || apiHlsUrl,
+              flvUrl: apiFlvUrl || flvUrl,
+              hlsUrl: apiHlsUrl || hlsUrl,
+            };
+          }
+          
+          // 代理服務器失敗時，使用 808GPS 官方文檔的標準 URL
+          console.warn('[gps808Api] 代理獲取影像 URL 失敗，使用 808GPS 標準 URL:', data.error);
+          return {
+            result: 0,
+            videoUrl: protocol === 'hls' ? hlsUrl : flvUrl,
+            flvUrl,
+            hlsUrl,
+          };
+        } else {
+          return { result: -1, error: `API 錯誤: ${response.status}` };
+        }
+      } catch (err) {
+        console.error('[gps808Api] Web 端獲取影像 URL 失敗:', err);
+        // 即使代理失敗，也返回 808GPS 標準 URL（讓瀏覽器直接嘗試）
         return {
-          result: 0 as number,
-          videoUrl: `${videoBaseUrl}/StandardApiAction_getVideoUrl.action?${searchParams.toString()}`,
+          result: 0,
+          videoUrl: protocol === 'hls' ? hlsUrl : flvUrl,
+          flvUrl,
+          hlsUrl,
         };
-      });
+      }
+    }
+
+    // 原生端直接使用影像 URL（依據 808GPS 官方文檔格式）
+    const nativeFlvUrl = `${baseUrl}/3/3?${queryString}&AVType=1`;
+    const nativeHlsUrl = `${baseUrl}/hlslive/?${queryString}&AVType=1`;
+
+    // 根據協議返回 URL
+    if (protocol === 'flv') {
+      return {
+        result: 0,
+        videoUrl: nativeFlvUrl,
+        flvUrl: nativeFlvUrl,
+        hlsUrl: nativeHlsUrl,
+      };
+    }
+
+    if (protocol === 'hls') {
+      return {
+        result: 0,
+        videoUrl: nativeHlsUrl,
+        flvUrl: nativeFlvUrl,
+        hlsUrl: nativeHlsUrl,
+      };
+    }
+
+    // auto 模式：返回 HTTP-FLV URL
+    return {
+      result: 0,
+      videoUrl: nativeFlvUrl,
+      flvUrl: nativeFlvUrl,
+      hlsUrl: nativeHlsUrl,
+    };
   },
 
   /**
@@ -647,4 +782,312 @@ export const gps808Api = {
       return { result: res.result, error: res.error };
     });
   },
+
+  /**
+   * 查詢錄像文件列表
+   * 
+   * 用於查詢指定設備、指定日期的錄像文件資訊。
+   * 
+   * @param devIdno 設備號
+   * @param options.year 年份 (如 2026)
+   * @param options.month 月份 (1-12)
+   * @param options.day 日期 (1-31)
+   * @param options.channel 通道號 (0-5)
+   * @param options.beg 開始秒數 (0-86399)
+   * @param options.end 結束秒數 (0-86399)
+   * @param options.recType 錄像類型 (-1=全部, 0=一般, 1=報警)
+   * @param options.store 存儲位置 (1=設備, 2=服務器)
+   */
+  queryVideoFileInfo(
+    devIdno: string,
+    options: {
+      year: number;
+      month: number;
+      day: number;
+      channel: number;
+      beg?: number;
+      end?: number;
+      recType?: number;
+      store?: number;
+    },
+  ): Promise<{
+    result: number;
+    videoFiles?: VideoFileInfo[];
+    error?: string;
+  }> {
+    const params: Record<string, string | number> = {
+      DevIDNO: devIdno,
+      CHN: options.channel,
+      YEAR: options.year,
+      MON: options.month,
+      DAY: options.day,
+      BEG: options.beg ?? 0,
+      END: options.end ?? 86399,
+      RECTYPE: options.recType ?? -1,
+      FILEATTR: 2,
+      ARM1: 0,
+      ARM2: 0,
+      RES: 0,
+      STREAM: 0,
+      STORE: options.store ?? 2,
+    };
+
+    return apiCall<VideoFileInfo>('/StandardApiAction_getVideoFileInfo.action', params).then((res) => {
+      if (res.result === 0) {
+        return { result: 0, videoFiles: res.infos ?? [] };
+      }
+      return { result: res.result, error: res.error };
+    });
+  },
+
+  /**
+   * 查詢歷史錄像文件列表（跨日期範圍）
+   * 
+   * @param devIdno 設備號
+   * @param options.year 開始年份
+   * @param options.month 開始月份
+   * @param options.day 開始日期
+   * @param options.yearE 結束年份
+   * @param options.monthE 結束月份
+   * @param options.dayE 結束日期
+   * @param options.channel 通道號
+   * @param options.recType 錄像類型
+   * @param options.store 存儲位置 (1=設備, 2=服務器)
+   */
+  queryVideoHistoryFile(
+    devIdno: string,
+    options: {
+      year: number;
+      month: number;
+      day: number;
+      yearE: number;
+      monthE: number;
+      dayE: number;
+      channel: number;
+      beg?: number;
+      end?: number;
+      recType?: number;
+      store?: number;
+    },
+  ): Promise<{
+    result: number;
+    videoFiles?: VideoFileInfo[];
+    error?: string;
+  }> {
+    const params: Record<string, string | number> = {
+      DevIDNO: devIdno,
+      CHN: options.channel,
+      YEAR: options.year,
+      MON: options.month,
+      DAY: options.day,
+      YEARE: options.yearE,
+      MONE: options.monthE,
+      DAYE: options.dayE,
+      BEG: options.beg ?? 0,
+      END: options.end ?? 86399,
+      RECTYPE: options.recType ?? -1,
+      FILEATTR: 2,
+      ARM1: 0,
+      ARM2: 0,
+      RES: 0,
+      STREAM: 0,
+      STORE: options.store ?? 2,
+    };
+
+    return apiCall<VideoFileInfo>('/StandardApiAction_getVideoHistoryFile.action', params).then((res) => {
+      if (res.result === 0) {
+        return { result: 0, videoFiles: res.infos ?? [] };
+      }
+      return { result: res.result, error: res.error };
+    });
+  },
+
+  /**
+   * 新增錄像下載任務
+   * 
+   * 將錄像下載到服務器，然後可以通過 downloadUrl 下載。
+   * 
+   * @param devIdno 設備號
+   * @param options.fileBeginTime 檔案開始時間 (YYYY-MM-DD HH:mm:ss)
+   * @param options.fileEndTime 檔案結束時間 (YYYY-MM-DD HH:mm:ss)
+   * @param options.serverBeginTime 服務器開始時間 (YYYY-MM-DD HH:mm:ss)
+   * @param options.serverEndTime 服務器結束時間 (YYYY-MM-DD HH:mm:ss)
+   * @param options.filePath 檔案路徑 (從 queryVideoFileInfo 取得)
+   * @param options.videoType 視頻類型
+   * @param options.fileLength 檔案大小 (bytes)
+   * @param options.channel 通道號
+   * @param options.label 任務標籤
+   */
+  addDownloadTask(
+    devIdno: string,
+    options: {
+      fileBeginTime: string;
+      fileEndTime: string;
+      serverBeginTime: string;
+      serverEndTime: string;
+      filePath: string;
+      videoType?: number;
+      fileLength: number;
+      channel: number;
+      label?: string;
+    },
+  ): Promise<{
+    result: number;
+    taskId?: string;
+    downloadUrl?: string;
+    error?: string;
+  }> {
+    const params: Record<string, string | number> = {
+      did: devIdno,
+      fbtm: options.fileBeginTime,
+      fetm: options.fileEndTime,
+      sbtm: options.serverBeginTime,
+      setm: options.serverEndTime,
+      fph: options.filePath,
+      vtp: options.videoType ?? 1,
+      len: options.fileLength,
+      chn: options.channel,
+      dtp: 1, // 1=分段下載（先下載到服務器）
+      lab: options.label ?? '',
+    };
+
+    return apiCall<{ TaskID?: string; DownUrl?: string }>(
+      '/StandardApiAction_addDownloadTask.action',
+      params,
+    ).then((res) => {
+      if (res.result === 0 && res.infos && res.infos.length > 0) {
+        return {
+          result: 0,
+          taskId: res.infos[0].TaskID,
+          downloadUrl: res.infos[0].DownUrl,
+        };
+      }
+      return { result: res.result, error: res.error };
+    });
+  },
+
+  /**
+   * 查詢下載任務列表
+   */
+  queryDownloadTaskList(): Promise<{
+    result: number;
+    tasks?: DownloadTask[];
+    error?: string;
+  }> {
+    return apiCall<DownloadTask>('/StandardApiAction_downloadTasklist.action', {}).then((res) => {
+      if (res.result === 0) {
+        return { result: 0, tasks: res.infos ?? [] };
+      }
+      return { result: res.result, error: res.error };
+    });
+  },
+
+  /**
+   * 刪除下載任務
+   * 
+   * @param taskId 任務 ID
+   */
+  deleteDownloadTask(taskId: string): Promise<{ result: number; error?: string }> {
+    return apiCall('/StandardApiAction_delDownloadTasklist.action', { id: taskId }).then((res) => ({
+      result: res.result,
+      error: res.error,
+    }));
+  },
+
+  /**
+   * 控制下載任務（暫停/繼續/取消）
+   * 
+   * @param taskId 任務 ID
+   * @param action 動作 (0=取消, 1=繼續, 2=暫停)
+   */
+  controlDownloadTask(
+    taskId: string,
+    action: 0 | 1 | 2,
+  ): Promise<{ result: number; error?: string }> {
+    return apiCall('/StandardApiAction_controllDownLoad.action', {
+      id: taskId,
+      action,
+    }).then((res) => ({
+      result: res.result,
+      error: res.error,
+    }));
+  },
 };
+
+/** 錄像文件資訊 */
+export interface VideoFileInfo {
+  /** 檔案名稱 */
+  name?: string;
+  /** 檔案路徑 */
+  filePath?: string;
+  /** 通道號 */
+  chn?: number;
+  /** 開始時間 (Unix timestamp ms) */
+  beginTime?: number;
+  /** 結束時間 (Unix timestamp ms) */
+  endTime?: number;
+  /** 檔案大小 (bytes) */
+  fileSize?: number;
+  /** 錄像類型 */
+  recType?: number;
+  /** 存儲位置 */
+  store?: number;
+  /** 設備 ID */
+  devId?: string;
+  /** 檔案 ID */
+  fileId?: string;
+  /** 下載 URL */
+  downUrl?: string;
+  /** 播放 URL */
+  playUrl?: string;
+  /** 是否正在錄製 */
+  isRecording?: boolean;
+  /** 媒體類型 */
+  mediaType?: number;
+}
+
+/** 下載任務資訊 */
+export interface DownloadTask {
+  /** 任務 ID */
+  id?: string;
+  TaskID?: string;
+  /** 設備號 */
+  devIdno?: string;
+  /** 設備 ID */
+  did?: string;
+  /** 任務狀態 (0=暫停, 1=下載中, 2=取消, 3=失敗, 4=成功) */
+  taskStatus?: number;
+  /** 下載進度 (0-100) */
+  uploadProgress?: number;
+  /** 下載速度 (bytes/秒) */
+  uploadSpeed?: number;
+  /** 用戶 ID */
+  userID?: number;
+  /** 任務創建時間 */
+  taskSTime?: number;
+  /** 任務結束時間 */
+  taskETime?: number;
+  /** 下載連結 */
+  DownUrl?: string;
+  downloadUrl?: string;
+  /** 檔案路徑 */
+  filePath?: string;
+  /** 檔案名稱 */
+  fileName?: string;
+  /** 檔案大小 (bytes) */
+  fileSize?: number;
+  /** 估計檔案大小 */
+  estimateFileSize?: number;
+  /** 開始時間 */
+  beginTime?: string;
+  /** 結束時間 */
+  endTime?: string;
+  /** 下載路徑 */
+  downPath?: string;
+  /** 失敗原因 */
+  failReason?: string;
+  /** 下載類型 */
+  downType?: number;
+  /** 通道號 */
+  channel?: number;
+}

@@ -5,6 +5,7 @@ import { LayoutDashboard, User, ClipboardList, Car } from 'lucide-react-native';
 import { Text } from 'react-native';
 import { useDeliveryStore } from '@/store/deliveryStore';
 import { useTranslation } from '@/i18n';
+import { useAuthStore } from '@/store/authStore';
 
 function Badge({ count }: { count: number }) {
   if (count === 0) return null;
@@ -26,7 +27,10 @@ function TabBarIcon({ name, color, focused }: { name: string; color: string; foc
   if (name === 'delivery') {
     const deliveries = useDeliveryStore((s) => s.deliveries);
     const today = new Date().toISOString().slice(0, 10);
-    const todayCount = deliveries.filter((d) => d.pickupTime.slice(0, 10) === today).length;
+    const activeStatuses = ['pending', 'assigned', 'in_transit'];
+    const todayCount = deliveries.filter((d) =>
+      d.pickupTime.slice(0, 10) === today && activeStatuses.includes(d.status)
+    ).length;
 
     return (
       <View style={[styles.iconContainer, focused && styles.iconContainerFocused]}>
@@ -45,6 +49,8 @@ function TabBarIcon({ name, color, focused }: { name: string; color: string; foc
 
 export default function TabLayout() {
   const { t } = useTranslation();
+  const { role } = useAuthStore();
+  const isDriver = role === 'driver';
 
   return (
     <Tabs
@@ -73,6 +79,10 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }) => (
             <TabBarIcon name="vehicle" color={color} focused={focused} />
           ),
+          // 司機角色時將車輛 tab 從路由表移除
+          href: isDriver ? null : '/vehicle',
+          // 雙保險：徹底隱藏殘留空間
+          tabBarItemStyle: isDriver ? styles.hiddenTab : undefined,
         }}
       />
       <Tabs.Screen
@@ -105,6 +115,12 @@ const styles = StyleSheet.create({
     height: 75,
     paddingTop: 8,
     paddingBottom: 10,
+  },
+  hiddenTab: {
+    display: 'none',
+    width: 0,
+    minWidth: 0,
+    paddingHorizontal: 0,
   },
   tabBarLabel: {
     fontSize: 11,
