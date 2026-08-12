@@ -10,6 +10,10 @@
  *
  * 環境變數（需在 Supabase 設定）：
  *   CLERK_SECRET_KEY  — Clerk Backend API secret key (sk_...)
+ *
+ * 支援 action：
+ *   - create / syncAll：建立 / 同步使用者到 Clerk
+ *   - delete           ：依 email 從 Clerk 真實刪除使用者（垃圾桶永久刪除用）
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
@@ -38,9 +42,13 @@ interface ManagedUser {
 }
 
 interface SyncPayload {
-  action: 'create' | 'update' | 'syncAll'
+  action: 'create' | 'update' | 'syncAll' | 'delete'
   user?: ManagedUser
   users?: Array<ManagedUser>
+  /** delete action 使用：依 email 找出 Clerk user 並刪除 */
+  email?: string
+  /** delete action 使用：若已知 Clerk userId 可直接傳入避免查找 */
+  clerkUserId?: string
   clerkRoleMap?: Record<string, string>
 }
 
@@ -107,6 +115,65 @@ async function syncUser(user: ManagedUser, clerkRoleMap: Record<string, string>)
   }
 }
 
+/**
+ * 從 Clerk 真實刪除使用者。
+ * 優先用 clerkUserId；若沒給則用 email 從 Clerk 查詢後刪除。
+ * 回傳 { deleted: boolean, clerkId?: string, alreadyMissing?: boolean }
+ */
+async function deleteClerkUser(email?: string, clerkUserId?: string): Promise<{
+  deleted: boolean
+  clerkId?: string
+  alreadyMissing?: boolean
+}> {
+  let targetId = clerkUserId
+
+  if (!targetId) {
+    if (!email) {
+      throw new Error('deleteClerkUser requires either clerkUserId or email')
+    }
+    // 用 email 查找 Clerk user
+    const listResp = await clerkRequest(
+      'GET',
+      `/users?limit=20&query=${encodeURIComponent(email)}`
+    ) as {
+      data: Array<{ id: string; email_addresses: Array<{ email_address: string }> }>
+    }
+    const match = listResp.data.find(
+      (u) => u.email_addresses?.[0]?.email_address?.toLowerCase() === email.toLowerCase()
+    )
+    if (!match) {
+      // Clerk 沒這個人 → 視為已刪除（冪等）
+      return { deleted: true, alreadyMissing: true }
+    }
+    targetId = match.id
+  }
+
+  // Clerk 刪除 user（DELETE /users/{id}）
+  const secretKey = Deno.env.get('CLERK_SECRET_KEY')
+  if (!secretKey) throw new Error('CLERK_SECRET_KEY not configured in Supabase secrets')
+
+  const resp = await fetch(`${CLERK_BASE_URL}/users/${targetId}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${secretKey}`,
+      'Content-Type': 'application/json',
+    },
+  })
+
+  if (resp.status === 404) {
+    return { deleted: true, clerkId: targetId, alreadyMissing: true }
+  }
+  if (!resp.ok) {
+    const data = await resp.json().catch(() => ({}))
+    const msg = (data as { errors?: Array<{ message: string }>; message?: string })?.errors?.[0]?.message
+      ?? (data as { message?: string })?.message
+      ?? `HTTP ${resp.status}`
+    throw new Error(`Clerk delete failed: ${msg}`)
+  }
+
+  return { deleted: true, clerkId: targetId }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
@@ -121,7 +188,7 @@ serve(async (req) => {
     }
 
     const body: SyncPayload = await req.json()
-    const { action, user, users, clerkRoleMap: roleMap = { admin: 'admin', driver: 'driver', company: 'company', user: 'user' } } = body
+    const { action, user, users, email, clerkUserId, clerkRoleMap: roleMap = { admin: 'admin', driver: 'driver', company: 'company', user: 'user' } } = body
 
     let results: unknown[] = []
 
@@ -142,6 +209,12 @@ serve(async (req) => {
       })
     } else if (action === 'create' && user) {
       const result = await syncUser(user, roleMap)
+      return new Response(JSON.stringify({ result }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    } else if (action === 'delete') {
+      // 垃圾桶「永久刪除」用：依 email / clerkUserId 從 Clerk 真實刪除
+      const result = await deleteClerkUser(email, clerkUserId)
       return new Response(JSON.stringify({ result }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })

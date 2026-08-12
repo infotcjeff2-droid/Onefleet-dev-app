@@ -90,6 +90,7 @@ export default function WarehouseManagement() {
 
   const onRefresh = async () => {
     setRefreshing(true);
+    await useInventoryStore.getState().syncFromCloud();
     await loadWarehouses();
     setRefreshing(false);
   };

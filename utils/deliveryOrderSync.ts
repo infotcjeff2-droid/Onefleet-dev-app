@@ -4,7 +4,7 @@
  * 使用共享的 delivery_orders 表，讓司機能看到被指派的配送單。
  */
 
-import { DeliveryOrder, DeliveryPhoto, SignatureStroke } from '@/types';
+import { DeliveryOrder, DeliveryPhoto, SignatureStroke, DeliveryCargoItem } from '@/types';
 
 const TABLE_NAME = 'delivery_orders';
 
@@ -48,9 +48,16 @@ interface DbDeliveryOrder {
   signed_at: string | null;
   signature_strokes: SignatureStroke[][] | null;
   photos: DeliveryPhoto[] | null;
+  pickup_photos: DeliveryPhoto[] | null;
   delivery_fee: number;
   cod_amount: number;
   notes: string | null;
+  cargo_description: string | null;
+  cargo_weight: number | null;
+  cargo_items: DeliveryCargoItem[] | null;
+  warehouse_id: string | null;
+  warehouse_name: string | null;
+  warehouse_image_url: string | null;
   created_at: string;
   updated_at: string;
   is_deleted: boolean;
@@ -172,15 +179,25 @@ function mapDbToDelivery(db: DbDeliveryOrder): DeliveryOrder {
     signedAt: db.signed_at ?? undefined,
     signatureStrokes: db.signature_strokes ?? undefined,
     photos: db.photos ?? undefined,
+    pickupPhotos: db.pickup_photos ?? undefined,
     deliveryFee: db.delivery_fee,
     codAmount: db.cod_amount,
     notes: db.notes ?? undefined,
+    cargoDescription: db.cargo_description ?? '',
+    cargoWeight: db.cargo_weight ?? 0,
+    cargoItems: db.cargo_items ?? undefined,
+    warehouseId: db.warehouse_id ?? undefined,
+    warehouseName: db.warehouse_name ?? undefined,
+    // ★ 兼容：warehouse_image_url 在某些部署中可能不存在
+    warehouseImageUrl: (db as Partial<DbDeliveryOrder>).warehouse_image_url ?? undefined,
     createdAt: db.created_at,
     updatedAt: db.updated_at,
   };
 }
 
-function mapDeliveryToDb(order: DeliveryOrder): DbDeliveryOrder {
+function mapDeliveryToDb(order: DeliveryOrder): Partial<DbDeliveryOrder> {
+  // ★ 只寫入資料庫真實存在的欄位，避免 schema cache 錯誤導致同步失敗
+  // 重要：warehouse_image_url 等客戶端專用欄位不能寫到這個表
   return {
     id: order.id,
     order_no: order.orderNo,
@@ -206,9 +223,18 @@ function mapDeliveryToDb(order: DeliveryOrder): DbDeliveryOrder {
     signed_at: order.signedAt ?? null,
     signature_strokes: order.signatureStrokes ?? null,
     photos: order.photos ?? [],
+    pickup_photos: order.pickupPhotos ?? [],
     delivery_fee: order.deliveryFee ?? 0,
     cod_amount: order.codAmount ?? 0,
     notes: order.notes ?? null,
+    cargo_description: order.cargoDescription ?? '',
+    cargo_weight: order.cargoWeight ?? 0,
+    cargo_items: order.cargoItems ?? null,
+    warehouse_id: order.warehouseId ?? null,
+    warehouse_name: order.warehouseName ?? null,
+    // ★ 暫時不寫入：warehouse_image_url 在 delivery_orders 表不存在
+    // 如需儲存，改用其他方式（例如另一個獨立的倉庫表）
+    // warehouse_image_url: order.warehouseImageUrl ?? null,
     created_at: order.createdAt || new Date().toISOString(),
     updated_at: new Date().toISOString(),
     is_deleted: false,

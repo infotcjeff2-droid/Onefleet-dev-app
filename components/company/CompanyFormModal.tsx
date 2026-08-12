@@ -210,7 +210,7 @@ export function CompanyFormModal({ visible, onClose, company, onSave }: CompanyF
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={handleClose}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.overlay}
@@ -222,7 +222,7 @@ export function CompanyFormModal({ visible, onClose, company, onSave }: CompanyF
               {isEditing ? t('company.editCompany') : t('company.addCompany')}
             </Text>
             <Pressable onPress={handleClose} hitSlop={8}>
-              <X size={24} color={colors.textSecondary} />
+              <X size={20} color={colors.textSecondary} />
             </Pressable>
           </View>
 
@@ -338,17 +338,20 @@ export function CompanyFormModal({ visible, onClose, company, onSave }: CompanyF
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: colors.overlay,
+    backgroundColor: 'rgba(0,0,0,0.6)',
   },
   container: {
+    width: '100%',
+    maxWidth: 520,
     backgroundColor: colors.surface,
-    borderTopLeftRadius: borderRadius['2xl'],
-    borderTopRightRadius: borderRadius['2xl'],
-    maxHeight: '90%',
+    borderRadius: borderRadius.xl,
+    overflow: 'hidden',
   },
   header: {
     flexDirection: 'row',

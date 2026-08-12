@@ -62,6 +62,34 @@ function getWebBaseUrl(): string {
   return runtimeServerUrl;
 }
 
+/**
+ * 同步版本：取得 Web 端的 proxy 對外 base URL（不含 path）。
+ * 用途：在元件 render / 建構影像串流 URL 時即時取得正確的 host。
+ *
+ * 解析優先順序：
+ *   1. EXPO_PUBLIC_GPS_PROXY_URL（雲端部署）
+ *   2. window.location.origin（自動推算 host，把 port 換成 PROXY_PORT）
+ *   3. http://localhost:3001（純本地 fallback）
+ */
+export function getWebProxyBaseUrlSync(): string {
+  const envUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL;
+  if (envUrl) {
+    return envUrl.replace(/\/$/, '');
+  }
+
+  if (typeof window !== 'undefined' && (window as any).location?.origin) {
+    try {
+      const url = new URL((window as any).location.origin);
+      url.port = String(PROXY_PORT);
+      return url.toString().replace(/\/$/, '');
+    } catch {
+      // Fallback
+    }
+  }
+
+  return `http://localhost:${PROXY_PORT}`;
+}
+
 /** 清除 runtime cache — 切換 user 或 reload 之後使用 */
 export function resetServerUrlCache(): void {
   runtimeServerUrl = null;
@@ -314,7 +342,9 @@ export const gps808Api = {
       };
 
       // 808GPS API requires MD5 encrypted password via password parameter
-      const encryptedPassword = md5(password);
+      // 注意：如果密碼已經是 32 字元的 MD5 格式（由 relogin 傳入），則不再加密
+      const isAlreadyEncrypted = /^[a-f0-9]{32}$/i.test(password);
+      const encryptedPassword = isAlreadyEncrypted ? password : md5(password);
 
       const url = `${base}/StandardApiAction_login.action`;
       const res = await fetch(url, {
@@ -535,7 +565,8 @@ export const gps808Api = {
   },
 
   /**
-   * Check current session validity
+   * Check current session validity for VIDEO API
+   * Uses the same endpoint as proxy's validateSession for consistency
    */
   async ping(): Promise<boolean> {
     const jsession = await storage.getItem(JSESSION_KEY);
@@ -548,12 +579,14 @@ export const gps808Api = {
       } else {
         headers['Cookie'] = `JSESSIONID=${jsession}`;
       }
+      // 使用影像設備查詢 API 來驗證 session（與代理保持一致）
       const res = await fetch(
-        `${base}/StandardApiAction_queryVehicleList.action?currentPage=1&pageRecords=1`,
+        `${base}/StandardApiAction_getVideoDevice.action?devIdno=018270193745`,
         { headers },
       );
       if (!res.ok) return false;
-      const json = await res.json() as Gps808ApiResponse<unknown>;
+      const json = await res.json() as { result?: number };
+      // result=0 表示有影像權限，result=8 表示無權限
       return json.result === 0;
     } catch {
       return false;

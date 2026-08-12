@@ -30,7 +30,8 @@ const variantMap: Record<BadgeVariant, { bg: string; text: string; dot: string; 
 };
 
 export function Badge({ label, variant = 'active', size = 'sm', dot = false, solid = false, style, delay = 0 }: BadgeProps) {
-  const v = variantMap[variant];
+  const safeVariant: BadgeVariant = variant && typeof variant === 'string' && variantMap[variant as BadgeVariant] ? variant : 'active';
+  const v = variantMap[safeVariant];
   const isSmall = size === 'sm';
   const backgroundColor = solid ? v.solidBg : v.bg;
   const textColor = solid ? v.solidText : v.text;

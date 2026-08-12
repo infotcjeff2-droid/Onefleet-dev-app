@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Alert, TextInput as RNTextInput,
-  Modal, KeyboardAvoidingView, Platform,
+  Modal, Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
@@ -418,82 +418,92 @@ export default function UserManagementScreen() {
       </ScrollView>
 
       {/* ── Add User Modal ── */}
-      <Modal visible={modalVisible} animationType="slide" transparent>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
+      <Modal visible={modalVisible} animationType="fade" transparent>
+        <View style={styles.centeredModalOverlay}>
+          <View style={[styles.centeredModalContent, { backgroundColor: colors.card }]}>
+            <View style={[styles.centeredModalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.centeredModalTitle, { color: colors.textPrimary }]}>
                 {isZh ? '新增使用者' : 'Add User'}
               </Text>
-              <Pressable onPress={() => setModalVisible(false)}>
+              <Pressable onPress={() => setModalVisible(false)} hitSlop={8} style={styles.modalCloseBtn}>
                 <X size={20} color={colors.textSecondary} />
               </Pressable>
             </View>
 
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
-              {isZh ? '姓名' : 'Name'}
-            </Text>
-            <RNTextInput
-              style={[styles.input, { backgroundColor: colors.surface, color: colors.textPrimary, borderColor: formErrors.name ? colors.danger : colors.border }]}
-              value={form.name}
-              onChangeText={(v) => { setForm((f) => ({ ...f, name: v })); setFormErrors((e) => ({ ...e, name: '' })); }}
-              placeholder={isZh ? '輸入姓名' : 'Enter name'}
-              placeholderTextColor={colors.textSecondary}
-            />
-            {formErrors.name && <Text style={[styles.fieldError, { color: colors.danger }]}>{formErrors.name}</Text>}
+            <ScrollView style={{ maxHeight: 480 }} showsVerticalScrollIndicator={false}>
+              <View style={styles.formField}>
+                <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+                  {isZh ? '姓名' : 'Name'}
+                </Text>
+                <RNTextInput
+                  style={[styles.input, { backgroundColor: colors.background, color: colors.textPrimary, borderColor: formErrors.name ? colors.danger : colors.border }]}
+                  value={form.name}
+                  onChangeText={(v) => { setForm((f) => ({ ...f, name: v })); setFormErrors((e) => ({ ...e, name: '' })); }}
+                  placeholder={isZh ? '輸入姓名' : 'Enter name'}
+                  placeholderTextColor={colors.textSecondary}
+                />
+                {formErrors.name && <Text style={[styles.fieldError, { color: colors.danger }]}>{formErrors.name}</Text>}
+              </View>
 
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
-              {isZh ? '電子郵件' : 'Email'}
-            </Text>
-            <RNTextInput
-              style={[styles.input, { backgroundColor: colors.surface, color: colors.textPrimary, borderColor: formErrors.email ? colors.danger : colors.border }]}
-              value={form.email}
-              onChangeText={(v) => { setForm((f) => ({ ...f, email: v })); setFormErrors((e) => ({ ...e, email: '' })); }}
-              placeholder={isZh ? '輸入電子郵件' : 'Enter email'}
-              placeholderTextColor={colors.textSecondary}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-            {formErrors.email && <Text style={[styles.fieldError, { color: colors.danger }]}>{formErrors.email}</Text>}
+              <View style={styles.formField}>
+                <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+                  {isZh ? '電子郵件' : 'Email'}
+                </Text>
+                <RNTextInput
+                  style={[styles.input, { backgroundColor: colors.background, color: colors.textPrimary, borderColor: formErrors.email ? colors.danger : colors.border }]}
+                  value={form.email}
+                  onChangeText={(v) => { setForm((f) => ({ ...f, email: v })); setFormErrors((e) => ({ ...e, email: '' })); }}
+                  placeholder={isZh ? '輸入電子郵件' : 'Enter email'}
+                  placeholderTextColor={colors.textSecondary}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+                {formErrors.email && <Text style={[styles.fieldError, { color: colors.danger }]}>{formErrors.email}</Text>}
+              </View>
 
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
-              {isZh ? '密碼' : 'Password'}
-            </Text>
-            <RNTextInput
-              style={[styles.input, { backgroundColor: colors.surface, color: colors.textPrimary, borderColor: formErrors.password ? colors.danger : colors.border }]}
-              value={form.password}
-              onChangeText={(v) => { setForm((f) => ({ ...f, password: v })); setFormErrors((e) => ({ ...e, password: '' })); }}
-              placeholder={isZh ? '輸入密碼（至少 6 碼）' : 'Enter password (min 6 chars)'}
-              placeholderTextColor={colors.textSecondary}
-              secureTextEntry
-            />
-            {formErrors.password && <Text style={[styles.fieldError, { color: colors.danger }]}>{formErrors.password}</Text>}
+              <View style={styles.formField}>
+                <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+                  {isZh ? '密碼' : 'Password'}
+                </Text>
+                <RNTextInput
+                  style={[styles.input, { backgroundColor: colors.background, color: colors.textPrimary, borderColor: formErrors.password ? colors.danger : colors.border }]}
+                  value={form.password}
+                  onChangeText={(v) => { setForm((f) => ({ ...f, password: v })); setFormErrors((e) => ({ ...e, password: '' })); }}
+                  placeholder={isZh ? '輸入密碼（至少 6 碼）' : 'Enter password (min 6 chars)'}
+                  placeholderTextColor={colors.textSecondary}
+                  secureTextEntry
+                />
+                {formErrors.password && <Text style={[styles.fieldError, { color: colors.danger }]}>{formErrors.password}</Text>}
+              </View>
 
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
-              {isZh ? '角色' : 'Role'}
-            </Text>
-            <View style={styles.roleRow}>
-              {(['driver', 'company'] as const).map((r) => (
-                <Pressable
-                  key={r}
-                  style={[styles.roleOption, {
-                    backgroundColor: form.role === r ? roleColors[r] + '22' : colors.surface,
-                    borderColor: form.role === r ? roleColors[r] : colors.border,
-                  }]}
-                  onPress={() => setForm((f) => ({ ...f, role: r }))}
-                >
-                  <Text style={[styles.roleOptionText, { color: form.role === r ? roleColors[r] : colors.textSecondary }]}>
-                    {r === 'driver' ? (isZh ? '司機' : 'Driver') : (isZh ? '公司' : 'Company')}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
+              <View style={styles.formField}>
+                <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+                  {isZh ? '角色' : 'Role'}
+                </Text>
+                <View style={styles.roleRow}>
+                  {(['driver', 'company'] as const).map((r) => (
+                    <Pressable
+                      key={r}
+                      style={[styles.roleOption, {
+                        backgroundColor: form.role === r ? roleColors[r] + '22' : colors.background,
+                        borderColor: form.role === r ? roleColors[r] : colors.border,
+                      }]}
+                      onPress={() => setForm((f) => ({ ...f, role: r }))}
+                    >
+                      <Text style={[styles.roleOptionText, { color: form.role === r ? roleColors[r] : colors.textSecondary }]}>
+                        {r === 'driver' ? (isZh ? '司機' : 'Driver') : (isZh ? '公司' : 'Company')}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            </ScrollView>
 
-            <View style={styles.modalActions}>
+            <View style={[styles.modalActions, { borderTopColor: colors.border }]}>
               <Button
                 title={isZh ? '取消' : 'Cancel'}
                 onPress={() => setModalVisible(false)}
-                variant="secondary"
+                variant="ghost"
                 style={{ flex: 1 }}
               />
               <View style={{ width: spacing.sm }} />
@@ -501,11 +511,11 @@ export default function UserManagementScreen() {
                 title={isZh ? '新增' : 'Add'}
                 onPress={handleAddUser}
                 loading={submitting}
-                style={{ flex: 1 }}
+                style={{ flex: 1.5 }}
               />
             </View>
           </View>
-        </KeyboardAvoidingView>
+        </View>
       </Modal>
 
       {/* ── Driver Edit Modal ── */}
@@ -569,8 +579,40 @@ const styles = StyleSheet.create({
   fieldLabel: { fontSize: typography.fontSize.sm, fontWeight: '600', marginBottom: spacing.xs },
   input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: spacing.md, paddingVertical: 10, fontSize: typography.fontSize.base, marginBottom: spacing.xs },
   fieldError: { fontSize: typography.fontSize.xs, marginBottom: spacing.sm },
-  roleRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing['2xl'] },
+  roleRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg },
   roleOption: { flex: 1, paddingVertical: 10, borderRadius: 8, borderWidth: 1, alignItems: 'center' },
   roleOptionText: { fontSize: typography.fontSize.sm, fontWeight: '600' },
-  modalActions: { flexDirection: 'row' },
+  modalActions: { flexDirection: 'row', borderTopWidth: 1, paddingTop: spacing.lg, gap: spacing.sm },
+  // 新增中央彈出樣式（與 profile.tsx 統一）
+  centeredModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  centeredModalContent: {
+    width: '100%',
+    maxWidth: 520,
+    borderRadius: 20,
+    padding: 0,
+    overflow: 'hidden',
+  },
+  centeredModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: spacing.lg,
+    borderBottomWidth: 1,
+  },
+  centeredModalTitle: {
+    fontSize: typography.fontSize.lg,
+    fontWeight: '700',
+  },
+  formField: {
+    marginTop: spacing.lg,
+  },
+  modalCloseBtn: {
+    padding: spacing.xs,
+  },
 });

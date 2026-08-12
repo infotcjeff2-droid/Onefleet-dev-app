@@ -61,6 +61,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   login: async (email: string, password: string) => {
     await new Promise((resolve) => setTimeout(resolve, 800));
 
+    // ★ 垃圾桶鎖定檢查：若此 email 仍在垃圾桶中（被軟刪,30 天保留期內）,
+    //   即使密碼正確也拒絕登入,避免「軟刪後還能登入」的漏洞
+    try {
+      const { useTrashStore } = await import('./trashStore');
+      // 確保 trashStore 已從 storage 載入
+      await useTrashStore.getState().loadTrash();
+      if (useTrashStore.getState().isEmailTrashed(email)) {
+        return {
+          success: false,
+          error: '此帳號已被停用,請聯絡管理員或從垃圾桶還原後再登入',
+        };
+      }
+    } catch (e) {
+      // trashStore 載入失敗不影響登入流程
+      console.warn('[authStore] trash check skipped:', e);
+    }
+
     // ── 1. 內建示範帳號(優先) ───────────────────────────────────────────────
     // 這些是 hardcoded 的示範帳號,優先比對,讓 fresh install 也能登入。
     if (email === adminCredentials.email && password === adminCredentials.password) {
@@ -86,15 +103,65 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         await loadUsers();
       }
       const currentUsers = (await import('./userManagementStore').then((m) => m.useUserManagementStore.getState())).users;
-      // 根據配送單的 assignedDriverId 找到實際的司機
-      // 如果有多個司機，使用第一個（Jeff3 是第一個被新增的）
-      const managedDriver = currentUsers.find((u) => u.role === 'driver');
+
+      // ★ 修復：司機 demo 帳號總是登入「有被分配配送單的司機」
+      // 完全忽略 storage 中的舊 user ID（因為 storage 可能存了錯誤的 ID）
+      // 透過 lazy import 避免循環依賴
+      const { useDeliveryStore } = await import('./deliveryStore');
+      const deliveryStore = useDeliveryStore.getState();
+
+      // 確保 deliveries 已從 storage 載入（避免空陣列導致匹配失敗）
+      if (deliveryStore.deliveries.length === 0) {
+        try {
+          await deliveryStore.loadDeliveries();
+          console.log('[authStore] Driver login - loaded deliveries from storage');
+        } catch (e) {
+          console.warn('[authStore] Driver login - loadDeliveries failed:', e);
+        }
+      }
+
+      const allDeliveries = useDeliveryStore.getState().deliveries;
+      console.log('[authStore] Driver login - current deliveries:', allDeliveries.length);
+      
+      const driversWithOrders = currentUsers.filter((u) => u.role === 'driver');
+      console.log('[authStore] Driver login - drivers available:', driversWithOrders.map((d) => `${d.id}(${d.name})`));
+      
+      // 優先順序：找到任何被分配配送單的司機（無論狀態）
+      // 這讓 demo 司機帳號總是看到剛分配的訂單
+      let managedDriver: { id: string; name: string; password?: string; role: string; companyId?: string } | undefined;
+      
+      // 1. 找有「已分配」狀態配送單的司機
+      managedDriver = driversWithOrders.find((u) =>
+        allDeliveries.some((d) => d.assignedDriverId === u.id && d.status === 'assigned')
+      );
+      
+      // 2. 否則找任何被分配的司機（根據 ID）
+      if (!managedDriver) {
+        managedDriver = driversWithOrders.find((u) =>
+          allDeliveries.some((d) => d.assignedDriverId === u.id)
+        );
+      }
+      
+      // 3. 否則找任何被分配的司機（根據名稱，因為 ID 可能格式不同）
+      if (!managedDriver) {
+        managedDriver = driversWithOrders.find((u) =>
+          allDeliveries.some((d) => d.assignedDriverName === u.name)
+        );
+      }
+      
+      // 4. 最後 fallback 到第一個司機
+      if (!managedDriver) {
+        managedDriver = driversWithOrders[0];
+      }
+      
+      console.log('[authStore] Driver login - using driver:', managedDriver?.id, managedDriver?.name, 
+        'has assignments:', allDeliveries.filter((d) => d.assignedDriverId === managedDriver?.id || d.assignedDriverName === managedDriver?.name).length);
+
       if (managedDriver) {
         const { password: _pwd, ...userWithoutPassword } = managedDriver;
-        // 司機的 companyId 應該來自公司（如果有公司管理的話）
-        // 如果沒有 companyId，司機仍然可以通過 assigned_driver_id 查詢
         console.log('[authStore] Driver login, using managed driver:', managedDriver.id, managedDriver.name, 'companyId:', managedDriver.companyId);
         set({ user: userWithoutPassword, isAuthenticated: true, role: 'driver' });
+        // 重要：清除舊的 storage 中的錯誤 user ID，並寫入正確的司機 ID
         await persistUser(userWithoutPassword);
         return { success: true };
       }

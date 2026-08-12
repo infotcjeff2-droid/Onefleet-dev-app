@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
-import { LogOut, Shield, Settings, ChevronRight, User, Mail, Award, Truck, Plus, X, Users, Globe, Image as ImageIcon, Upload, Cpu, Link2, Warehouse, Package, Zap, RefreshCw, Trash2, RotateCcw, AlertCircle, Building2 } from 'lucide-react-native';
+import { LogOut, Shield, Settings, ChevronRight, User, Mail, Award, Truck, Plus, X, Users, Globe, Upload, Cpu, Link2, Warehouse, Package, Zap, RefreshCw, Trash2, RotateCcw, AlertCircle, Building2, Lock, Camera } from 'lucide-react-native';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { SelectField } from '@/components/ui/SelectField';
@@ -173,9 +173,25 @@ function AvatarField({
   };
 
   return (
-    <>
+    <View style={styles.avatarFieldWrap}>
       <View style={styles.formFieldCenter}>
-        <AvatarPreview name={name} avatar={avatar} backgroundColor={colors.primary} />
+        <View style={styles.avatarGlow}>
+          <AvatarPreview name={name} avatar={avatar} backgroundColor={colors.primary} size={96} />
+        </View>
+        <Pressable
+          onPress={handlePickImage}
+          style={({ pressed }) => [
+            styles.avatarCameraBtn,
+            {
+              backgroundColor: pressed ? colors.primaryDark : colors.primary,
+              borderColor: colors.card,
+              opacity: uploading ? 0.6 : 1,
+            },
+          ]}
+          disabled={uploading}
+        >
+          <Camera size={16} color="#FFFFFF" />
+        </Pressable>
       </View>
 
       <View style={styles.formField}>
@@ -202,22 +218,7 @@ function AvatarField({
           {t('profile.uploadImageHint')}
         </Text>
       </View>
-
-      <View style={styles.formField}>
-        <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('profile.imageUrlFallback')}</Text>
-        <View style={[styles.formInputWrap, { backgroundColor: colors.background }]}>
-          <ImageIcon size={16} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
-          <RNTextInput
-            placeholder={t('profile.imageUrlPlaceholder')}
-            placeholderTextColor={colors.textTertiary}
-            value={avatar}
-            onChangeText={onChange}
-            autoCapitalize="none"
-            style={[styles.formInput, { color: colors.textPrimary }]}
-          />
-        </View>
-      </View>
-    </>
+    </View>
   );
 }
 
@@ -286,12 +287,16 @@ function AccountInfoModal({
             <Text style={[styles.centeredModalTitle, { color: colors.textPrimary }]}>
               {t('profile.accountInfo')}
             </Text>
-            <Pressable onPress={onClose}><X size={20} color={colors.textSecondary} /></Pressable>
+            <Pressable onPress={onClose} hitSlop={8} style={styles.modalCloseBtn}>
+              <X size={20} color={colors.textSecondary} />
+            </Pressable>
           </View>
 
           <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.lg }}>
             <View style={styles.formFieldCenter}>
-              <AvatarPreview name={user?.name} avatar={user?.avatar} backgroundColor={colors.primary} />
+              <View style={styles.avatarGlow}>
+                <AvatarPreview name={user?.name} avatar={user?.avatar} backgroundColor={colors.primary} size={96} />
+              </View>
             </View>
             <Text style={[styles.accountInfoDesc, { color: colors.textSecondary }]}>
               {t('profile.accountInfoDesc')}
@@ -300,37 +305,55 @@ function AccountInfoModal({
 
           <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
             <View style={styles.formField}>
-              <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('profile.displayName')}</Text>
-              <View style={[styles.formInputWrap, { backgroundColor: colors.background }]}>
+              <View style={styles.formLabelRow}>
+                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('profile.displayName')}</Text>
+                <View style={[styles.readonlyTag, { backgroundColor: `${colors.textTertiary}15` }]}>
+                  <Lock size={10} color={colors.textTertiary} />
+                  <Text style={[styles.readonlyTagText, { color: colors.textTertiary }]}>{t('profile.readonly')}</Text>
+                </View>
+              </View>
+              <View style={[styles.readonlyField, { backgroundColor: colors.background, borderColor: colors.border }]}>
                 <User size={16} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
-                <Text style={[styles.formInput, { color: colors.textPrimary }]} numberOfLines={1}>
+                <Text style={[styles.readonlyText, { color: colors.textPrimary }]} numberOfLines={1}>
                   {user?.name || 'N/A'}
                 </Text>
               </View>
             </View>
 
             <View style={styles.formField}>
-              <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('auth.email')}</Text>
-              <View style={[styles.formInputWrap, { backgroundColor: colors.background }]}>
+              <View style={styles.formLabelRow}>
+                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('auth.email')}</Text>
+                <View style={[styles.readonlyTag, { backgroundColor: `${colors.textTertiary}15` }]}>
+                  <Lock size={10} color={colors.textTertiary} />
+                  <Text style={[styles.readonlyTagText, { color: colors.textTertiary }]}>{t('profile.readonly')}</Text>
+                </View>
+              </View>
+              <View style={[styles.readonlyField, { backgroundColor: colors.background, borderColor: colors.border }]}>
                 <Mail size={16} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
-                <Text style={[styles.formInput, { color: colors.textPrimary }]} numberOfLines={1}>
+                <Text style={[styles.readonlyText, { color: colors.textPrimary }]} numberOfLines={1}>
                   {user?.email || 'N/A'}
                 </Text>
               </View>
             </View>
 
             <View style={styles.formField}>
-              <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('profile.role')}</Text>
-              <View style={[styles.formInputWrap, { backgroundColor: colors.background }]}>
+              <View style={styles.formLabelRow}>
+                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('profile.role')}</Text>
+                <View style={[styles.readonlyTag, { backgroundColor: `${colors.textTertiary}15` }]}>
+                  <Lock size={10} color={colors.textTertiary} />
+                  <Text style={[styles.readonlyTagText, { color: colors.textTertiary }]}>{t('profile.readonly')}</Text>
+                </View>
+              </View>
+              <View style={[styles.readonlyField, { backgroundColor: colors.background, borderColor: colors.border }]}>
                 <Award size={16} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
-                <Text style={[styles.formInput, { color: colors.textPrimary }]} numberOfLines={1}>
+                <Text style={[styles.readonlyText, { color: colors.textPrimary }]} numberOfLines={1}>
                   {roleLabel || 'N/A'}
                 </Text>
               </View>
             </View>
           </ScrollView>
 
-          <View style={styles.modalActions}>
+          <View style={[styles.modalActions, { borderTopColor: colors.border }]}>
             <Button title={t('common.cancel')} variant="ghost" onPress={onClose} style={{ flex: 1 }} />
             <Button title={t('profile.editAccount')} onPress={onEdit} style={{ flex: 1.5 }} />
           </View>
@@ -355,25 +378,25 @@ function AccountEditModal({
   const updateCurrentUser = useAuthStore((state) => state.updateCurrentUser);
   const updateUser = useUserManagementStore((state) => state.updateUser);
   const updateDriver = useDriverStore((state) => state.updateDriver);
-  const { getCompanies } = useUserManagementStore();
+  const { getCompanyById } = useUserManagementStore();
   const { t, locale } = useTranslation();
   const [name, setName] = useState(user?.name || '');
-  const [email, setEmail] = useState(user?.email || '');
   const [avatar, setAvatar] = useState(user?.avatar || '');
-  const [companyId, setCompanyId] = useState(user?.companyId || '');
-  const [showCompanyPicker, setShowCompanyPicker] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const companies = getCompanies();
   const isDriver = user?.role === 'driver';
+
+  // 司機的公司資訊（只讀）
+  const driverCompany = isDriver && user?.companyId ? getCompanyById(user.companyId) : null;
+  const driverCompanyName = driverCompany
+    ? (driverCompany.nameZh || driverCompany.name || driverCompany.email)
+    : t('company.noCompany');
 
   useEffect(() => {
     if (visible) {
       setName(user?.name || '');
-      setEmail(user?.email || '');
       setAvatar(user?.avatar || '');
-      setCompanyId(user?.companyId || '');
       setError('');
     }
   }, [visible, user]);
@@ -381,10 +404,6 @@ function AccountEditModal({
   const handleSubmit = async () => {
     if (!name.trim()) {
       setError(t('error.required'));
-      return;
-    }
-    if (!email.trim() || !email.includes('@')) {
-      setError(t('error.invalidEmail'));
       return;
     }
     if (!user) {
@@ -397,7 +416,6 @@ function AccountEditModal({
     try {
       const updates: Record<string, unknown> = {
         name: name.trim(),
-        email: email.trim().toLowerCase(),
         avatar: avatar.trim() || undefined,
       };
 
@@ -446,15 +464,26 @@ function AccountEditModal({
             <Text style={[styles.centeredModalTitle, { color: colors.textPrimary }]}>
               {t('profile.editAccount')}
             </Text>
-            <Pressable onPress={onClose}><X size={20} color={colors.textSecondary} /></Pressable>
+            <Pressable onPress={onClose} hitSlop={8} style={styles.modalCloseBtn}>
+              <X size={20} color={colors.textSecondary} />
+            </Pressable>
           </View>
 
-          <ScrollView style={{ maxHeight: 500 }} showsVerticalScrollIndicator={false}>
+          <ScrollView style={{ maxHeight: 560 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: spacing.md }}>
+            {/* 個人圖片區塊 */}
             <AvatarField name={name} avatar={avatar} onChange={setAvatar} label={t('profile.profileImage')} />
 
+            {/* 顯示名稱 - 可編輯 */}
             <View style={styles.formField}>
-              <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('profile.displayName')}</Text>
-              <View style={[styles.formInputWrap, { backgroundColor: colors.background }]}>
+              <View style={styles.formLabelRow}>
+                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>
+                  {t('profile.displayName')}
+                </Text>
+                <View style={[styles.editableTag, { backgroundColor: `${colors.primary}15` }]}>
+                  <Text style={[styles.editableTagText, { color: colors.primary }]}>{t('profile.editable')}</Text>
+                </View>
+              </View>
+              <View style={[styles.formInputWrap, { backgroundColor: colors.background, borderColor: colors.border }]}>
                 <User size={16} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
                 <RNTextInput
                   placeholder={t('auth.name')}
@@ -466,67 +495,62 @@ function AccountEditModal({
               </View>
             </View>
 
+            {/* 電子郵件 - 只讀（鎖定圖示） */}
             <View style={styles.formField}>
-              <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('auth.email')}</Text>
-              <View style={[styles.formInputWrap, { backgroundColor: colors.background }]}>
+              <View style={styles.formLabelRow}>
+                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>
+                  {t('auth.email')}
+                </Text>
+                <View style={[styles.readonlyTag, { backgroundColor: `${colors.textTertiary}15` }]}>
+                  <Lock size={10} color={colors.textTertiary} />
+                  <Text style={[styles.readonlyTagText, { color: colors.textTertiary }]}>{t('profile.readonly')}</Text>
+                </View>
+              </View>
+              <View style={[styles.readonlyField, { backgroundColor: colors.background, borderColor: colors.border }]}>
                 <Mail size={16} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
-                <RNTextInput
-                  placeholder="user@example.com"
-                  placeholderTextColor={colors.textTertiary}
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  style={[styles.formInput, { color: colors.textPrimary }]}
-                />
+                <Text style={[styles.readonlyText, { color: colors.textSecondary }]} numberOfLines={1}>
+                  {user?.email || 'N/A'}
+                </Text>
+                <Lock size={14} color={colors.textTertiary} />
               </View>
             </View>
 
-            {/* 司機的公司選擇 */}
-            {isDriver && companies.length > 0 && (
+            {/* 公司 - 司機顯示只讀 */}
+            {isDriver && (
               <View style={styles.formField}>
-                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('company.title')}</Text>
-                <Pressable
-                  style={[styles.formInputWrap, { backgroundColor: colors.background }]}
-                  onPress={() => setShowCompanyPicker(true)}
-                >
-                  <Building2 size={16} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
-                  <Text style={[styles.formInput, { color: colors.textPrimary, flex: 1 }]}>
-                    {companyId
-                      ? (companies.find((c) => c.id === companyId)?.nameZh || companies.find((c) => c.id === companyId)?.name || companies.find((c) => c.id === companyId)?.email)
-                      : t('company.noCompany')}
+                <View style={styles.formLabelRow}>
+                  <Text style={[styles.formLabel, { color: colors.textSecondary }]}>
+                    {t('company.title')}
                   </Text>
-                  <ChevronRight size={16} color={colors.textTertiary} />
-                </Pressable>
+                  <View style={[styles.readonlyTag, { backgroundColor: `${colors.textTertiary}15` }]}>
+                    <Lock size={10} color={colors.textTertiary} />
+                    <Text style={[styles.readonlyTagText, { color: colors.textTertiary }]}>{t('profile.readonly')}</Text>
+                  </View>
+                </View>
+                <View style={[styles.readonlyField, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                  <Building2 size={16} color={colors.secondary} style={{ marginRight: spacing.sm }} />
+                  <Text style={[styles.readonlyText, { color: colors.textPrimary, flex: 1 }]} numberOfLines={1}>
+                    {driverCompanyName}
+                  </Text>
+                  <Lock size={14} color={colors.textTertiary} />
+                </View>
+                {!user?.companyId && (
+                  <Text style={[styles.uploadHint, { color: colors.warning, marginTop: spacing.xs }]}>
+                    {t('company.noCompanyAssigned')}
+                  </Text>
+                )}
               </View>
             )}
 
-            {/* 公司選擇 ActionSheet */}
-            {showCompanyPicker && (
-              <View style={[styles.formField, { marginTop: -spacing.sm }]}>
-                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>選擇公司：</Text>
-                {[{ id: '', name: t('company.noCompany') }, ...companies].map((c) => (
-                  <Pressable
-                    key={c.id}
-                    style={[styles.companyOption, companyId === c.id && { backgroundColor: `${colors.primary}20` }]}
-                    onPress={() => {
-                      setCompanyId(c.id);
-                      setShowCompanyPicker(false);
-                    }}
-                  >
-                    <Text style={[styles.companyOptionText, { color: companyId === c.id ? colors.primary : colors.textPrimary }]}>
-                      {c.nameZh || c.name || c.id}
-                    </Text>
-                    {companyId === c.id && <Text style={{ color: colors.primary }}>✓</Text>}
-                  </Pressable>
-                ))}
+            {error ? (
+              <View style={[styles.errorBanner, { backgroundColor: `${colors.danger}15`, borderColor: colors.danger }]}>
+                <AlertCircle size={14} color={colors.danger} />
+                <Text style={[styles.formError, { color: colors.danger }]}>{error}</Text>
               </View>
-            )}
-
-            {error ? <Text style={[styles.formError, { color: colors.danger }]}>{error}</Text> : null}
+            ) : null}
           </ScrollView>
 
-          <View style={styles.modalActions}>
+          <View style={[styles.modalActions, { borderTopColor: colors.border }]}>
             <Button title={t('common.cancel')} variant="ghost" onPress={onClose} style={{ flex: 1 }} />
             <Button title={t('common.save')} onPress={handleSubmit} loading={loading} style={{ flex: 1.5 }} />
           </View>
@@ -553,13 +577,6 @@ function AddUserModal({ visible, onClose, onAdded }: { visible: boolean; onClose
   const [error, setError] = useState('');
 
   const companies = getCompanies();
-  const companyOptions = [
-    { value: '', label: t('company.noCompany') },
-    ...companies.map((c) => ({
-      value: c.id,
-      label: c.nameZh || c.name || c.email,
-    })),
-  ];
 
   const reset = () => {
     setName('');
@@ -579,10 +596,10 @@ function AddUserModal({ visible, onClose, onAdded }: { visible: boolean; onClose
     setLoading(true);
     setError('');
     const normalizedAvatar = avatar.trim() || undefined;
-    const result = await addUser(name.trim(), email.trim().toLowerCase(), password, role, phone.trim() || undefined, normalizedAvatar, name.trim(), undefined, undefined, role === 'driver' && companyId ? companyId : undefined);
+    const result = await addUser(name.trim(), email.trim().toLowerCase(), password, role, phone.trim() || undefined, normalizedAvatar, name.trim());
     if (result.success) {
       if (role === 'driver') {
-        await addDriver(name.trim(), phone.trim(), email.trim().toLowerCase(), undefined, normalizedAvatar, role === 'driver' && companyId ? companyId : undefined);
+        await addDriver(name.trim(), phone.trim(), email.trim().toLowerCase(), undefined, normalizedAvatar, companyId || undefined);
       }
       reset();
       onClose();
@@ -618,14 +635,22 @@ function AddUserModal({ visible, onClose, onAdded }: { visible: boolean; onClose
             <Text style={[styles.centeredModalTitle, { color: colors.textPrimary }]}>
               {t('profile.addUser')}
             </Text>
-            <Pressable onPress={onClose}><X size={20} color={colors.textSecondary} /></Pressable>
+            <Pressable onPress={onClose} hitSlop={8} style={styles.modalCloseBtn}>
+              <X size={20} color={colors.textSecondary} />
+            </Pressable>
           </View>
 
-          <ScrollView style={{ maxHeight: 560 }} showsVerticalScrollIndicator={false}>
+          <ScrollView style={{ maxHeight: 560 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: spacing.md }}>
             <AvatarField name={name} avatar={avatar} onChange={setAvatar} label={t('profile.profileImage')} />
 
+            {/* 角色 - 可編輯 */}
             <View style={styles.formField}>
-              <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('profile.role')}</Text>
+              <View style={styles.formLabelRow}>
+                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('profile.role')}</Text>
+                <View style={[styles.editableTag, { backgroundColor: `${colors.primary}15` }]}>
+                  <Text style={[styles.editableTagText, { color: colors.primary }]}>{t('profile.editable')}</Text>
+                </View>
+              </View>
               <View style={styles.roleSelector}>
                 {(['driver', 'company'] as const).map((itemRole) => (
                   <Pressable
@@ -647,9 +672,15 @@ function AddUserModal({ visible, onClose, onAdded }: { visible: boolean; onClose
               </View>
             </View>
 
+            {/* 顯示名稱 - 可編輯 */}
             <View style={styles.formField}>
-              <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('profile.displayName')}</Text>
-              <View style={[styles.formInputWrap, { backgroundColor: colors.background }]}>
+              <View style={styles.formLabelRow}>
+                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('profile.displayName')}</Text>
+                <View style={[styles.editableTag, { backgroundColor: `${colors.primary}15` }]}>
+                  <Text style={[styles.editableTagText, { color: colors.primary }]}>{t('profile.editable')}</Text>
+                </View>
+              </View>
+              <View style={[styles.formInputWrap, { backgroundColor: colors.background, borderColor: colors.border }]}>
                 <User size={16} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
                 <RNTextInput
                   placeholder={t('auth.name')}
@@ -661,9 +692,15 @@ function AddUserModal({ visible, onClose, onAdded }: { visible: boolean; onClose
               </View>
             </View>
 
+            {/* 電子郵件 - 可編輯 */}
             <View style={styles.formField}>
-              <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('auth.email')}</Text>
-              <View style={[styles.formInputWrap, { backgroundColor: colors.background }]}>
+              <View style={styles.formLabelRow}>
+                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('auth.email')}</Text>
+                <View style={[styles.editableTag, { backgroundColor: `${colors.primary}15` }]}>
+                  <Text style={[styles.editableTagText, { color: colors.primary }]}>{t('profile.editable')}</Text>
+                </View>
+              </View>
+              <View style={[styles.formInputWrap, { backgroundColor: colors.background, borderColor: colors.border }]}>
                 <Mail size={16} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
                 <RNTextInput
                   placeholder="user@example.com"
@@ -677,9 +714,15 @@ function AddUserModal({ visible, onClose, onAdded }: { visible: boolean; onClose
               </View>
             </View>
 
+            {/* 電話 - 可編輯 */}
             <View style={styles.formField}>
-              <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('auth.phone')}</Text>
-              <View style={[styles.formInputWrap, { backgroundColor: colors.background }]}>
+              <View style={styles.formLabelRow}>
+                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('auth.phone')}</Text>
+                <View style={[styles.editableTag, { backgroundColor: `${colors.primary}15` }]}>
+                  <Text style={[styles.editableTagText, { color: colors.primary }]}>{t('profile.editable')}</Text>
+                </View>
+              </View>
+              <View style={[styles.formInputWrap, { backgroundColor: colors.background, borderColor: colors.border }]}>
                 <RNTextInput
                   placeholder="+852 XXXX XXXX"
                   placeholderTextColor={colors.textTertiary}
@@ -691,40 +734,39 @@ function AddUserModal({ visible, onClose, onAdded }: { visible: boolean; onClose
               </View>
             </View>
 
+            {/* 公司 - 司機才顯示，可編輯 */}
             {role === 'driver' && companies.length > 0 && (
               <View style={styles.formField}>
-                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('company.title')}</Text>
-                <TouchableOpacity
-                  onPress={() => {
-                    Alert.alert(
-                      t('company.selectCompany'),
-                      '',
-                      [
-                        { text: t('company.noCompany'), onPress: () => setCompanyId('') },
-                        ...companies.map((c) => ({
-                          text: c.nameZh || c.name || c.email,
-                          onPress: () => setCompanyId(c.id),
-                        })),
-                      ]
-                    );
-                  }}
-                  style={[styles.formInputWrap, { backgroundColor: colors.background }]}
-                  activeOpacity={0.7}
-                >
-                  <Building2 size={16} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
-                  <Text style={[styles.formInput, { color: colors.textPrimary, flex: 1 }]}>
-                    {companyId
-                      ? (companies.find((c) => c.id === companyId)?.nameZh || companies.find((c) => c.id === companyId)?.name || companies.find((c) => c.id === companyId)?.email)
-                      : t('company.noCompany')}
-                  </Text>
-                  <ChevronRight size={16} color={colors.textTertiary} />
-                </TouchableOpacity>
+                <View style={styles.formLabelRow}>
+                  <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('company.title')}</Text>
+                  <View style={[styles.editableTag, { backgroundColor: `${colors.primary}15` }]}>
+                    <Text style={[styles.editableTagText, { color: colors.primary }]}>{t('profile.editable')}</Text>
+                  </View>
+                </View>
+                <SelectField
+                  value={companyId}
+                  options={[
+                    { value: '', label: t('company.noCompany') },
+                    ...companies.map((c) => ({
+                      value: c.id,
+                      label: c.nameZh || c.name || c.email,
+                    })),
+                  ]}
+                  onValueChange={setCompanyId}
+                  placeholder={t('company.noCompany')}
+                />
               </View>
             )}
 
+            {/* 密碼 - 可編輯 */}
             <View style={styles.formField}>
-              <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('auth.password')}</Text>
-              <View style={[styles.formInputWrap, { backgroundColor: colors.background }]}>
+              <View style={styles.formLabelRow}>
+                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('auth.password')}</Text>
+                <View style={[styles.editableTag, { backgroundColor: `${colors.primary}15` }]}>
+                  <Text style={[styles.editableTagText, { color: colors.primary }]}>{t('profile.editable')}</Text>
+                </View>
+              </View>
+              <View style={[styles.formInputWrap, { backgroundColor: colors.background, borderColor: colors.border }]}>
                 <Shield size={16} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
                 <RNTextInput
                   placeholder={t('error.passwordTooShort')}
@@ -737,10 +779,15 @@ function AddUserModal({ visible, onClose, onAdded }: { visible: boolean; onClose
               </View>
             </View>
 
-            {error ? <Text style={[styles.formError, { color: colors.danger }]}>{error}</Text> : null}
+            {error ? (
+              <View style={[styles.errorBanner, { backgroundColor: `${colors.danger}15`, borderColor: colors.danger }]}>
+                <AlertCircle size={14} color={colors.danger} />
+                <Text style={[styles.formError, { color: colors.danger }]}>{error}</Text>
+              </View>
+            ) : null}
           </ScrollView>
 
-          <View style={styles.modalActions}>
+          <View style={[styles.modalActions, { borderTopColor: colors.border }]}>
             <Button title={t('common.cancel')} variant="ghost" onPress={onClose} style={{ flex: 1 }} />
             <Button title={t('profile.addUser')} onPress={handleSubmit} loading={loading} style={{ flex: 1.5 }} />
           </View>
@@ -843,15 +890,23 @@ function EditUserModal({
             <Text style={[styles.centeredModalTitle, { color: colors.textPrimary }]}>
               {isDriver ? t('company.editDriver') : t('company.editCompany')}
             </Text>
-            <Pressable onPress={onClose}><X size={20} color={colors.textSecondary} /></Pressable>
+            <Pressable onPress={onClose} hitSlop={8} style={styles.modalCloseBtn}>
+              <X size={20} color={colors.textSecondary} />
+            </Pressable>
           </View>
 
-          <ScrollView style={{ maxHeight: 560 }} showsVerticalScrollIndicator={false}>
+          <ScrollView style={{ maxHeight: 560 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: spacing.md }}>
             <AvatarField name={name} avatar={avatar} onChange={setAvatar} label={t('profile.profileImage')} />
 
+            {/* 顯示名稱 - 可編輯 */}
             <View style={styles.formField}>
-              <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('profile.displayName')}</Text>
-              <View style={[styles.formInputWrap, { backgroundColor: colors.background }]}>
+              <View style={styles.formLabelRow}>
+                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('profile.displayName')}</Text>
+                <View style={[styles.editableTag, { backgroundColor: `${colors.primary}15` }]}>
+                  <Text style={[styles.editableTagText, { color: colors.primary }]}>{t('profile.editable')}</Text>
+                </View>
+              </View>
+              <View style={[styles.formInputWrap, { backgroundColor: colors.background, borderColor: colors.border }]}>
                 <User size={16} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
                 <RNTextInput
                   placeholder={t('auth.name')}
@@ -863,9 +918,15 @@ function EditUserModal({
               </View>
             </View>
 
+            {/* 電子郵件 - 可編輯 */}
             <View style={styles.formField}>
-              <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('auth.email')}</Text>
-              <View style={[styles.formInputWrap, { backgroundColor: colors.background }]}>
+              <View style={styles.formLabelRow}>
+                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('auth.email')}</Text>
+                <View style={[styles.editableTag, { backgroundColor: `${colors.primary}15` }]}>
+                  <Text style={[styles.editableTagText, { color: colors.primary }]}>{t('profile.editable')}</Text>
+                </View>
+              </View>
+              <View style={[styles.formInputWrap, { backgroundColor: colors.background, borderColor: colors.border }]}>
                 <Mail size={16} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
                 <RNTextInput
                   placeholder="user@example.com"
@@ -879,9 +940,15 @@ function EditUserModal({
               </View>
             </View>
 
+            {/* 電話 - 可編輯 */}
             <View style={styles.formField}>
-              <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('auth.phone')}</Text>
-              <View style={[styles.formInputWrap, { backgroundColor: colors.background }]}>
+              <View style={styles.formLabelRow}>
+                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('auth.phone')}</Text>
+                <View style={[styles.editableTag, { backgroundColor: `${colors.primary}15` }]}>
+                  <Text style={[styles.editableTagText, { color: colors.primary }]}>{t('profile.editable')}</Text>
+                </View>
+              </View>
+              <View style={[styles.formInputWrap, { backgroundColor: colors.background, borderColor: colors.border }]}>
                 <RNTextInput
                   placeholder="+852 XXXX XXXX"
                   placeholderTextColor={colors.textTertiary}
@@ -893,25 +960,52 @@ function EditUserModal({
               </View>
             </View>
 
-            <View style={styles.formField}>
-              <SelectField
-                label={t('company.title')}
-                placeholder={t('company.selectCompany')}
-                value={companyId || ''}
-                options={[
-                  { value: '', label: t('company.noCompany') },
-                  ...companies.map((c) => ({
-                    value: c.id,
-                    label: c.nameZh || c.name || c.email,
-                  })),
-                ]}
-                onValueChange={(val) => setCompanyId(val)}
-              />
-            </View>
+            {/* 公司 - 司機才顯示，可編輯 */}
+            {isDriver && companies.length > 0 && (
+              <View style={styles.formField}>
+                <View style={styles.formLabelRow}>
+                  <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('company.title')}</Text>
+                  <View style={[styles.editableTag, { backgroundColor: `${colors.primary}15` }]}>
+                    <Text style={[styles.editableTagText, { color: colors.primary }]}>{t('profile.editable')}</Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  onPress={() => {
+                    Alert.alert(
+                      t('company.selectCompany'),
+                      '',
+                      [
+                        { text: t('company.noCompany'), onPress: () => setCompanyId('') },
+                        ...companies.map((c) => ({
+                          text: c.nameZh || c.name || c.email,
+                          onPress: () => setCompanyId(c.id),
+                        })),
+                      ]
+                    );
+                  }}
+                  style={[styles.formInputWrap, { backgroundColor: colors.background, borderColor: colors.border }]}
+                  activeOpacity={0.7}
+                >
+                  <Building2 size={16} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
+                  <Text style={[styles.formInput, { color: colors.textPrimary, flex: 1 }]}>
+                    {companyId
+                      ? (companies.find((c) => c.id === companyId)?.nameZh || companies.find((c) => c.id === companyId)?.name || companies.find((c) => c.id === companyId)?.email)
+                      : t('company.noCompany')}
+                  </Text>
+                  <ChevronRight size={16} color={colors.textTertiary} />
+                </TouchableOpacity>
+              </View>
+            )}
 
+            {/* 新密碼 - 可編輯（留空保持不變） */}
             <View style={styles.formField}>
-              <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('profile.newPassword')}</Text>
-              <View style={[styles.formInputWrap, { backgroundColor: colors.background }]}>
+              <View style={styles.formLabelRow}>
+                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('profile.newPassword')}</Text>
+                <View style={[styles.editableTag, { backgroundColor: `${colors.primary}15` }]}>
+                  <Text style={[styles.editableTagText, { color: colors.primary }]}>{t('profile.editable')}</Text>
+                </View>
+              </View>
+              <View style={[styles.formInputWrap, { backgroundColor: colors.background, borderColor: colors.border }]}>
                 <Shield size={16} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
                 <RNTextInput
                   placeholder={t('error.passwordTooShort')}
@@ -924,10 +1018,15 @@ function EditUserModal({
               </View>
             </View>
 
-            {error ? <Text style={[styles.formError, { color: colors.danger }]}>{error}</Text> : null}
+            {error ? (
+              <View style={[styles.errorBanner, { backgroundColor: `${colors.danger}15`, borderColor: colors.danger }]}>
+                <AlertCircle size={14} color={colors.danger} />
+                <Text style={[styles.formError, { color: colors.danger }]}>{error}</Text>
+              </View>
+            ) : null}
           </ScrollView>
 
-          <View style={styles.modalActions}>
+          <View style={[styles.modalActions, { borderTopColor: colors.border }]}>
             <Button title={t('common.cancel')} variant="ghost" onPress={onClose} style={{ flex: 1 }} />
             <Button title={t('common.save')} onPress={handleSubmit} loading={loading} style={{ flex: 1.5 }} />
           </View>
@@ -1023,17 +1122,27 @@ function DriverEditModal({
       <View style={styles.centeredModalOverlay}>
         <Animated.View entering={FadeInDown.springify()} style={[styles.centeredModalContent, { backgroundColor: colors.card }]}>
           <View style={[styles.centeredModalHeader, { borderBottomColor: colors.border }]}>
-            <Text style={[styles.centeredModalTitle, { color: colors.textPrimary }]}>編輯司機</Text>
-            <Pressable onPress={onClose}><X size={20} color={colors.textSecondary} /></Pressable>
+            <Text style={[styles.centeredModalTitle, { color: colors.textPrimary }]}>{t('company.editDriver')}</Text>
+            <Pressable onPress={onClose} hitSlop={8} style={styles.modalCloseBtn}>
+              <X size={20} color={colors.textSecondary} />
+            </Pressable>
           </View>
 
-          <ScrollView style={{ maxHeight: 500 }} showsVerticalScrollIndicator={false}>
+          <ScrollView style={{ maxHeight: 560 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: spacing.md }}>
+            <AvatarField name={name} avatar={avatar} onChange={setAvatar} label={t('profile.profileImage')} />
+
+            {/* 姓名 - 可編輯 */}
             <View style={styles.formField}>
-              <Text style={[styles.formLabel, { color: colors.textSecondary }]}>姓名</Text>
-              <View style={[styles.formInputWrap, { backgroundColor: colors.background }]}>
+              <View style={styles.formLabelRow}>
+                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('auth.name')}</Text>
+                <View style={[styles.editableTag, { backgroundColor: `${colors.primary}15` }]}>
+                  <Text style={[styles.editableTagText, { color: colors.primary }]}>{t('profile.editable')}</Text>
+                </View>
+              </View>
+              <View style={[styles.formInputWrap, { backgroundColor: colors.background, borderColor: colors.border }]}>
                 <User size={16} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
                 <RNTextInput
-                  placeholder="請輸入姓名"
+                  placeholder={t('auth.name')}
                   placeholderTextColor={colors.textTertiary}
                   value={name}
                   onChangeText={setName}
@@ -1042,12 +1151,17 @@ function DriverEditModal({
               </View>
             </View>
 
+            {/* 電話 - 可編輯 */}
             <View style={styles.formField}>
-              <Text style={[styles.formLabel, { color: colors.textSecondary }]}>電話</Text>
-              <View style={[styles.formInputWrap, { backgroundColor: colors.background }]}>
-                <Truck size={16} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
+              <View style={styles.formLabelRow}>
+                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('auth.phone')}</Text>
+                <View style={[styles.editableTag, { backgroundColor: `${colors.primary}15` }]}>
+                  <Text style={[styles.editableTagText, { color: colors.primary }]}>{t('profile.editable')}</Text>
+                </View>
+              </View>
+              <View style={[styles.formInputWrap, { backgroundColor: colors.background, borderColor: colors.border }]}>
                 <RNTextInput
-                  placeholder="請輸入電話"
+                  placeholder="+852 XXXX XXXX"
                   placeholderTextColor={colors.textTertiary}
                   value={phone}
                   onChangeText={setPhone}
@@ -1057,12 +1171,18 @@ function DriverEditModal({
               </View>
             </View>
 
+            {/* 電郵 - 可編輯 */}
             <View style={styles.formField}>
-              <Text style={[styles.formLabel, { color: colors.textSecondary }]}>電郵</Text>
-              <View style={[styles.formInputWrap, { backgroundColor: colors.background }]}>
+              <View style={styles.formLabelRow}>
+                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('auth.email')}</Text>
+                <View style={[styles.editableTag, { backgroundColor: `${colors.primary}15` }]}>
+                  <Text style={[styles.editableTagText, { color: colors.primary }]}>{t('profile.editable')}</Text>
+                </View>
+              </View>
+              <View style={[styles.formInputWrap, { backgroundColor: colors.background, borderColor: colors.border }]}>
                 <Mail size={16} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
                 <RNTextInput
-                  placeholder="請輸入電郵"
+                  placeholder="user@example.com"
                   placeholderTextColor={colors.textTertiary}
                   value={email}
                   onChangeText={setEmail}
@@ -1073,9 +1193,15 @@ function DriverEditModal({
               </View>
             </View>
 
+            {/* 公司 - 可編輯 */}
             {companies.length > 0 && (
               <View style={styles.formField}>
-                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('company.title')}</Text>
+                <View style={styles.formLabelRow}>
+                  <Text style={[styles.formLabel, { color: colors.textSecondary }]}>{t('company.title')}</Text>
+                  <View style={[styles.editableTag, { backgroundColor: `${colors.primary}15` }]}>
+                    <Text style={[styles.editableTagText, { color: colors.primary }]}>{t('profile.editable')}</Text>
+                  </View>
+                </View>
                 <TouchableOpacity
                   onPress={() => {
                     Alert.alert(
@@ -1090,7 +1216,7 @@ function DriverEditModal({
                       ]
                     );
                   }}
-                  style={[styles.formInputWrap, { backgroundColor: colors.background }]}
+                  style={[styles.formInputWrap, { backgroundColor: colors.background, borderColor: colors.border }]}
                   activeOpacity={0.7}
                 >
                   <Building2 size={16} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
@@ -1104,10 +1230,15 @@ function DriverEditModal({
               </View>
             )}
 
-            {error ? <Text style={[styles.formError, { color: colors.danger }]}>{error}</Text> : null}
+            {error ? (
+              <View style={[styles.errorBanner, { backgroundColor: `${colors.danger}15`, borderColor: colors.danger }]}>
+                <AlertCircle size={14} color={colors.danger} />
+                <Text style={[styles.formError, { color: colors.danger }]}>{error}</Text>
+              </View>
+            ) : null}
           </ScrollView>
 
-          <View style={styles.modalActions}>
+          <View style={[styles.modalActions, { borderTopColor: colors.border }]}>
             <Button title={t('common.cancel')} variant="ghost" onPress={onClose} style={{ flex: 1 }} />
             <Button title={t('common.save')} onPress={handleSubmit} loading={loading} style={{ flex: 1.5 }} />
           </View>
@@ -1936,7 +2067,7 @@ const styles = StyleSheet.create({
   },
   centeredModalContent: {
     width: '100%',
-    maxWidth: 400,
+    maxWidth: 520,
     borderRadius: borderRadius.xl,
     padding: 0,
     overflow: 'hidden',
@@ -2118,5 +2249,83 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     paddingVertical: spacing.sm,
     textAlign: 'center',
+  },
+  // 新版編輯表單樣式
+  avatarFieldWrap: {
+    paddingTop: spacing.md,
+  },
+  avatarGlow: {
+    shadowColor: '#2563eb',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  avatarCameraBtn: {
+    position: 'absolute',
+    bottom: 0,
+    right: '32%',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  formLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  editableTag: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.full,
+  },
+  editableTagText: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  readonlyTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.full,
+    gap: 3,
+  },
+  readonlyTagText: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  readonlyField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    height: 48,
+    opacity: 0.85,
+  },
+  readonlyText: {
+    flex: 1,
+    fontSize: typography.fontSize.base,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+    marginHorizontal: spacing.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+  },
+  modalCloseBtn: {
+    padding: spacing.xs,
   },
 });

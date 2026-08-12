@@ -140,6 +140,8 @@ export default function InventoryManagement() {
 
   const onRefresh = async () => {
     setRefreshing(true);
+    // 先從 Supabase 拉最新庫存（跨裝置同步），再重載本地 cache
+    await useInventoryStore.getState().syncFromCloud();
     await Promise.all([loadItems(), loadWarehouses(), loadStocks()]);
     setRefreshing(false);
   };

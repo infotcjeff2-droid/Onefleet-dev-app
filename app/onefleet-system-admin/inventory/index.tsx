@@ -511,18 +511,18 @@ export default function InventoryManagement() {
       {/* Add/Edit Modal */}
       <Modal
         visible={modalVisible}
-        animationType="slide"
+        animationType="fade"
         transparent={true}
         onRequestClose={() => setModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>
                 {editingItem ? '編輯物品' : '新增物品'}
               </Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <X size={24} color={colors.text} />
+              <TouchableOpacity onPress={() => setModalVisible(false)} hitSlop={8}>
+                <X size={20} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
 
@@ -1045,14 +1045,17 @@ const createStyles = (colors: any) =>
     },
     modalOverlay: {
       flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.5)',
-      justifyContent: 'flex-end',
+      backgroundColor: 'rgba(0,0,0,0.6)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 20,
     },
     modalContent: {
+      width: '100%',
+      maxWidth: 520,
       backgroundColor: colors.surface,
-      borderTopLeftRadius: 24,
-      borderTopRightRadius: 24,
-      maxHeight: '92%',
+      borderRadius: 20,
+      overflow: 'hidden',
     },
     modalHeader: {
       flexDirection: 'row',
@@ -1334,25 +1337,27 @@ const createStyles = (colors: any) =>
     },
     cancelButton: {
       flex: 1,
-      padding: 16,
+      padding: 14,
       borderRadius: 12,
       backgroundColor: colors.background,
+      borderWidth: 1,
+      borderColor: colors.border,
       alignItems: 'center',
     },
     cancelButtonText: {
-      fontSize: 16,
+      fontSize: 15,
       fontWeight: '600',
       color: colors.textSecondary,
     },
     saveButton: {
-      flex: 1,
-      padding: 16,
+      flex: 1.5,
+      padding: 14,
       borderRadius: 12,
       backgroundColor: colors.primary,
       alignItems: 'center',
     },
     saveButtonText: {
-      fontSize: 16,
+      fontSize: 15,
       fontWeight: '600',
       color: '#fff',
     },

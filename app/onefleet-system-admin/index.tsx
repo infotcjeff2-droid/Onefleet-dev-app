@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Image, Linking } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
-import { ChevronRight, Truck, Link2, Cpu, Warehouse, Package, Zap, RefreshCw, Settings, Shield, LayoutDashboard } from 'lucide-react-native';
+import { ChevronRight, Truck, Link2, Cpu, Warehouse, Package, Zap, RefreshCw, Settings, Shield, LayoutDashboard, Navigation } from 'lucide-react-native';
 import { Card } from '@/components/ui/Card';
 import { Header } from '@/components/ui/Header';
 import { useThemeStore } from '@/store/themeStore';
@@ -9,16 +9,19 @@ import { useTranslation } from '@/i18n';
 import { spacing, typography } from '@/constants/theme';
 import { useVehicleStore } from '@/store/vehicleStore';
 import { useDeliveryStore } from '@/store/deliveryStore';
+import { useAuthStore } from '@/store/authStore';
 import { supabaseSetupSql } from '@/utils/fleetSync';
 
 export default function OneFleetSystemAdminScreen() {
   const router = useRouter();
   const { colors } = useThemeStore();
-  const { locale, t } = useTranslation();
+  const { t } = useTranslation();
+  const { role } = useAuthStore();
   const vehicleSyncError = useVehicleStore((s) => s.syncError);
   const deliverySyncError = useDeliveryStore((s) => s.syncError);
   const vehicleSyncing = useVehicleStore((s) => s.isSyncing);
   const deliverySyncing = useDeliveryStore((s) => s.isSyncing);
+  const isAdminOrCompany = role === 'admin' || role === 'company';
 
   const syncStatus = vehicleSyncError || deliverySyncError
     ? 'error'
@@ -153,6 +156,18 @@ export default function OneFleetSystemAdminScreen() {
             </View>
             <ChevronRight size={18} color={colors.textSecondary} />
           </Pressable>
+          {isAdminOrCompany && (
+            <>
+              <View style={[styles.divider, { backgroundColor: colors.border }]} />
+              <Pressable style={styles.settingRow} onPress={() => router.push('/onefleet-system-admin/settings/route-config')}>
+                <View style={styles.settingLeft}>
+                  <Navigation size={18} color="#8B5CF6" />
+                  <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>路線規劃與地圖設定</Text>
+                </View>
+                <ChevronRight size={18} color={colors.textSecondary} />
+              </Pressable>
+            </>
+          )}
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <Pressable style={styles.settingRow} onPress={() => router.push('/onefleet-system-admin/replenishment')}>
             <View style={styles.settingLeft}>

@@ -17,6 +17,22 @@ function getStorageKey(): string {
 
 // 同步鎖，防止並發同步
 let syncPromise: Promise<void> | null = null;
+/** 分配鎖，防止分配後立即同步覆蓋 */
+let assignInProgress = false;
+/** 標記即將從 Supabase 覆蓋本地，應跳過此次同步 */
+let skipNextSync = false;
+/** 標記是否正在新增訂單，防止新增期間同步覆蓋本地數據 */
+let addingOrderInProgress = false;
+/** 等待新增訂單同步完成的通知器 */
+let addOrderSyncResolver: (() => void) | null = null;
+/** 新增訂單後的冷卻期（毫秒），防止同步立即覆蓋新數據 */
+const ADD_ORDER_COOLDOWN_MS = 3000;
+/** 分配後的冷卻期（毫秒），防止同步立即覆蓋分配結果 */
+const ASSIGN_COOLDOWN_MS = 3000;
+/** 最後一次新增訂單的時間戳 */
+let lastAddOrderTime = 0;
+/** 最後一次分配的時間戳 */
+let lastAssignTime = 0;
 
 function parsePickupTime(pickupTime: string) {
   const normalized = pickupTime.replace(' ', 'T').replace(/(\d{2}:\d{2})(?::\d{2})?$/, '$1:00');
@@ -31,6 +47,12 @@ function isToday(date: Date, now: Date) {
 
 export function isDeliveryExpired(delivery: DeliveryOrder, now = new Date()) {
   if (delivery.status === 'signed' || delivery.signatureData || delivery.signedAt) {
+    return false;
+  }
+
+  // ★ 修復：已分配的訂單（在配送流程中）不應被判定為過期
+  // 司機可能因為各種因素延遲取貨，不應該自動流失分配
+  if (delivery.assignedDriverId && delivery.status === 'assigned') {
     return false;
   }
 
@@ -59,8 +81,9 @@ function normalizeDelivery(delivery: DeliveryOrder, now = new Date()): DeliveryO
   return {
     ...delivery,
     status: effectiveStatus,
-    assignedDriverId: effectiveStatus === 'expired' ? undefined : delivery.assignedDriverId,
-    assignedDriverName: effectiveStatus === 'expired' ? undefined : delivery.assignedDriverName,
+    // ★ 修復：即使 expired 也要保留分配司機資訊（保留歷史記錄）
+    assignedDriverId: delivery.assignedDriverId,
+    assignedDriverName: delivery.assignedDriverName,
   };
 }
 
@@ -120,14 +143,19 @@ interface DeliveryState {
   isLoading: boolean;
   isSyncing: boolean;
   syncError: string | null;
+  // 本地新建但尚未同步到 Supabase 的訂單 ID
+  pendingNewOrderIds: string[];
+  // 本地分配但尚未同步到 Supabase 的訂單 ID
+  pendingAssignOrderIds: string[];
   loadDeliveries: () => Promise<void>;
   syncDeliveries: () => Promise<void>;
-  addOrder: (order: Omit<DeliveryOrder, 'id' | 'createdAt' | 'orderNo'>) => Promise<void>;
+  addOrder: (order: Omit<DeliveryOrder, 'id' | 'createdAt' | 'orderNo'>) => Promise<DeliveryOrder>;
   assignDriver: (deliveryId: string, driverId: string, driverName: string) => Promise<void>;
   removeDriver: (deliveryId: string) => Promise<void>;
   updateStatus: (deliveryId: string, status: DeliveryStatus) => Promise<void>;
+  updateOrderDetails: (deliveryId: string, updates: Partial<Pick<DeliveryOrder, 'customerName' | 'customerPhone' | 'pickupAddress' | 'dropoffAddress' | 'cargoDescription' | 'cargoWeight' | 'notes' | 'cargoItems' | 'warehouseId' | 'warehouseName'>>) => Promise<void>;
   addSignature: (deliveryId: string, signatureData: string, signatureStrokes?: SignatureStroke[][]) => Promise<void>;
-  addPhoto: (deliveryId: string, photoUri: string, isPickupPhoto?: boolean) => Promise<void>;
+  addPhoto: (deliveryId: string, photoUri: string, isPickupPhoto?: boolean, locationInfo?: { address?: string; latitude?: number; longitude?: number }) => Promise<void>;
   removePhoto: (deliveryId: string, photoId: string, isPickupPhoto?: boolean) => Promise<void>;
   recordPickupTime: (deliveryId: string) => Promise<void>;
   recordInTransitTime: (deliveryId: string) => Promise<void>;
@@ -143,6 +171,8 @@ export const useDeliveryStore = create<DeliveryState>((set, get) => ({
   isLoading: true,
   isSyncing: false,
   syncError: null,
+  pendingNewOrderIds: [],
+  pendingAssignOrderIds: [],
 
   loadDeliveries: async () => {
     try {
@@ -165,6 +195,32 @@ export const useDeliveryStore = create<DeliveryState>((set, get) => ({
     
     if (!hasSupabaseEnv) {
       console.log('[deliveryStore] NO SUPABASE ENV, skipping');
+      return;
+    }
+
+    // 如果正在新增訂單，跳過此次同步以避免覆蓋本地新數據
+    if (addingOrderInProgress) {
+      console.log('[deliveryStore] Skipping sync - adding order in progress');
+      return;
+    }
+
+    // 如果在新增訂單後的冷卻期內，跳過此次同步
+    const now = Date.now();
+    if (now - lastAddOrderTime < ADD_ORDER_COOLDOWN_MS) {
+      console.log('[deliveryStore] Skipping sync - within cooldown period after addOrder');
+      return;
+    }
+
+    // 如果在分配司機後的冷卻期內，跳過此次同步
+    if (now - lastAssignTime < ASSIGN_COOLDOWN_MS) {
+      console.log('[deliveryStore] Skipping sync - within cooldown period after assign');
+      return;
+    }
+
+    // 如果剛完成分配司機，跳過此次同步以避免覆蓋本地狀態
+    if (skipNextSync) {
+      console.log('[deliveryStore] Skipping sync - assign driver in progress');
+      skipNextSync = false;
       return;
     }
 
@@ -231,7 +287,7 @@ export const useDeliveryStore = create<DeliveryState>((set, get) => ({
         dropoffPhone: db.dropoff_phone as string | undefined,
         dropoffLatitude: db.dropoff_latitude as number | undefined,
         dropoffLongitude: db.dropoff_longitude as number | undefined,
-        status: db.status as DeliveryOrder['status'],
+        status: (db.status as DeliveryOrder['status']) || (db.assigned_driver_id ? 'assigned' : 'pending'),
         assignedDriverId: db.assigned_driver_id as string | undefined,
         assignedDriverName: db.assigned_driver_name as string | undefined,
         assignedAt: db.assigned_at as string | undefined,
@@ -246,6 +302,12 @@ export const useDeliveryStore = create<DeliveryState>((set, get) => ({
         deliveryFee: db.delivery_fee as number,
         codAmount: db.cod_amount as number,
         notes: db.notes as string | undefined,
+        cargoDescription: (db.cargo_description as string | undefined) ?? '',
+        cargoWeight: (db.cargo_weight as number | undefined) ?? 0,
+        cargoItems: db.cargo_items as DeliveryOrder['cargoItems'],
+        warehouseId: db.warehouse_id as string | undefined,
+        warehouseName: db.warehouse_name as string | undefined,
+        warehouseImageUrl: db.warehouse_image_url as string | undefined,
         createdAt: db.created_at as string,
         updatedAt: db.updated_at as string,
         isCompleted: db.is_completed as boolean | undefined,
@@ -254,11 +316,106 @@ export const useDeliveryStore = create<DeliveryState>((set, get) => ({
       
       console.log('[deliveryStore] Converted', remoteDeliveries.length, 'deliveries');
       
-      // 直接使用遠端數據
-      set({ deliveries: remoteDeliveries, isLoading: false, isSyncing: false });
-      await persistDeliveries(remoteDeliveries);
+      // ★ 修復：合併策略改為「以 ID 為準」而非「以 pending 標記為準」
+      // 比較本地 vs 遠端，找出本地有但遠端沒有的訂單（可能因同步延遲尚未上傳成功）
+      // 這樣即使 pendingNewOrderIds 被清空，也能保留本地新增的訂單
+      const currentDeliveries = get().deliveries;
+      const pendingNewOrderIds = get().pendingNewOrderIds;
+      const pendingAssignOrderIds = get().pendingAssignOrderIds;
+      const localNewOrders = currentDeliveries.filter((d) => pendingNewOrderIds.includes(d.id));
       
-      console.log('[deliveryStore] Synced', remoteDeliveries.length, 'deliveries to store');
+      // 如果有本地分配但尚未同步到 Supabase 的訂單，應用它們到遠端數據
+      const localAssignedOrders = currentDeliveries.filter((d) => pendingAssignOrderIds.includes(d.id));
+      
+      // ★ 防守：比對 ID，找出本地有但遠端沒有的訂單（防止本地單被遠端覆蓋消失）
+      const remoteIds = new Set(remoteDeliveries.map((d) => d.id));
+      const localOnlyOrders = currentDeliveries.filter(
+        (d) => !remoteIds.has(d.id) && !localNewOrders.some((n) => n.id === d.id)
+      );
+      
+      if (localNewOrders.length > 0 || localAssignedOrders.length > 0 || localOnlyOrders.length > 0) {
+        const totalPreserving = localNewOrders.length + localAssignedOrders.length + localOnlyOrders.length;
+        console.log('[deliveryStore] Preserving local changes:', 
+          localNewOrders.length, 'new orders,', localAssignedOrders.length, 'assigned orders,', localOnlyOrders.length, 'local-only orders');
+        
+        // 複製遠端數據並應用本地分配結果
+        const mergedDeliveries = remoteDeliveries.map((remoteOrder) => {
+          // 檢查是否有本地的分配結果
+          const localAssign = localAssignedOrders.find((d) => d.id === remoteOrder.id);
+          if (localAssign) {
+            return {
+              ...remoteOrder,
+              assignedDriverId: localAssign.assignedDriverId,
+              assignedDriverName: localAssign.assignedDriverName,
+              status: localAssign.status,
+            };
+          }
+          return remoteOrder;
+        });
+        
+        // 將本地新建訂單加入（去除重複）
+        for (const newOrder of localNewOrders) {
+          const existsInRemote = mergedDeliveries.some((d) => d.id === newOrder.id);
+          if (!existsInRemote) {
+            mergedDeliveries.push(newOrder);
+          }
+        }
+        
+        // ★ 將本地有但遠端沒有的訂單加入（防止資料被覆蓋清空）
+        for (const localOnly of localOnlyOrders) {
+          const existsInRemote = mergedDeliveries.some((d) => d.id === localOnly.id);
+          if (!existsInRemote) {
+            mergedDeliveries.push(localOnly);
+          }
+        }
+        
+        set({ deliveries: mergedDeliveries, isLoading: false, isSyncing: false });
+        await persistDeliveries(mergedDeliveries);
+        console.log('[deliveryStore] Synced', mergedDeliveries.length, 'deliveries to store (including local changes)');
+        
+        // ★ 確認後才清空 pendingNewOrderIds：只在遠端真的找到時才清空
+        const remoteIds = new Set(remoteDeliveries.map((d) => d.id));
+        const stillPending = get().pendingNewOrderIds.filter((id) => !remoteIds.has(id));
+        if (stillPending.length !== get().pendingNewOrderIds.length) {
+          set({ pendingNewOrderIds: stillPending });
+          console.log('[deliveryStore] Cleared', get().pendingNewOrderIds.length - stillPending.length, 'confirmed pending new order IDs');
+        }
+        
+        // 同樣處理 pendingAssignOrderIds
+        const stillPendingAssign = get().pendingAssignOrderIds.filter((id) => {
+          // 只有從遠端拉回來且狀態正確的才算確認
+          const remoteOrder = remoteDeliveries.find((d) => d.id === id);
+          if (!remoteOrder) return true; // 還沒確認
+          return remoteOrder.status !== 'assigned' || !remoteOrder.assigned_driver_id;
+        });
+        if (stillPendingAssign.length !== get().pendingAssignOrderIds.length) {
+          set({ pendingAssignOrderIds: stillPendingAssign });
+        }
+      } else {
+        // 直接使用遠端數據
+        set({ deliveries: remoteDeliveries, isLoading: false, isSyncing: false });
+        await persistDeliveries(remoteDeliveries);
+        console.log('[deliveryStore] Synced', remoteDeliveries.length, 'deliveries to store');
+      }
+      
+      // ★ 主動重試：syncDeliveries 結束後，重試上傳任何仍在 pending 的訂單
+      // 解決「新增後本地有但 Supabase 沒拉回來」的問題
+      const stillPendingIds = get().pendingNewOrderIds;
+      if (stillPendingIds.length > 0 && hasSupabaseEnv) {
+        console.log('[deliveryStore] Retrying upload for', stillPendingIds.length, 'pending orders');
+        const allLocal = get().deliveries;
+        for (const pendingId of stillPendingIds) {
+          const order = allLocal.find((d) => d.id === pendingId);
+          if (order) {
+            try {
+              await upsertDeliveryOrder(order);
+              console.log('[deliveryStore] Retry uploaded:', pendingId);
+            } catch (err) {
+              console.warn('[deliveryStore] Retry upload failed for:', pendingId, err);
+            }
+          }
+        }
+      }
     } catch (err) {
       console.error('[deliveryStore] syncDeliveries error:', err);
       set({ syncError: err instanceof Error ? err.message : 'Delivery sync failed' });
@@ -268,8 +425,16 @@ export const useDeliveryStore = create<DeliveryState>((set, get) => ({
   },
 
   addOrder: async (order) => {
+    // 防止新增訂單期間同步覆蓋本地數據
+    addingOrderInProgress = true;
+    // 記錄新增訂單的時間，用於同步冷卻期
+    lastAddOrderTime = Date.now();
+
     const now = new Date();
     const id = `del${Date.now()}`;
+    // 記錄新建訂單的 ID，持續追蹤直到同步成功
+    set((state) => ({ pendingNewOrderIds: [...state.pendingNewOrderIds, id] }));
+    
     const orderNo = `WO-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}${String(get().deliveries.length + 1).padStart(3, '0')}`;
     const currentUser = useAuthStore.getState().user;
     const newOrder: DeliveryOrder = normalizeDelivery({
@@ -289,13 +454,43 @@ export const useDeliveryStore = create<DeliveryState>((set, get) => ({
     
     // 同步到共享配送單表（失敗不阻止流程）
     if (hasSupabaseEnv) {
-      try {
-        await upsertDeliveryOrder(newOrder);
-        console.log('[deliveryStore] Synced new order to delivery_orders table');
-      } catch (err) {
-        console.error('[deliveryStore] Failed to sync order to delivery_orders:', err);
-        // 記錄錯誤但不阻止成功流程
+      let synced = false;
+      let lastError: unknown = null;
+      
+      // ★ 重試機制：最多 3 次，每次延遲增加
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          await upsertDeliveryOrder(newOrder);
+          console.log(`[deliveryStore] Synced new order to delivery_orders table (attempt ${attempt})`);
+          synced = true;
+          break;
+        } catch (err) {
+          lastError = err;
+          console.error(`[deliveryStore] Failed to sync order to delivery_orders (attempt ${attempt}/3):`, err);
+          if (attempt < 3) {
+            // 等待越來越長時間再重試
+            await new Promise(resolve => setTimeout(resolve, 500 * attempt));
+          }
+        }
       }
+      
+      if (!synced) {
+        console.error('[deliveryStore] All 3 attempts failed to sync order. Local data preserved, but Supabase may not have this order.');
+        set({ syncError: `新增配送單同步失敗: ${lastError instanceof Error ? lastError.message : 'Unknown error'}` });
+        // 保持 pendingNewOrderIds，syncDeliveries 會嘗試重新同步
+      }
+    } else {
+      // 無 Supabase 環境時也要移除標記
+      set((state) => ({ pendingNewOrderIds: state.pendingNewOrderIds.filter((i) => i !== id) }));
+    }
+    
+    // 解除新增訂單鎖，讓後續同步可以正常運作
+    addingOrderInProgress = false;
+    
+    // 如果有等待中的 sync，通知它釋放鎖
+    if (addOrderSyncResolver) {
+      addOrderSyncResolver();
+      addOrderSyncResolver = null;
     }
     
     // 返回新訂單以便調用方確認
@@ -303,6 +498,12 @@ export const useDeliveryStore = create<DeliveryState>((set, get) => ({
   },
 
   assignDriver: async (deliveryId, driverId, driverName) => {
+    // 防止分配後的同步覆蓋本地狀態
+    skipNextSync = true;
+    lastAssignTime = Date.now();
+    // 記錄分配的訂單 ID，用於同步時保留分配結果（使用 store state）
+    set((state) => ({ pendingAssignOrderIds: [...state.pendingAssignOrderIds, deliveryId] }));
+
     const updated = get().deliveries.map((delivery) => {
       if (delivery.id !== deliveryId) {
         return delivery;
@@ -329,9 +530,18 @@ export const useDeliveryStore = create<DeliveryState>((set, get) => ({
       try {
         await assignDriverToDelivery(deliveryId, driverId, driverName);
         console.log('[deliveryStore] Assigned driver to shared delivery_orders table');
+        // ★ 修復：延遲清空 pendingAssignOrderIds，由 syncDeliveries 確認後再清空
+        // 這樣可以確保即使 assignDriverToDelivery 失敗，下次同步會再嘗試
       } catch (err) {
         console.error('[deliveryStore] Failed to assign driver to delivery_orders:', err);
+      } finally {
+        // API 同步完成後，允許後續的 syncDeliveries 正常運作
+        skipNextSync = false;
       }
+    } else {
+      // 無 Supabase 環境時也要解除鎖定
+      skipNextSync = false;
+      set((state) => ({ pendingAssignOrderIds: state.pendingAssignOrderIds.filter((i) => i !== deliveryId) }));
     }
   },
 
@@ -388,6 +598,34 @@ export const useDeliveryStore = create<DeliveryState>((set, get) => ({
     }
   },
 
+  updateOrderDetails: async (deliveryId, updates) => {
+    const currentDeliveries = get().deliveries;
+    const found = currentDeliveries.find((d) => d.id === deliveryId);
+
+    if (!found) {
+      Alert.alert('Error', `找不到訂單: ${deliveryId}`);
+      return;
+    }
+
+    const updated = currentDeliveries.map((delivery) =>
+      delivery.id === deliveryId ? { ...delivery, ...updates } : delivery,
+    );
+
+    set({ deliveries: updated });
+    await persistDeliveries(updated);
+    pushDeliveriesInBackground(updated, (message) => set({ syncError: message }));
+
+    // 同步到共享配送單表
+    if (hasSupabaseEnv) {
+      try {
+        await updateDeliveryOrderInSupabase(deliveryId, updates);
+        console.log('[deliveryStore] Updated order details in delivery_orders table');
+      } catch (err) {
+        console.error('[deliveryStore] Failed to update order details in delivery_orders:', err);
+      }
+    }
+  },
+
   addSignature: async (deliveryId, signatureData, signatureStrokes) => {
     const now = new Date().toISOString();
     let finalSignatureData = signatureData;
@@ -426,7 +664,7 @@ export const useDeliveryStore = create<DeliveryState>((set, get) => ({
     }
   },
 
-  addPhoto: async (deliveryId, photoUri, isPickupPhoto = false) => {
+  addPhoto: async (deliveryId, photoUri, isPickupPhoto = false, locationInfo) => {
     // 如果是 blob URL 或 data URL，必須上傳到 Supabase Storage
     if (typeof window !== 'undefined' && (photoUri.startsWith('blob:') || photoUri.startsWith('data:'))) {
       try {
@@ -435,6 +673,12 @@ export const useDeliveryStore = create<DeliveryState>((set, get) => ({
           id: `photo-${Date.now()}`,
           uri: finalUri,
           takenAt: new Date().toISOString(),
+          // 取貨相片時帶入位置資訊
+          ...(isPickupPhoto && locationInfo && {
+            locationAddress: locationInfo.address,
+            locationLatitude: locationInfo.latitude,
+            locationLongitude: locationInfo.longitude,
+          }),
         };
         const updated = get().deliveries.map((delivery) =>
           delivery.id === deliveryId
@@ -492,6 +736,12 @@ export const useDeliveryStore = create<DeliveryState>((set, get) => ({
       id: `photo-${Date.now()}`,
       uri: photoUri,
       takenAt: new Date().toISOString(),
+      // 取貨相片時帶入位置資訊
+      ...(isPickupPhoto && locationInfo && {
+        locationAddress: locationInfo.address,
+        locationLatitude: locationInfo.latitude,
+        locationLongitude: locationInfo.longitude,
+      }),
     };
     const updated = get().deliveries.map((delivery) =>
       delivery.id === deliveryId

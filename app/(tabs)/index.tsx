@@ -21,9 +21,11 @@ import {
   Truck,
   Route,
   ChevronRight,
+  ChevronLeft,
   Building2,
   Shield,
   Users,
+  Navigation,
 } from 'lucide-react-native';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -34,6 +36,7 @@ import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 import { Header } from '@/components/ui/Header';
 import { useTranslation } from '@/i18n';
 import { UserRole, Vehicle, DeliveryOrder } from '@/types';
+import DeliveryAnalytics from '@/components/delivery/DeliveryAnalytics';
 
 // 格式化時間顯示（處理 ISO 格式）
 function formatTime(dateStr: string): string {
@@ -211,6 +214,8 @@ function DriverHero({
   activeCount: number;
   completedCount: number;
 }) {
+  const router = useRouter();
+
   return (
     <Animated.View entering={FadeInDown.duration(500)} style={styles.driverHeroWrap}>
       <LinearGradient
@@ -240,6 +245,21 @@ function DriverHero({
             <Text style={styles.driverHeroStatLabel}>{t('dashboard.driverCompleted')}</Text>
           </View>
         </View>
+
+        {/* 路線規劃快捷入口 */}
+        <Pressable
+          style={styles.routePlannerButton}
+          onPress={() => router.push('/route-planner')}
+        >
+          <View style={styles.routePlannerButtonIcon}>
+            <Navigation size={18} color="#FFFFFF" />
+          </View>
+          <View style={styles.routePlannerButtonText}>
+            <Text style={styles.routePlannerButtonTitle}>{t('route.routePlanner')}</Text>
+            <Text style={styles.routePlannerButtonSub}>AI 優化配送順序</Text>
+          </View>
+          <ChevronRight size={18} color="#FFFFFF" />
+        </Pressable>
       </LinearGradient>
     </Animated.View>
   );
@@ -605,12 +625,16 @@ function CompanyAdminDashboard({
   userName,
   vehicles,
   deliveries,
+  companyId,
+  userRole,
 }: {
   t: (key: string) => string;
   role: UserRole;
   userName: string;
   vehicles: Vehicle[];
   deliveries: DeliveryOrder[];
+  companyId?: string | null;
+  userRole?: string;
 }) {
   const router = useRouter();
   const inTransitOrders = deliveries.filter((delivery) => delivery.status === 'in_transit');
@@ -739,6 +763,23 @@ function CompanyAdminDashboard({
           </LinearGradient>
         </Animated.View>
 
+        {/* 路線規劃快捷入口 */}
+        <Animated.View entering={FadeInUp.delay(80).springify()} style={styles.adminQuickActions}>
+          <Pressable
+            style={[styles.adminQuickActionBtn, { backgroundColor: colors.primary }]}
+            onPress={() => router.push('/route-planner')}
+          >
+            <View style={[styles.adminQuickActionIcon, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
+              <Route size={18} color="#FFFFFF" />
+            </View>
+            <View style={styles.adminQuickActionText}>
+              <Text style={styles.adminQuickActionTitle}>{t('route.routePlanner')}</Text>
+              <Text style={styles.adminQuickActionSub}>AI 優化配送順序</Text>
+            </View>
+            <ChevronRight size={18} color="#FFFFFF" />
+          </Pressable>
+        </Animated.View>
+
         <Animated.View entering={FadeInUp.delay(120).springify()} style={styles.adminMetricsGrid}>
           {overviewMetrics.map((item) => (
             <OverviewMetricCard key={item.key} item={item} />
@@ -783,6 +824,13 @@ function CompanyAdminDashboard({
             </View>
           </Card>
         </Animated.View>
+
+        {/* 配送數據分析（僅 Web 端顯示 Recharts） */}
+        {typeof window !== 'undefined' && (
+          <Animated.View entering={FadeInUp.delay(160).springify()} style={styles.adminSection}>
+            <DeliveryAnalytics companyId={companyId} userRole={userRole} />
+          </Animated.View>
+        )}
 
         <Animated.View entering={FadeInUp.delay(180).springify()} style={styles.adminSection}>
           <View style={styles.adminSectionHeader}>
@@ -852,6 +900,8 @@ export default function DashboardScreen() {
         userName={user?.name || (role === 'admin' ? 'Administrator' : 'Company')}
         vehicles={vehicles}
         deliveries={deliveries}
+        companyId={user?.companyId}
+        userRole={role}
       />
     );
   }
@@ -1132,6 +1182,37 @@ const styles = StyleSheet.create({
     width: 1,
     height: 40,
     backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  adminQuickActions: {
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  adminQuickActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    gap: spacing.md,
+  },
+  adminQuickActionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  adminQuickActionText: {
+    flex: 1,
+  },
+  adminQuickActionTitle: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  adminQuickActionSub: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.85)',
+    marginTop: 2,
   },
   adminMetricsGrid: {
     flexDirection: 'row',
@@ -1674,6 +1755,36 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 12,
     color: 'rgba(255,255,255,0.82)',
+  },
+  routePlannerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginTop: spacing.lg,
+    gap: spacing.md,
+  },
+  routePlannerButtonIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  routePlannerButtonText: {
+    flex: 1,
+  },
+  routePlannerButtonTitle: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  routePlannerButtonSub: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.85)',
+    marginTop: 2,
   },
   driverSection: {
     paddingHorizontal: spacing.lg,

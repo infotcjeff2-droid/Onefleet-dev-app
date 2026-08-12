@@ -6,17 +6,24 @@
  * - Admin 可在垃圾桶頁面查看、還原或永久刪除
  * - 30 天後自動清除（呼叫 cleanupExpired() 觸發；或在每次載入時被動觸發）
  * - 同步到 Supabase：垃圾桶資料與主資料一起隨 fleet_sync 上行（透過 custom 命名空間）
+ *
+ * 登入鎖定語意：
+ * - `kind='user'` 的項目代表「被軟刪的使用者」，垃圾桶保留期間此 email **不可登入**
+ * - 除非從垃圾桶「還原」才會恢復登入功能
+ * - 「永久刪除」時則依 payload.source 把帳號從 Supabase / Clerk 真實刪除
  */
 
 import { create } from 'zustand';
 import { storage } from '@/utils/storage';
-import { fetchFleetSnapshot, hasSupabaseEnv, pushFleetSnapshot } from '@/utils/fleetSync';
 
 const STORAGE_KEY = 'trash_bin';
 export const TRASH_RETENTION_DAYS = 30;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export type TrashEntityKind = 'user' | 'driver' | 'vehicle' | 'delivery';
+
+/** 使用者來源：決定永久刪除要走哪個雲端 */
+export type TrashUserSource = 'managed' | 'clerk' | 'supabase';
 
 export interface TrashItem {
   /** 垃圾桶內部唯一 ID（UUID 風格） */
@@ -46,21 +53,16 @@ interface TrashState {
   clearAll: () => Promise<void>;
   /** 依類型取得尚未過期的項目 */
   getByKind: (kind: TrashEntityKind) => TrashItem[];
+  /** 檢查指定 email 是否仍在垃圾桶中（kind='user' 且未過期）→ 代表此帳號暫停登入 */
+  isEmailTrashed: (email: string) => boolean;
+  /** 取得仍在垃圾桶中的 user email 清單（給登入流程檢查用） */
+  getTrashedUserEmails: () => string[];
 }
 
 const generateTrashId = () => `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 
 async function persist(items: TrashItem[]) {
   await storage.setItem(STORAGE_KEY, JSON.stringify(items));
-}
-
-async function syncToSupabase(items: TrashItem[]) {
-  if (!hasSupabaseEnv) return;
-  try {
-    await pushFleetSnapshot({ trash: items } as unknown as Parameters<typeof pushFleetSnapshot>[0]);
-  } catch {
-    // 垃圾桶同步失敗不影響主流程
-  }
 }
 
 export const useTrashStore = create<TrashState>((set, get) => ({
@@ -104,7 +106,6 @@ export const useTrashStore = create<TrashState>((set, get) => ({
     const items = [item, ...get().items];
     set({ items });
     await persist(items);
-    void syncToSupabase(items);
     return item;
   },
 
@@ -112,7 +113,6 @@ export const useTrashStore = create<TrashState>((set, get) => ({
     const items = get().items.filter((it) => it.trashId !== trashId);
     set({ items });
     await persist(items);
-    void syncToSupabase(items);
   },
 
   removeManyFromTrash: async (trashIds) => {
@@ -121,7 +121,6 @@ export const useTrashStore = create<TrashState>((set, get) => ({
     const items = get().items.filter((it) => !idSet.has(it.trashId));
     set({ items });
     await persist(items);
-    void syncToSupabase(items);
   },
 
   cleanupExpired: async () => {
@@ -130,19 +129,44 @@ export const useTrashStore = create<TrashState>((set, get) => ({
     if (items.length !== get().items.length) {
       set({ items });
       await persist(items);
-      void syncToSupabase(items);
     }
   },
 
   clearAll: async () => {
     set({ items: [] });
     await persist([]);
-    void syncToSupabase([]);
   },
 
   getByKind: (kind) => {
     const now = Date.now();
     return get().items.filter((it) => it.kind === kind && it.expiresAt > now);
+  },
+
+  /** 檢查指定 email 是否仍在垃圾桶中 → 此 email 暫停登入 */
+  isEmailTrashed: (email) => {
+    if (!email) return false;
+    const target = email.trim().toLowerCase();
+    const now = Date.now();
+    return get().items.some(
+      (it) =>
+        it.kind === 'user' &&
+        it.expiresAt > now &&
+        typeof it.payload?.email === 'string' &&
+        (it.payload.email as string).trim().toLowerCase() === target
+    );
+  },
+
+  /** 取得仍在垃圾桶中的 user email 清單（給登入流程檢查用） */
+  getTrashedUserEmails: () => {
+    const now = Date.now();
+    return get().items
+      .filter(
+        (it) =>
+          it.kind === 'user' &&
+          it.expiresAt > now &&
+          typeof it.payload?.email === 'string'
+      )
+      .map((it) => (it.payload.email as string).trim().toLowerCase());
   },
 }));
 

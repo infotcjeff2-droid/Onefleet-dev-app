@@ -74,6 +74,7 @@ export default function ReplenishmentPage() {
 
   const onRefresh = async () => {
     setRefreshing(true);
+    await useInventoryStore.getState().syncFromCloud();
     await loadReplenishment();
     setRefreshing(false);
   };

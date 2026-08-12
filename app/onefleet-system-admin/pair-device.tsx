@@ -384,7 +384,7 @@ export default function PairDeviceScreen() {
       </ScrollView>
 
       {/* Pair Modal */}
-      <Modal visible={pairModalVisible} transparent animationType="slide">
+      <Modal visible={pairModalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <Animated.View
             entering={FadeInDown.springify()}
@@ -544,8 +544,8 @@ const styles = StyleSheet.create({
   selectBtn: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: borderRadius.md },
   selectBtnText: { fontSize: typography.fontSize.xs, fontWeight: '600' },
   divider: { height: 1, marginLeft: 36 + spacing.md + spacing.md },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  modalContent: { borderTopLeftRadius: borderRadius.xl, borderTopRightRadius: borderRadius.xl, paddingBottom: 40, maxHeight: '85%' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: spacing.lg },
+  modalContent: { width: '100%', maxWidth: 520, borderRadius: borderRadius.xl, overflow: 'hidden', paddingBottom: 40 },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.lg, borderBottomWidth: 1 },
   modalTitle: { fontSize: typography.fontSize.lg, fontWeight: '700' },
   selectedDeviceCard: { marginHorizontal: spacing.lg, marginTop: spacing.md, padding: spacing.md, borderRadius: borderRadius.md, borderWidth: 1 },

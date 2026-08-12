@@ -6,7 +6,6 @@ import {
   Pressable,
   Modal,
   ScrollView,
-  Platform,
 } from 'react-native';
 import { ChevronDown, Check } from 'lucide-react-native';
 import { colors, borderRadius, spacing, typography } from '@/constants/theme';
@@ -84,13 +83,15 @@ export function SelectField<T extends string>({
         animationType="fade"
         onRequestClose={() => setModalVisible(false)}
       >
+        {/* Backdrop */}
         <Pressable
-          style={styles.overlay}
+          style={styles.backdrop}
           onPress={() => setModalVisible(false)}
-        >
+        />
+        {/* Dropdown - sibling to backdrop, so clicks don't interfere */}
+        <View style={styles.dropdownWrapper}>
           <View
             style={[styles.dropdown, { backgroundColor: colors.card }]}
-            onStartShouldSetResponder={() => true}
           >
             <View style={[styles.dropdownHeader, { borderBottomColor: colors.border }]}>
               <Text style={[styles.dropdownTitle, { color: colors.textPrimary }]}>
@@ -105,6 +106,7 @@ export function SelectField<T extends string>({
             <ScrollView
               style={styles.dropdownScroll}
               showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
             >
               {options.map((option) => {
                 const isSelected = option.value === value;
@@ -138,7 +140,7 @@ export function SelectField<T extends string>({
               })}
             </ScrollView>
           </View>
-        </Pressable>
+        </View>
       </Modal>
     </View>
   );
@@ -157,6 +159,7 @@ const styles = StyleSheet.create({
   selector: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     backgroundColor: colors.card,
     borderRadius: borderRadius.md,
     borderWidth: 1.5,
@@ -170,6 +173,7 @@ const styles = StyleSheet.create({
     flex: 1,
     color: colors.textPrimary,
     fontSize: typography.fontSize.base,
+    textAlign: 'left',
   },
   placeholderText: {
     color: colors.textTertiary,
@@ -191,6 +195,21 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    pointerEvents: 'box-none',
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  dropdownWrapper: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: spacing.lg,

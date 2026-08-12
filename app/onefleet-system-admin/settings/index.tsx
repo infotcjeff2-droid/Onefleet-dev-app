@@ -1,8 +1,8 @@
-import { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Image } from 'react-native';
+import { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Image, Switch } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter, useSearchParams } from 'expo-router';
-import { ChevronRight, Globe, Check, Database, Truck, Link2, Cpu, Warehouse, Package, Zap, RefreshCw, Settings, Shield, LayoutDashboard } from 'lucide-react-native';
+import { ChevronRight, Globe, Check, Database, Truck, Link2, Cpu, Warehouse, Package, Zap, RefreshCw, Settings, Shield, LayoutDashboard, BarChart3, Navigation } from 'lucide-react-native';
 import { Card } from '@/components/ui/Card';
 import { Header } from '@/components/ui/Header';
 import { useThemeStore } from '@/store/themeStore';
@@ -11,6 +11,8 @@ import { spacing, typography } from '@/constants/theme';
 import { useVehicleStore } from '@/store/vehicleStore';
 import { useDeliveryStore } from '@/store/deliveryStore';
 import { useFontScale, FontScale } from '@/contexts/FontScaleContext';
+import { getDashboardChartConfig, updateDashboardChartConfig, DashboardChartConfig } from '@/utils/fleetSync';
+import { hasSupabaseEnv } from '@/utils/supabase';
 
 type Locale = 'zh-TW' | 'en';
 
@@ -31,6 +33,51 @@ export default function OneFleetSystemAdminSettingsScreen() {
   const { locale, setLocale, t } = useTranslation();
   const { fontScale, setFontScale } = useFontScale();
   const [activeTab, setActiveTab] = useState<'preferences' | 'inventory'>('inventory');
+
+  // 圖表配置狀態
+  const [chartConfig, setChartConfig] = useState<DashboardChartConfig | null>(null);
+  const [chartConfigLoading, setChartConfigLoading] = useState(false);
+  const [chartConfigSaving, setChartConfigSaving] = useState(false);
+
+  // 載入圖表配置
+  useEffect(() => {
+    if (!hasSupabaseEnv) return;
+
+    const loadChartConfig = async () => {
+      setChartConfigLoading(true);
+      try {
+        const config = await getDashboardChartConfig();
+        setChartConfig(config);
+      } catch (err) {
+        console.error('Failed to load chart config:', err);
+      } finally {
+        setChartConfigLoading(false);
+      }
+    };
+
+    loadChartConfig();
+  }, []);
+
+  // 切換圖表開關
+  const handleToggleChartConfig = async (key: keyof DashboardChartConfig, value: boolean) => {
+    if (!chartConfig) return;
+
+    setChartConfigSaving(true);
+    try {
+      const newConfig = { ...chartConfig, [key]: value };
+      const success = await updateDashboardChartConfig({ [key]: value });
+      if (success) {
+        setChartConfig(newConfig);
+      } else {
+        Alert.alert(t('common.error'), t('dashboard.saveFailed'));
+      }
+    } catch (err) {
+      console.error('Failed to update chart config:', err);
+      Alert.alert(t('common.error'), t('dashboard.saveFailed'));
+    } finally {
+      setChartConfigSaving(false);
+    }
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -192,6 +239,106 @@ export default function OneFleetSystemAdminSettingsScreen() {
                 <ChevronRight size={18} color={colors.textSecondary} />
               </Pressable>
             </Card>
+
+            {/* 圖表顯示設定 */}
+            <Card style={styles.card}>
+              <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>📊 {t('dashboard.chartConfig')}</Text>
+              <Text style={[styles.sectionDesc, { color: colors.textTertiary }]}>
+                {t('dashboard.chartConfigDesc')}
+              </Text>
+
+              {chartConfigLoading ? (
+                <Text style={[styles.loadingText, { color: colors.textTertiary }]}>
+                  {t('dashboard.loading')}
+                </Text>
+              ) : chartConfig ? (
+                <>
+                  {/* 總簽收單數開關 */}
+                  <View style={[styles.toggleRow, { borderBottomColor: colors.border }]}>
+                    <View style={styles.toggleLeft}>
+                      <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>
+                        {t('dashboard.showTotalOrders')}
+                      </Text>
+                    </View>
+                    <Switch
+                      value={chartConfig.show_total_orders}
+                      onValueChange={(value) => handleToggleChartConfig('show_total_orders', value)}
+                      disabled={chartConfigSaving}
+                      trackColor={{ false: colors.border, true: colors.primary }}
+                      thumbColor="#FFFFFF"
+                    />
+                  </View>
+
+                  {/* 平均配送時間開關 */}
+                  <View style={[styles.toggleRow, { borderBottomColor: colors.border }]}>
+                    <View style={styles.toggleLeft}>
+                      <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>
+                        {t('dashboard.showAvgDuration')}
+                      </Text>
+                    </View>
+                    <Switch
+                      value={chartConfig.show_avg_duration}
+                      onValueChange={(value) => handleToggleChartConfig('show_avg_duration', value)}
+                      disabled={chartConfigSaving}
+                      trackColor={{ false: colors.border, true: colors.primary }}
+                      thumbColor="#FFFFFF"
+                    />
+                  </View>
+
+                  {/* 配送達標率開關 */}
+                  <View style={[styles.toggleRow, { borderBottomColor: colors.border }]}>
+                    <View style={styles.toggleLeft}>
+                      <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>
+                        {t('dashboard.showEfficiencyRate')}
+                      </Text>
+                    </View>
+                    <Switch
+                      value={chartConfig.show_efficiency_rate}
+                      onValueChange={(value) => handleToggleChartConfig('show_efficiency_rate', value)}
+                      disabled={chartConfigSaving}
+                      trackColor={{ false: colors.border, true: colors.primary }}
+                      thumbColor="#FFFFFF"
+                    />
+                  </View>
+
+                  {/* 活躍司機數開關 */}
+                  <View style={[styles.toggleRow, { borderBottomColor: colors.border }]}>
+                    <View style={styles.toggleLeft}>
+                      <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>
+                        {t('dashboard.showActiveDrivers')}
+                      </Text>
+                    </View>
+                    <Switch
+                      value={chartConfig.show_active_drivers}
+                      onValueChange={(value) => handleToggleChartConfig('show_active_drivers', value)}
+                      disabled={chartConfigSaving}
+                      trackColor={{ false: colors.border, true: colors.primary }}
+                      thumbColor="#FFFFFF"
+                    />
+                  </View>
+
+                  {/* 圖表耗時線開關 */}
+                  <View style={styles.toggleRow}>
+                    <View style={styles.toggleLeft}>
+                      <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>
+                        {t('dashboard.chartSeriesDuration')}
+                      </Text>
+                    </View>
+                    <Switch
+                      value={chartConfig.chart_series_duration}
+                      onValueChange={(value) => handleToggleChartConfig('chart_series_duration', value)}
+                      disabled={chartConfigSaving}
+                      trackColor={{ false: colors.border, true: colors.primary }}
+                      thumbColor="#FFFFFF"
+                    />
+                  </View>
+                </>
+              ) : (
+                <Text style={[styles.loadingText, { color: colors.textTertiary }]}>
+                  {t('dashboard.noData')}
+                </Text>
+              )}
+            </Card>
           </>
         )}
       </ScrollView>
@@ -248,4 +395,30 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
   },
   divider: { height: 1, marginVertical: spacing.xs },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: 'transparent',
+  },
+  toggleLeft: {
+    flex: 1,
+    marginRight: spacing.md,
+  },
+  toggleLabel: {
+    fontSize: typography.fontSize.base,
+    fontWeight: '500',
+  },
+  sectionDesc: {
+    fontSize: typography.fontSize.sm,
+    marginBottom: spacing.md,
+    marginTop: -spacing.sm,
+  },
+  loadingText: {
+    fontSize: typography.fontSize.sm,
+    textAlign: 'center',
+    paddingVertical: spacing.lg,
+  },
 });

@@ -6,7 +6,7 @@
 
 import { useEffect, useRef, useState, useCallback, memo } from 'react';
 import { View, Text, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
-import { WifiOff, RefreshCw, Maximize2, Settings, Wifi, Play, Volume2, VolumeX } from 'lucide-react-native';
+import { WifiOff, RefreshCw, Maximize2, Wifi, Play, Volume2, VolumeX, Minimize2 } from 'lucide-react-native';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { colors, spacing, typography } from '@/constants/theme';
 import { defaultColors } from '@/store/themeStore';
@@ -113,9 +113,10 @@ function FlvPlayerComponent({
     duration: 0,
     bitrate: 0,
   });
-  const [showSettings, setShowSettings] = useState(false);
+  const [isFullScreen, setIsFullScreen] = useState(false);
   const [isMuted, setIsMuted] = useState(muted);
   const [needsInteraction, setNeedsInteraction] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
 
   // 處理使用者點擊（解除靜音和開始播放）
   const handleUserInteraction = useCallback(() => {
@@ -272,11 +273,13 @@ function FlvPlayerComponent({
     if (!video) return;
 
     const handlePlay = () => {
+      setIsPaused(false);
       setPlayerState('playing');
       onPlay?.();
     };
 
     const handlePause = () => {
+      setIsPaused(true);
       setPlayerState('paused');
     };
 
@@ -358,16 +361,26 @@ function FlvPlayerComponent({
     setIsMuted(false);
 
     if (videoRef.current.paused) {
+      // 直播模式下，如果播放器被摧毀或需要重新初始化，重新創建播放器
+      if (!playerRef.current && !testMode) {
+        console.log('[FlvPlayer] Player not initialized, reinitializing...');
+        initPlayer();
+        return;
+      }
       videoRef.current.play().catch((err) => {
         if (err.name === 'NotAllowedError') {
           setNeedsInteraction(true);
           setPlayerState('waiting_for_interaction');
+        } else {
+          // 播放失敗時重新初始化播放器
+          console.warn('[FlvPlayer] Play failed, reinitializing:', err);
+          initPlayer();
         }
       });
     } else {
       videoRef.current.pause();
     }
-  }, []);
+  }, [initPlayer]);
 
   // 重試
   const handleRetry = useCallback(() => {
@@ -493,7 +506,7 @@ function FlvPlayerComponent({
       )}
 
       {/* 控制欄 */}
-      {controls && playerState === 'playing' && (
+      {controls && (playerState === 'playing' || playerState === 'paused') && (
         <View
           style={styles.controlsOverlay}
           onTouchEnd={() => setShowControls(!showControls)}
@@ -518,7 +531,7 @@ function FlvPlayerComponent({
               {/* 播放控制 */}
               <View style={styles.playbackControls}>
                 <Pressable style={styles.controlBtn} onPress={togglePlay}>
-                  {videoRef.current?.paused ? (
+                  {isPaused ? (
                     <Play size={24} color="#FFFFFF" />
                   ) : (
                     <View style={styles.pauseIcon}>
@@ -536,12 +549,34 @@ function FlvPlayerComponent({
                 </Pressable>
               </View>
 
-              {/* 設定按鈕 */}
+              {/* 全屏按鈕 */}
               <Pressable
                 style={styles.settingsBtn}
-                onPress={() => setShowSettings(!showSettings)}
+                onPress={() => {
+                  if (containerRef.current) {
+                    if (!isFullScreen) {
+                      if (containerRef.current.requestFullscreen) {
+                        containerRef.current.requestFullscreen();
+                      } else if ((containerRef.current as any).webkitRequestFullscreen) {
+                        (containerRef.current as any).webkitRequestFullscreen();
+                      }
+                      setIsFullScreen(true);
+                    } else {
+                      if (document.exitFullscreen) {
+                        document.exitFullscreen();
+                      } else if ((document as any).webkitExitFullscreen) {
+                        (document as any).webkitExitFullscreen();
+                      }
+                      setIsFullScreen(false);
+                    }
+                  }
+                }}
               >
-                <Settings size={18} color="#FFFFFF" />
+                {isFullScreen ? (
+                  <Minimize2 size={18} color="#FFFFFF" />
+                ) : (
+                  <Maximize2 size={18} color="#FFFFFF" />
+                )}
               </Pressable>
             </>
           )}

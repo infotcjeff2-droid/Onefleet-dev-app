@@ -387,7 +387,7 @@ function VehicleFormModal({
     : form.imageUrl;
 
   return (
-    <Modal visible={visible} transparent animationType="slide">
+    <Modal visible={visible} transparent animationType="fade">
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.modalOverlay}
@@ -401,10 +401,10 @@ function VehicleFormModal({
             <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
               {vehicle ? t('vehicles.editTitle') : t('vehicles.addTitle')}
             </Text>
-            <Pressable onPress={onClose}><X size={20} color={colors.textSecondary} /></Pressable>
+            <Pressable onPress={onClose} hitSlop={8}><X size={20} color={colors.textSecondary} /></Pressable>
           </View>
 
-          <ScrollView style={{ maxHeight: SCREEN_WIDTH * 1.4 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <ScrollView style={{ maxHeight: 560 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             {/* 車輛圖片 - 移到最頂 */}
             <View style={[styles.formField, { paddingHorizontal: spacing.lg, marginTop: spacing.lg }]}>
               <Text style={[styles.formLabel, labelStyle]}>{t('vehicles.vehicleImage')}</Text>
@@ -1010,13 +1010,13 @@ const styles = StyleSheet.create({
   emptyState: { alignItems: 'center', paddingTop: 80 },
   emptyTitle: { fontSize: typography.fontSize.lg, fontWeight: '600', marginTop: spacing.md },
   emptyHint: { fontSize: typography.fontSize.sm, marginTop: spacing.xs },
-  modalOverlay: { flex: 1, justifyContent: 'flex-end' },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
+  modalOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.lg },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' },
   modalContent: {
-    borderTopLeftRadius: borderRadius.xl,
-    borderTopRightRadius: borderRadius.xl,
-    paddingBottom: 40,
-    maxHeight: '85%',
+    width: '100%',
+    maxWidth: 520,
+    borderRadius: borderRadius.xl,
+    overflow: 'hidden',
   },
   deleteConfirmBox: {
     width: 300,

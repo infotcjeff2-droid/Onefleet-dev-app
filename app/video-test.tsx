@@ -10,12 +10,17 @@ import { View, Text, StyleSheet, Pressable, ScrollView, Platform } from 'react-n
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, Video, Wifi, WifiOff, RefreshCw, Settings, X, Camera } from 'lucide-react-native';
 import { FlvPlayer } from '@/components/vehicle/FlvPlayer';
-import { gps808Api } from '@/utils/gps808Api';
+import { HlsVideo } from '@/components/vehicle/HlsVideo';
+import { gps808Api, getWebProxyBaseUrlSync } from '@/utils/gps808Api';
 import { useGps808Store } from '@/store/gps808Store';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 import { defaultColors } from '@/store/themeStore';
 
 const IS_WEB = Platform.OS === 'web';
+/** 手機不支援 flv.js，統一使用 HLS；PC 維持 FLV 以取得最低延遲 */
+const USE_HLS = IS_WEB && /Mobi|Android|iPhone|iPad/i.test(
+  typeof navigator !== 'undefined' ? navigator.userAgent : '',
+);
 
 export default function VideoTestScreen() {
   const { devIdno: queryDevIdno } = useLocalSearchParams<{ devIdno?: string }>();
@@ -86,16 +91,18 @@ export default function VideoTestScreen() {
 
     try {
       const jsession = await gps808Api.getStoredSession();
-      
+
       if (jsession && IS_WEB) {
-        const url = `http://localhost:3001/api/gps/flv-stream?devIdno=${devIdno}&channel=${activeChannel}&stream=${quality === 'sd' ? 1 : 0}&jsessionId=${jsession}`;
+        const proxyBase = getWebProxyBaseUrlSync();
+        const streamPath = USE_HLS ? 'hls-stream' : 'flv-stream';
+        const url = `${proxyBase}/api/gps/${streamPath}?devIdno=${devIdno}&channel=${activeChannel}&stream=${quality === 'sd' ? 1 : 0}&jsessionId=${jsession}`;
         setVideoUrl(url);
       } else {
         // 原生端直接使用
         const result = await gps808Api.getLiveVideoUrl(devIdno, {
           channel: activeChannel,
           quality,
-          protocol: 'flv',
+          protocol: USE_HLS ? 'hls' : 'flv',
         });
         
         if (result.result === 0 && result.flvUrl) {
@@ -310,14 +317,23 @@ export default function VideoTestScreen() {
           <Text style={styles.sectionTitle}>播放器</Text>
           <View style={styles.playerContainer}>
             {isOnline && videoUrl ? (
-              <FlvPlayer
-                src={videoUrl}
-                mode="live"
-                autoplay
-                muted={false}
-                aspectRatio="16:9"
-                onError={(err) => setPlaybackError(err)}
-              />
+              USE_HLS ? (
+                <HlsVideo
+                  url={videoUrl}
+                  autoPlay
+                  muted={false}
+                  controls={true}
+                />
+              ) : (
+                <FlvPlayer
+                  src={videoUrl}
+                  mode="live"
+                  autoplay
+                  muted={false}
+                  aspectRatio="16:9"
+                  onError={(err) => setPlaybackError(err)}
+                />
+              )
             ) : isOnline ? (
               <View style={styles.noVideo}>
                 <Video size={48} color={colors.textSecondary} />
@@ -340,10 +356,10 @@ export default function VideoTestScreen() {
           )}
         </View>
 
-        {/* FLV URL */}
+        {/* 串流 URL */}
         {videoUrl && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>FLV URL</Text>
+            <Text style={styles.sectionTitle}>{USE_HLS ? 'HLS URL' : 'FLV URL'}</Text>
             <View style={styles.urlBox}>
               <Text style={styles.urlText} selectable>{videoUrl}</Text>
             </View>

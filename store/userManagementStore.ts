@@ -8,11 +8,13 @@ import {
   updateUserProfile as updateUserProfileInDb,
   softDeleteUserProfile,
   hardDeleteUserProfile,
+  hardDeleteUserProfileByEmail,
   hasSupabaseEnv,
 } from '@/utils/fleetSync';
 import type { TrashItem } from './trashStore';
 
 const STORAGE_KEY = 'managed_users';
+const DRIVER_STORAGE_KEY = 'managed_drivers';
 
 interface ManagedUser extends User {
   password?: string;
@@ -27,10 +29,21 @@ interface UserManagementState {
   addUser: (name: string, email: string, password: string, role: 'driver' | 'company', phone?: string, avatar?: string, nameZh?: string, nameEn?: string, address?: string, companyId?: string) => Promise<{ success: boolean; error?: string }>;
   updateUser: (id: string, updates: Partial<Pick<ManagedUser, 'name' | 'email' | 'phone' | 'role' | 'avatar' | 'nameZh' | 'nameEn' | 'address' | 'companyId'>>) => Promise<void>;
   updateUserPassword: (id: string, password: string) => Promise<void>;
-  /** 軟刪除並丟入垃圾桶；回傳垃圾桶項目快照(若該 id 不存在則回傳 null) */
+  /**
+   * 軟刪除並丟入垃圾桶（30 天保留，期間無法登入）。
+   * 雲端若可刪會嘗試 hardDeleteUserProfile；失敗則 fallback softDeleteUserProfile。
+   * 回傳垃圾桶項目快照(若該 id 不存在則回傳 null)
+   */
   softDeleteUser: (id: string) => Promise<TrashItem | null>;
   /** 別名,委派給 softDeleteUser;UI 中既有 deleteUser() 呼叫端不必改動 */
   deleteUser: (id: string) => Promise<TrashItem | null>;
+  /**
+   * 垃圾桶「永久刪除」：從 trash 移除，並依 payload.source 真實刪除雲端帳號
+   * - source='clerk'   → 呼叫 Clerk Edge Function 刪除 Clerk user
+   * - source='managed' → 從 Supabase user_profile 表刪除
+   * - source='supabase'→ 從 Supabase user_profile 表刪除
+   */
+  permanentDeleteUser: (trashItem: TrashItem) => Promise<void>;
   getUserByEmail: (email: string) => ManagedUser | undefined;
   getCompanies: () => ManagedUser[];
   getCompanyById: (id: string) => ManagedUser | undefined;
@@ -51,10 +64,19 @@ async function persistUsers(users: ManagedUser[]) {
  * 用於 loadUsers/syncUsers/addUser/updateUser 等所有寫入路徑，
  * 避免從本地 storage 讀出的舊資料、或從 Supabase 同步下來的髒資料，
  * 污染記憶體內的 users 陣列，導致後續 .email.toLowerCase() 等操作崩潰。
+ *
+ * 同時排除系統管理員 (id = 'u-admin')，因為 admin 由 authStore 內建負責、
+ * 不應被列入「使用者管理」畫面的司機 / 公司清單。
  */
 function sanitizeUsers(users: ManagedUser[]): ManagedUser[] {
   return users.filter(
-    (u) => u && typeof u.id === 'string' && u.id.length > 0 && typeof u.email === 'string' && u.email.length > 0
+    (u) =>
+      u &&
+      typeof u.id === 'string' &&
+      u.id.length > 0 &&
+      u.id !== 'u-admin' &&
+      typeof u.email === 'string' &&
+      u.email.length > 0
   );
 }
 
@@ -113,13 +135,53 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
 
     set({ isSyncing: true, syncError: null });
     try {
-      // 從 user_profile 表取得遠端使用者
+      // ★ 防衛：垃圾桶鎖定中的 email 不應被 syncUsers() 從雲端拉回來，
+      //   即使雲端留有 is_deleted=false 的殭屍 row（過去 DELETE 失敗的遺留）也不行。
+      //   注意：loadTrash() 必須在 fetchUserProfiles() 之前呼叫，
+      //   否則時序問題會導致 trashedEmails 仍是空的，過濾失效。
+      let trashedEmails: Set<string> = new Set();
+      let trashLoadFailed = false;
+      try {
+        const { useTrashStore } = await import('./trashStore');
+        await useTrashStore.getState().loadTrash();
+        trashedEmails = new Set(useTrashStore.getState().getTrashedUserEmails());
+      } catch (e) {
+        console.warn('[userManagement] trash load for sync filter skipped:', e);
+        trashLoadFailed = true;
+      }
+
+      // 從 user_profile 表取得遠端使用者（在垃圾桶載入完成後）
       const remoteUsers = await fetchUserProfiles();
       const localUsers = sanitizeUsers(get().users);
 
-      if (remoteUsers.length > 0) {
+      // 若垃圾桶載入失敗，至少 log 警告，並繼續執行（避免整個同步失敗）
+      if (trashLoadFailed && remoteUsers.length > 0) {
+        console.warn(
+          '[userManagement] trash load failed, proceeding with unfiltered sync. ' +
+          'Deleted users may reappear if they exist in cloud with is_deleted=false.'
+        );
+      }
+
+      // 過濾掉垃圾桶中的 email（不論是 remote 的復活或 local 的副本都不該出現）
+      const filteredRemoteUsers = remoteUsers.filter(
+        (u) => !trashedEmails.has((u.email ?? '').trim().toLowerCase())
+      );
+      const filteredLocalUsers = localUsers.filter(
+        (u) => !trashedEmails.has((u.email ?? '').trim().toLowerCase())
+      );
+
+      if (trashedEmails.size > 0) {
+        const filteredOut = remoteUsers.length - filteredRemoteUsers.length;
+        if (filteredOut > 0) {
+          console.log(
+            `[userManagement] syncUsers 過濾掉 ${filteredOut} 個垃圾桶中的使用者（trashedEmails: ${trashedEmails.size} 個）`
+          );
+        }
+      }
+
+      if (filteredRemoteUsers.length > 0) {
         // 先把遠端資料也消毒，避免漏欄位的髒資料混入合併結果
-        const sanitizedRemoteUsers = sanitizeUsers(remoteUsers as ManagedUser[]);
+        const sanitizedRemoteUsers = sanitizeUsers(filteredRemoteUsers as ManagedUser[]);
 
         // 合併策略：以 id 為主鍵（同一個 Clerk id / App 內部 id 對應同一筆）
         // 遠端優先（雲端是真相），但
@@ -134,7 +196,7 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
           remoteByEmail.set(user.email.toLowerCase(), user);
         }
 
-        for (const local of localUsers) {
+        for (const local of filteredLocalUsers) {
           const remoteById = mergedById.get(local.id);
           if (remoteById) {
             // 同一 id：遠端優先,但若本地有 password 而遠端沒有則補回去
@@ -168,10 +230,16 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
           // 推回雲端時包含 password 欄位（雲端 auth 需要）
           await syncUserProfiles(merged);
         }
-      } else if (localUsers.length > 0) {
+      } else if (filteredLocalUsers.length > 0) {
         // 遠端沒有資料，把本地推上去（含 password）
-        await persistUsers(localUsers);
-        await syncUserProfiles(localUsers);
+        await persistUsers(filteredLocalUsers);
+        await syncUserProfiles(filteredLocalUsers);
+      }
+
+      if (trashedEmails.size > 0) {
+        console.log(
+          `[userManagement] syncUsers 過濾掉 ${trashedEmails.size} 個垃圾桶鎖定中的 email`
+        );
       }
     } catch (err) {
       set({ syncError: err instanceof Error ? err.message : 'User sync failed' });
@@ -232,10 +300,9 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
    * 行為：
    * 1. 從本地 `managed_users` 移除該 user 並 persist。
    * 2. 嘗試從 Supabase `user_profile` 表硬刪除該 row（DELETE, 不是 is_deleted=true）。
-   * 3. 若 Supabase 沒設環境變數 → 直接結束（只在本地運作）。
-   * 4. 若 Supabase 刪除失敗 → 退而求其次用 `pushUsers()` 把目前「剩餘 users」上傳，
-   *    但因為已經從本地移除該 user,理論上不會再復活。
-   * 5. 加進垃圾桶，仍然保留 30 天可從垃圾桶還原。
+   *    - 若失敗（例：RLS 拒絕 DELETE）→ 退而求其次 softDeleteUserProfile() 設 is_deleted=true。
+   *    - 若兩者皆失敗 → 仍不影響本地（已先移除），只記錄錯誤。
+   * 3. 加進垃圾桶，仍然保留 30 天可從垃圾桶還原。
    * 回傳垃圾桶快照，UI 可用於 alert 提示。
    */
   softDeleteUser: async (id) => {
@@ -245,20 +312,41 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
     set({ users: updated, syncError: null, isSyncing: hasSupabaseEnv });
     await persistUsers(updated);
 
+    // ★ 同步清理 managed_drivers，避免刪除的司機從 driverStore 復活
+    if (target.role === 'driver') {
+      try {
+        const storedDrivers = await storage.getItem(DRIVER_STORAGE_KEY);
+        if (storedDrivers) {
+          const drivers = JSON.parse(storedDrivers);
+          const filteredDrivers = drivers.filter((d: { id: string }) => d.id !== id);
+          await storage.setItem(DRIVER_STORAGE_KEY, JSON.stringify(filteredDrivers));
+          console.log(`[userManagement] removed driver ${id} from managed_drivers`);
+        }
+      } catch (err) {
+        console.warn('[userManagement] failed to clean managed_drivers:', err);
+      }
+    }
+
+    // 雲端處理（不影響本地已刪的事實）
     if (hasSupabaseEnv) {
       try {
-        // 軟刪除（只把 is_deleted 設為 true），讓資料仍留在 user_profile 表內。
-        // 若 30 天後垃圾桶過期且使用者未還原，再由 cleanupExpired() 排程 hardDelete。
-        await softDeleteUserProfile(id);
-        console.log(`[userManagement] soft-deleted user ${id} in user_profile`);
-      } catch (err) {
-        console.warn('[userManagement] softDelete failed, will fallback to push remaining:', err);
+        // 真硬刪除（DELETE FROM）— 確保 syncUsers() 後不會再被拉回來
+        await hardDeleteUserProfile(id);
+        console.log(`[userManagement] hard-deleted user ${id} in user_profile`);
+      } catch (hardErr) {
+        console.warn('[userManagement] hardDelete failed, will fallback to softDelete:', hardErr);
         try {
-          // 退而求其次:用本地剩餘 users 推一次上去（不會包含被刪的）
-          await pushUsers(updated);
-        } catch (pushErr) {
-          set({ syncError: pushErr instanceof Error ? pushErr.message : 'User sync failed' });
-          throw pushErr;
+          // 退而求其次：把 is_deleted 設為 true；fetchUserProfiles() 過濾 is_deleted=false
+          await softDeleteUserProfile(id);
+          console.log(`[userManagement] soft-deleted user ${id} in user_profile (fallback)`);
+        } catch (softErr) {
+          console.error(
+            '[userManagement] both hardDelete and softDelete failed for user',
+            id,
+            hardErr,
+            softErr
+          );
+          set({ syncError: '無法從雲端刪除使用者，請檢查 RLS 政策與連線狀態。' });
         }
       } finally {
         set({ isSyncing: false });
@@ -267,7 +355,14 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
 
     // 動態載入垃圾桶 store 避免循環依賴
     const { useTrashStore } = await import('@/store/trashStore');
-    const snapshot: Record<string, unknown> = { ...target };
+    const snapshot: Record<string, unknown> = {
+      ...target,
+      // 標記來源,垃圾桶「永久刪除」時決定要走 Clerk 還是 Supabase
+      // - 'clerk'   : 此帳號已在 Clerk 建立(透過「同步至雲端」按鈕)
+      // - 'managed' : 純 App 內建帳號,只在 Supabase user_profile 表
+      // 預設 'managed'；如未來 addUser 流程有標記可覆寫
+      source: (target as { source?: 'managed' | 'clerk' }).source ?? 'managed',
+    };
     const trashItem = await useTrashStore.getState().addToTrash('user', snapshot);
     return trashItem;
   },
@@ -275,6 +370,55 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
   /** 保留舊名稱以維持向後相容；新行為走 softDeleteUser 流程丟到垃圾桶 */
   deleteUser: async (id) => {
     return await get().softDeleteUser(id);
+  },
+
+  /**
+   * 垃圾桶「永久刪除」：從 trash 移除,並依 payload.source 真實刪除雲端帳號
+   */
+  permanentDeleteUser: async (trashItem) => {
+    const payload = trashItem.payload as Record<string, unknown>;
+    const source = (payload.source as 'managed' | 'clerk' | 'supabase' | undefined) ?? 'managed';
+    const userId = String(payload.id ?? trashItem.originalId);
+    const email = typeof payload.email === 'string' ? payload.email : undefined;
+
+    // 1) 從垃圾桶移除（先做,即使後面雲端刪除失敗,使用者也不會再從還原路徑回來）
+    const { useTrashStore } = await import('@/store/trashStore');
+    await useTrashStore.getState().removeFromTrash(trashItem.trashId);
+
+    // 2) 依來源刪除雲端帳號
+    if (source === 'clerk') {
+      // Clerk 帳號：用 Edge Function 刪除（CLERK_SECRET_KEY 只在 Supabase 端）
+      try {
+        if (!email) throw new Error('Clerk 帳號缺少 email,無法刪除');
+        const { deleteClerkUserByEmail } = await import('@/utils/clerkSync');
+        const result = await deleteClerkUserByEmail(email);
+        console.log(`[userManagement] permanent delete from Clerk:`, email, result);
+      } catch (err) {
+        console.error('[userManagement] Clerk permanent delete failed:', err);
+        // 不阻擋流程 — Supabase 部分照樣處理
+      }
+    }
+
+    // 3) Supabase user_profile 表刪除（無論 source 為何都做,確保雲端 row 移除）
+    //    ★ 雙重保護：用 email 強制清掉所有可能殭屍 row（包括 is_deleted=false 的），
+    //      再用 id 保險清一次，避免下次 syncUsers() 又從 cloud 復活這筆。
+    if (hasSupabaseEnv && email) {
+      try {
+        const result = await hardDeleteUserProfileByEmail(email);
+        console.log(
+          `[userManagement] permanent hard-deleted by email ${email}:`,
+          result
+        );
+      } catch (err) {
+        console.error('[userManagement] permanent hardDelete by email failed:', err);
+        // fallback: 用 userId 再試一次
+        try {
+          await hardDeleteUserProfile(userId);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
   },
 
   getUserByEmail: (email) => {

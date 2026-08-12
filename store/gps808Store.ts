@@ -87,10 +87,9 @@ async function loadInitialConnectionState(): Promise<boolean> {
 export const useGps808Store = create<Gps808State>((set, get) => {
   // 在 store 初始化時把 isConnected 設定為「與 storage 一致」的樂觀值，
   // 避免初次 render 顯示為 false，refresh 之後使用者必須重新設定的錯覺。
-  // 同步初始化為 false（storage 為 async），實際正確值在 AppContent useEffect → loadConfig() 之後更新。
   const initialState: Pick<Gps808State, 'config' | 'isConnected' | 'isLoading' | 'isSaving' | 'error'> = {
     config: getInitialConfig(),
-    isConnected: false,
+    isConnected: false, // 先設為 false，避免閃爍
     isLoading: true,
     isSaving: false,
     error: null,
@@ -145,7 +144,7 @@ export const useGps808Store = create<Gps808State>((set, get) => {
           return;
         }
 
-        // ping 失敗：用 stored 帳密 relogin
+        // ping 失敗：用 stored 帳密 relogin（這是關鍵的自動重連機制）
         if (parsed.account && parsed.password) {
           console.log('[GPS808] loadConfig: stored config found, attempting relogin with parsed.account =', parsed.account);
           if (IS_WEB) {
@@ -157,6 +156,8 @@ export const useGps808Store = create<Gps808State>((set, get) => {
           const result = await gps808Api.login(parsed.account, parsed.password);
           console.log('[GPS808] loadConfig: relogin result =', result);
           if (result.success) {
+            // 登入成功，同時保存 config 到 storage（確保 session 持久化）
+            await storage.setItem(getStorageKey(), JSON.stringify(parsed));
             set({ isConnected: true, isLoading: false });
           } else {
             set({ isConnected: false, isLoading: false, error: result.error || null });
@@ -174,8 +175,29 @@ export const useGps808Store = create<Gps808State>((set, get) => {
       if (IS_WEB) {
         const jsessionStill = await storage.getItem(JSESSION_STORAGE_KEY);
         if (jsessionStill) {
-          // 有 jsession 就標記為已連線並繼續
+          // 有 jsession 就標記為已連線並嘗試 ping
           set({ isConnected: true });
+          
+          // 嘗試 ping 驗證 session 是否仍然有效
+          const valid = await gps808Api.ping();
+          if (!valid) {
+            // Session 已過期，需要用環境變數的帳密重新登入
+            if (WEB_AUTO_CONNECT && WEB_ENV_CONFIG.account && WEB_ENV_CONFIG.password) {
+              const proxyUrl = getWebProxyUrl();
+              await setServerUrl(proxyUrl);
+              const result = await gps808Api.login(WEB_ENV_CONFIG.account, WEB_ENV_CONFIG.password);
+              if (result.success) {
+                set({ isConnected: true, isLoading: false });
+                return;
+              }
+            }
+            // 環境變數登入也失敗，保持 isConnected=true 但不顯示錯誤
+            // 因為用戶可能手動配置，不需要環境變數
+            set({ isLoading: false });
+          } else {
+            set({ isLoading: false });
+          }
+          return;
         }
       }
 

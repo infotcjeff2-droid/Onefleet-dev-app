@@ -13,12 +13,17 @@ import { useEffect, useState, useCallback, memo } from 'react';
 import { View, Text, StyleSheet, Pressable, ActivityIndicator, Platform } from 'react-native';
 import { Video, Wifi, WifiOff, Maximize2, RefreshCw, Camera, Settings, X, Check } from 'lucide-react-native';
 import { FlvPlayer } from './FlvPlayer';
-import { gps808Api } from '@/utils/gps808Api';
+import { HlsVideo } from './HlsVideo';
+import { gps808Api, getWebProxyBaseUrlSync } from '@/utils/gps808Api';
 import { useGps808Store } from '@/store/gps808Store';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 import { defaultColors } from '@/store/themeStore';
 
 const IS_WEB = Platform.OS === 'web';
+/** 手機不支援 flv.js，統一使用 HLS；PC 維持 FLV 以取得最低延遲 */
+const USE_HLS = IS_WEB && /Mobi|Android|iPhone|iPad/i.test(
+  typeof navigator !== 'undefined' ? navigator.userAgent : '',
+);
 
 export interface LiveVideoPanelProps {
   /** GPS 設備 ID */
@@ -42,7 +47,7 @@ export interface LiveVideoPanelProps {
 }
 
 type StreamQuality = 'sd' | 'hd';
-type PlaybackState = 'idle' | 'loading' | 'playing' | 'error';
+type PlaybackState = 'idle' | 'loading' | 'playing' | 'playing-hls' | 'error';
 
 function LiveVideoPanelComponent({
   devIdno,
@@ -122,20 +127,21 @@ function LiveVideoPanelComponent({
       }
 
       const jsession = await gps808Api.getStoredSession();
-      
+
       if (jsession && IS_WEB) {
-        // 建構 FLV URL
         const streamParam = quality === 'sd' ? 1 : 0;
-        const url = `http://localhost:3001/api/gps/flv-stream?devIdno=${devIdno}&channel=${activeChannel}&stream=${streamParam}&jsessionId=${jsession}`;
+        const proxyBase = getWebProxyBaseUrlSync();
+        const streamPath = USE_HLS ? 'hls-stream' : 'flv-stream';
+        const url = `${proxyBase}/api/gps/${streamPath}?devIdno=${devIdno}&channel=${activeChannel}&stream=${streamParam}&jsessionId=${jsession}`;
         setVideoUrl(url);
-        setPlaybackState('playing');
+        setPlaybackState(USE_HLS ? 'playing-hls' : 'playing');
         onPlay?.();
       } else {
         // 原生端直接使用
         const result = await gps808Api.getLiveVideoUrl(devIdno, {
           channel: activeChannel,
           quality,
-          protocol: 'flv',
+          protocol: USE_HLS ? 'hls' : 'flv',
         });
         
         if (result.result === 0 && result.flvUrl) {
@@ -252,6 +258,16 @@ function LiveVideoPanelComponent({
     }
 
     if (videoUrl) {
+      if (playbackState === 'playing-hls') {
+        return (
+          <HlsVideo
+            url={videoUrl}
+            autoPlay={autoPlay}
+            muted={false}
+            controls={true}
+          />
+        );
+      }
       return (
         <FlvPlayer
           src={videoUrl}

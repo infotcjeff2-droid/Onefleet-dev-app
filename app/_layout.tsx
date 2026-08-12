@@ -12,6 +12,7 @@ import { useDeliveryStore } from '@/store/deliveryStore';
 import { useAuthStore } from '@/store/authStore';
 import { useGps808Store } from '@/store/gps808Store';
 import { useGoogleMapsStore } from '@/store/googleMapsStore';
+import { useInventoryStore } from '@/store/inventoryStore';
 import { I18nProvider, useTranslation } from '@/i18n';
 import { FontScaleProvider } from '@/contexts/FontScaleContext';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
@@ -20,12 +21,15 @@ import { ClerkProvider } from '@clerk/expo';
 import { tokenCache } from '@/utils/tokenCache';
 import { useSyncClerkToSupabase } from '@/hooks/useSyncClerkToSupabase';
 import { useEnsureUserProfile } from '@/hooks/useEnsureUserProfile';
+import { useSyncInventory } from '@/hooks/useSyncInventory';
 
 function AppContent() {
   // 同步 Clerk session → Supabase auth（讓子 auth.uid() 能識別 Clerk user ID）
   useSyncClerkToSupabase();
   // 確保 OAuth 使用者首次登入時自動在 Supabase 建立 user_profile
   useEnsureUserProfile();
+  // 「庫存與配送」跨裝置同步：登入後/回前景時自動拉取雲端庫存
+  useSyncInventory();
 
   const checkAuth = useAuthStore((s) => s.checkAuth);
   const authLoading = useAuthStore((s) => s.isLoading);
@@ -35,6 +39,7 @@ function AppContent() {
   const syncVehicles = useVehicleStore((s) => s.syncVehicles);
   const loadDeliveries = useDeliveryStore((s) => s.loadDeliveries);
   const syncDeliveries = useDeliveryStore((s) => s.syncDeliveries);
+  const loadInventory = useInventoryStore((s) => s.loadAll);
   const loadGpsConfig = useGps808Store((s) => s.loadConfig);
   const loadGoogleMapsConfig = useGoogleMapsStore((s) => s.loadConfig);
   const { isInitialized } = useTranslation();
@@ -44,6 +49,7 @@ function AppContent() {
     loadUsers().then(() => syncUsers());
     loadVehicles(); // 不要自動 sync，避免 RLS 問題導致數據被清空
     loadDeliveries().then(() => syncDeliveries());
+    loadInventory(); // 本地快速載入（雲端拉取由 useSyncInventory 觸發）
     loadGpsConfig();
     loadGoogleMapsConfig();
   }, []);

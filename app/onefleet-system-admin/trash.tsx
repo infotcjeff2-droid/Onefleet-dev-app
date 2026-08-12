@@ -67,6 +67,7 @@ export default function TrashScreen() {
   const clearAll = useTrashStore((s) => s.clearAll);
 
   const restoreUser = useUserManagementStore((s) => s.addUser);
+  const permanentDeleteUser = useUserManagementStore((s) => s.permanentDeleteUser);
   const addDriver = useDriverStore((s) => s.addDriver);
 
   const [filter, setFilter] = useState<TrashEntityKind | 'all'>('all');
@@ -184,7 +185,7 @@ export default function TrashScreen() {
             );
           }
           await removeFromTrash(item.trashId);
-          Alert.alert('✅ 已還原', '資料已成功還原');
+          Alert.alert('✅ 已還原', '資料已成功還原,此帳號現在可以登入');
         } catch (e) {
           Alert.alert('❌ 還原失敗', e instanceof Error ? e.message : '未知錯誤');
         }
@@ -193,12 +194,39 @@ export default function TrashScreen() {
   };
 
   const handlePermanentDelete = async (item: TrashItem) => {
+    const payload = item.payload as Record<string, unknown>;
+    const source = (payload.source as 'managed' | 'clerk' | 'supabase' | undefined) ?? 'managed';
+    const sourceLabel =
+      source === 'clerk'
+        ? 'Clerk + Supabase'
+        : source === 'supabase'
+        ? 'Supabase'
+        : 'Supabase';
+
     confirmAndRun(
       '永久刪除',
-      `⚠️ 此操作無法復原！\n\n確定要永久刪除「${String(item.payload.name ?? item.payload.email ?? item.originalId)}」嗎？`,
+      `⚠️ 此操作無法復原！\n\n確定要永久刪除「${String(
+        item.payload.name ?? item.payload.email ?? item.originalId
+      )}」嗎？\n\n此帳號會從 ${sourceLabel} 真實刪除,將無法再登入。`,
       async () => {
-        await removeFromTrash(item.trashId);
-        Alert.alert('✅ 已永久刪除', '該項目已從垃圾桶永久移除');
+        try {
+          if (item.kind === 'user') {
+            // ★ 走 userManagementStore.permanentDeleteUser,依 source 真實刪 Clerk / Supabase
+            await permanentDeleteUser(item);
+          } else {
+            // 其他類型僅從垃圾桶移除
+            await removeFromTrash(item.trashId);
+          }
+          Alert.alert(
+            '✅ 已永久刪除',
+            '該項目已從垃圾桶永久移除,雲端帳號已同步清除'
+          );
+        } catch (e) {
+          Alert.alert(
+            '❌ 永久刪除失敗',
+            e instanceof Error ? e.message : '未知錯誤'
+          );
+        }
       }
     );
   };
@@ -247,11 +275,30 @@ export default function TrashScreen() {
   const handleBatchDelete = () => {
     if (selectedIds.size === 0) return;
     const ids = Array.from(selectedIds);
+    const userItems = activeItems.filter(
+      (it) => ids.includes(it.trashId) && it.kind === 'user'
+    );
     confirmAndRun(
       '批次永久刪除',
-      `⚠️ 此操作無法復原！\n\n確定要永久刪除選定的 ${ids.length} 項資料嗎？`,
+      `⚠️ 此操作無法復原！\n\n確定要永久刪除選定的 ${ids.length} 項資料嗎？${
+        userItems.length > 0
+          ? `\n\n其中 ${userItems.length} 個使用者帳號會從 Clerk / Supabase 真實刪除。`
+          : ''
+      }`,
       async () => {
-        await removeManyFromTrash(ids);
+        // ★ 對 user 類型走 permanentDeleteUser（含 Clerk / Supabase 真實刪除）,
+        //   其他類型只從垃圾桶移除
+        for (const item of activeItems.filter((it) => ids.includes(it.trashId))) {
+          try {
+            if (item.kind === 'user') {
+              await permanentDeleteUser(item);
+            } else {
+              await removeFromTrash(item.trashId);
+            }
+          } catch (e) {
+            console.error('[trash] batch delete failed for', item.trashId, e);
+          }
+        }
         Alert.alert('✅ 已永久刪除', `已刪除 ${ids.length} 項資料`);
         exitSelection();
       }
@@ -467,11 +514,23 @@ export default function TrashScreen() {
                               {meta.label}
                             </Text>
                           </View>
+                          {item.kind === 'user' && (
+                            <View style={[styles.kindTag, { backgroundColor: `${colors.warning}20`, borderColor: `${colors.warning}40` }]}>
+                              <Text style={[styles.kindTagText, { color: colors.warning }]}>
+                                {item.payload.source === 'clerk' ? 'Clerk' : 'Supabase'}
+                              </Text>
+                            </View>
+                          )}
                         </View>
                         <Text style={[styles.trashMeta, { color: colors.textTertiary }]} numberOfLines={1}>
                           {item.payload.email ? `${String(item.payload.email)} · ` : ''}
                           刪除於 {formatDeletedAt(item.deletedAt)}
                         </Text>
+                        {item.kind === 'user' && (
+                          <Text style={[styles.trashExpiry, { color: colors.danger }]}>
+                            🔒 登入已停用
+                          </Text>
+                        )}
                         <Text style={[styles.trashExpiry, { color: colors.warning }]}>
                           ⏰ {formatTimeLeft(item.expiresAt)}
                         </Text>

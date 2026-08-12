@@ -34,7 +34,13 @@
     "plugins": [
       "expo-router",
       "expo-font",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "FleetPro 需要您的位置資訊來記錄取貨位置"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

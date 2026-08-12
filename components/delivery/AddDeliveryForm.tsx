@@ -5,8 +5,8 @@ import {
   ScrollView,
   StyleSheet,
   Pressable,
-  Alert,
   Dimensions,
+  Image,
   TextInput as RNTextInput,
   Modal,
   KeyboardAvoidingView,
@@ -99,6 +99,8 @@ interface SelectedItem {
   quantity: number;
   unitWeight: number;
   availableStock: number;
+  editingQuantity: string;
+  imageUrl?: string;
 }
 
 /** 取得物品扣除已選數量後的真實可用庫存 */
@@ -142,6 +144,10 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [errorModal, setErrorModal] = useState<{ title: string; message: string } | null>(null);
+
+  // 縮圖 Lightbox 狀態
+  const [lightboxImage, setLightboxImage] = useState<{ uri: string; name: string } | null>(null);
 
   // 客戶選擇相關狀態
   const [showCustomerPicker, setShowCustomerPicker] = useState(false);
@@ -151,6 +157,7 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
   const [newCustomerName, setNewCustomerName] = useState('');
   const [newCustomerPhone, setNewCustomerPhone] = useState('');
   const [newCustomerAddress, setNewCustomerAddress] = useState('');
+  const [newCustomerNotes, setNewCustomerNotes] = useState('');
 
   // 鍵盤監聽 - 記錄鍵盤高度並滾動到目標位置
   useEffect(() => {
@@ -250,6 +257,8 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
           quantity: 1,
           unitWeight: item.unitWeight,
           availableStock: getEffectiveStock(item.id, prev, warehouseStocks),
+          editingQuantity: '1',
+          imageUrl: item.imageUrl,
         },
       ]);
     }
@@ -261,9 +270,8 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
       prev.map((i) => {
         if (i.itemId === itemId) {
           const effectiveStock = getEffectiveStock(itemId, prev, warehouseStocks);
-          if (i.quantity < effectiveStock) {
-            return { ...i, quantity: i.quantity + 1 };
-          }
+          const newQty = Math.min(i.quantity + 1, effectiveStock);
+          return { ...i, quantity: newQty, editingQuantity: String(newQty) };
         }
         return i;
       })
@@ -275,7 +283,39 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
     setSelectedItems((prev) =>
       prev.map((i) => {
         if (i.itemId === itemId && i.quantity > 1) {
-          return { ...i, quantity: i.quantity - 1 };
+          const newQty = i.quantity - 1;
+          return { ...i, quantity: newQty, editingQuantity: String(newQty) };
+        }
+        return i;
+      })
+    );
+  };
+
+  // 直接輸入物品數量
+  const handleQuantityChange = (itemId: string, text: string) => {
+    const cleanText = text.replace(/[^0-9]/g, '');
+    setSelectedItems((prev) =>
+      prev.map((i) => {
+        if (i.itemId === itemId) {
+          return { ...i, editingQuantity: cleanText };
+        }
+        return i;
+      })
+    );
+  };
+
+  // 確認數量（輸入結束時）
+  const handleQuantityBlur = (itemId: string) => {
+    setSelectedItems((prev) =>
+      prev.map((i) => {
+        if (i.itemId === itemId) {
+          const num = parseInt(i.editingQuantity, 10);
+          if (isNaN(num) || num < 1) {
+            return { ...i, quantity: 1, editingQuantity: '1' };
+          }
+          const effectiveStock = getEffectiveStock(itemId, prev, warehouseStocks);
+          const clamped = Math.min(Math.max(num, 1), effectiveStock);
+          return { ...i, quantity: clamped, editingQuantity: String(clamped) };
         }
         return i;
       })
@@ -308,17 +348,15 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
     console.log('[handleNext] isAddressValid:', isAddressValid);
     console.log('[handleNext] isCargoValid:', isCargoValid);
     console.log('[handleNext] canProceedToStep2:', canProceedToStep2);
-    
+
     if (!canProceedToStep2) {
-      console.log('[handleNext] 驗證失敗，準備顯示 Alert');
+      console.log('[handleNext] 驗證失敗，準備顯示錯誤提示');
       if (!isAddressValid) {
-        console.log('[handleNext] 顯示地址錯誤 Alert');
-        Alert.alert(t('common.error'), '請填寫收貨和送貨地址');
+        setErrorModal({ title: t('common.error'), message: '請填寫收貨和送貨地址' });
         return;
       }
       if (!isCargoValid) {
-        console.log('[handleNext] 顯示物品錯誤 Alert');
-        Alert.alert(t('common.error'), '請選擇至少一個配送物品');
+        setErrorModal({ title: t('common.error'), message: '請選擇至少一個配送物品' });
         return;
       }
       return;
@@ -338,24 +376,37 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
   const handleConfirm = async () => {
     console.log('[handleConfirm] 函數被調用了!');
     
-    if (!selectedDriverId) {
-      Alert.alert(t('common.error'), '請選擇司機');
-      return;
-    }
+    // 司機選擇改為可選，不選司機時建立待處理的訂單
+    const hasSelectedDriver = !!selectedDriverId;
+    
+    if (!hasSelectedDriver) {
+      // 不選司機時，也需要檢查庫存
+      const lowStockItems = selectedItems.filter((item) => {
+        const effectiveStock = getEffectiveStock(item.itemId, selectedItems, warehouseStocks);
+        return effectiveStock < 0;
+      });
 
-    // 檢查庫存是否足夠
-    const lowStockItems = selectedItems.filter((item) => {
-      const effectiveStock = getEffectiveStock(item.itemId, selectedItems, warehouseStocks);
-      return effectiveStock < 0;
-    });
+      if (lowStockItems.length > 0) {
+        setErrorModal({
+          title: t('common.error'),
+          message: `以下物品庫存不足：\n${lowStockItems.map((i) => `- ${i.itemName}`).join('\n')}\n\n請減少數量後再試。`,
+        });
+        return;
+      }
+    } else {
+      // 有選司機時檢查庫存
+      const lowStockItems = selectedItems.filter((item) => {
+        const effectiveStock = getEffectiveStock(item.itemId, selectedItems, warehouseStocks);
+        return effectiveStock < 0;
+      });
 
-    if (lowStockItems.length > 0) {
-      Alert.alert(
-        t('common.error'),
-        `以下物品庫存不足：\n${lowStockItems.map((i) => `- ${i.itemName}`).join('\n')}\n\n請減少數量後再試。`,
-        [{ text: '確定' }]
-      );
-      return;
+      if (lowStockItems.length > 0) {
+        setErrorModal({
+          title: t('common.error'),
+          message: `以下物品庫存不足：\n${lowStockItems.map((i) => `- ${i.itemName}`).join('\n')}\n\n請減少數量後再試。`,
+        });
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -364,21 +415,38 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
     try {
       console.log('[handleConfirm] 開始建立配送...');
       const now = new Date();
-      const cargoItems: DeliveryCargoItem[] = selectedItems.map((item) => ({
-        itemId: item.itemId,
-        itemName: item.itemName,
-        quantity: item.quantity,
-        unitWeight: item.unitWeight,
-        totalWeight: item.quantity * item.unitWeight,
-      }));
+      // 取得出貨倉庫（用於詳情頁呈現「來源倉庫」）
+      const warehouse = warehouses.find((wh) => wh.id === defaultWarehouseId);
+
+      const cargoItems: DeliveryCargoItem[] = selectedItems.map((item) => {
+        const inventoryItem = items.find((it) => it.id === item.itemId);
+        const stockAtWarehouse = warehouseStocks.find(
+          (s) => s.warehouseId === defaultWarehouseId && s.itemId === item.itemId,
+        );
+        return {
+          itemId: item.itemId,
+          itemName: item.itemName,
+          quantity: item.quantity,
+          unitWeight: item.unitWeight,
+          totalWeight: item.quantity * item.unitWeight,
+          imageUrl: inventoryItem?.imageUrl,
+          warehouseId: defaultWarehouseId,
+          warehouseName: warehouse?.name,
+          warehouseImageUrl: warehouse?.imageUrl,
+          warehouseStockAtOrder: stockAtWarehouse?.quantity,
+        };
+      });
 
       // 若司機有綁定車輛，取第一輛
-      const assignedVehicleId = driverVehicles.length > 0 ? driverVehicles[0].id : undefined;
+      const assignedVehicleId = hasSelectedDriver && driverVehicles.length > 0 ? driverVehicles[0].id : undefined;
       console.log('[handleConfirm] 司機車輛:', assignedVehicleId);
 
       console.log('[handleConfirm] 呼叫 addOrder...');
-      console.log(`[handleConfirm] selectedDriverId: ${selectedDriverId}, selectedDriver: ${selectedDriver?.name}`);
-      
+      console.log(`[handleConfirm] hasSelectedDriver: ${hasSelectedDriver}, selectedDriverId: ${selectedDriverId}, selectedDriver: ${selectedDriver?.name}`);
+
+      // 根據是否有選擇司機來設定狀態
+      const orderStatus = hasSelectedDriver ? 'assigned' : 'pending';
+
       const result = await addOrder({
         customerName: customerName || (selectedDriver?.name ?? ''),
         customerPhone: customerPhone || (selectedDriver?.phone ?? ''),
@@ -388,13 +456,16 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
         cargoDescription,
         cargoWeight: totalWeight,
         notes: notes || undefined,
-        status: 'assigned',
-        assignedDriverId: selectedDriverId,
-        assignedDriverName: selectedDriver?.name,
+        status: orderStatus,
+        assignedDriverId: hasSelectedDriver ? selectedDriverId : undefined,
+        assignedDriverName: hasSelectedDriver ? selectedDriver?.name : undefined,
         assignedVehicleId,
+        warehouseId: defaultWarehouseId,
+        warehouseName: warehouse?.name,
+        warehouseImageUrl: warehouse?.imageUrl,
         cargoItems,
       });
-      
+
       console.log('[handleConfirm] addOrder 完成, result:', result?.orderNo);
 
       // 扣減庫存（失敗不影響配送建立）
@@ -410,61 +481,21 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
       }
 
       console.log('[handleConfirm] 所有操作完成，即將顯示成功提示');
-      console.log('[handleConfirm] Platform.OS:', Platform.OS);
-      
-      // 顯示成功 Alert 並跳轉
+
+      // 直接顯示自訂成功 Modal（跨 Web/原生皆可正常運作）
       setIsSubmitting(false);
-      
-      // 使用 setTimeout 確保 UI 更新後再顯示 Alert
-      setTimeout(() => {
-        console.log('[handleConfirm] 準備顯示 Alert');
-        
-        const successMessage = `配送訂單已成功建立！\n\n從：${pickupAddress}\n到：${dropoffAddress}`;
-        
-        if (Platform.OS === 'web' && typeof window !== 'undefined') {
-          console.log('[handleConfirm] 使用 web confirm');
-          const confirmed = window.confirm(successMessage + '\n\n點擊確定前往配送頁面。');
-          console.log('[handleConfirm] confirmed:', confirmed);
-          if (confirmed) {
-            console.log('[handleConfirm] 跳轉到配送頁面');
-            router.replace('/delivery');
-          }
-        } else {
-          console.log('[handleConfirm] 使用 Alert.alert');
-          Alert.alert(
-            '成功',
-            successMessage,
-            [
-              {
-                text: 'OK',
-                onPress: () => {
-                  console.log('[handleConfirm] OK 按下，準備跳轉');
-                  router.replace('/delivery');
-                },
-              },
-            ]
-          );
-        }
-      }, 200);
-      
+      setShowSuccessModal(true);
     } catch (error) {
       console.error('[handleConfirm] Error:', error);
       setIsSubmitting(false);
-      setTimeout(() => {
-        console.log('[handleConfirm] 準備顯示錯誤 Alert');
-        const errorMessage = `建立配送訂單失敗：${error instanceof Error ? error.message : '未知錯誤'}`;
-        
-        if (Platform.OS === 'web' && typeof window !== 'undefined') {
-          window.alert(errorMessage);
-        } else {
-          Alert.alert('錯誤', errorMessage);
-        }
-      }, 200);
+      const errorMessage = `建立配送訂單失敗：${error instanceof Error ? error.message : '未知錯誤'}`;
+      setErrorModal({ title: '錯誤', message: errorMessage });
     }
   };
 
   const handleDriverSelect = (driverId: string) => {
-    setSelectedDriverId(driverId);
+    // 傳入空字串表示「不選擇司機」,設為 null 以便與「未選擇」狀態一致
+    setSelectedDriverId(driverId === '' ? null : driverId);
   };
 
   // 選擇客戶
@@ -490,7 +521,7 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
   // 新增客戶
   const handleAddNewCustomer = async () => {
     if (!newCustomerName.trim()) {
-      Alert.alert('錯誤', '請輸入客戶名稱');
+      setErrorModal({ title: '錯誤', message: '請輸入客戶名稱' });
       return;
     }
 
@@ -499,6 +530,7 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
         name: newCustomerName.trim(),
         phone: newCustomerPhone.trim() || undefined,
         address: newCustomerAddress.trim() || undefined,
+        notes: newCustomerNotes.trim() || undefined,
       });
 
       handleSelectCustomer(newCustomer);
@@ -506,8 +538,9 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
       setNewCustomerName('');
       setNewCustomerPhone('');
       setNewCustomerAddress('');
+      setNewCustomerNotes('');
     } catch (error) {
-      Alert.alert('錯誤', '新增客戶失敗，請重試');
+      setErrorModal({ title: '錯誤', message: '新增客戶失敗，請重試' });
     }
   };
 
@@ -541,39 +574,86 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>客戶資訊</Text>
         <Card style={styles.card}>
-          <View style={styles.inputRow}>
-            <Text style={styles.inputLabel}>客戶名稱</Text>
-            <RNTextInput
-              style={styles.input}
-              placeholder="請輸入客戶名稱"
-              placeholderTextColor={colors.textTertiary}
-              value={customerName}
-              onChangeText={setCustomerName}
-            />
-          </View>
-          <View style={[styles.inputRow, { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, marginTop: spacing.md }]}>
-            <Text style={styles.inputLabel}>聯絡電話</Text>
-            <RNTextInput
-              style={styles.input}
-              placeholder="請輸入聯絡電話"
-              placeholderTextColor={colors.textTertiary}
-              value={customerPhone}
-              onChangeText={setCustomerPhone}
-              keyboardType="phone-pad"
-            />
-          </View>
-          <View style={[styles.inputRow, { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, marginTop: spacing.md }]}>
-            <Text style={styles.inputLabel}>備註</Text>
-            <RNTextInput
-              style={[styles.input, styles.notesInput]}
-              placeholder="填寫配送相關備註"
-              placeholderTextColor={colors.textTertiary}
-              value={notes}
-              onChangeText={setNotes}
-              multiline
-              numberOfLines={2}
-            />
-          </View>
+          {/* 選擇客戶 - Select Field */}
+          <Pressable
+            style={styles.selectField}
+            onPress={() => setShowCustomerPicker(true)}
+          >
+            <View style={styles.selectFieldLeft}>
+              <Users size={18} color={selectedCustomer ? colors.primary : colors.textTertiary} />
+              <View style={styles.selectFieldContent}>
+                <Text style={styles.selectFieldLabel}>選擇客戶</Text>
+                <Text style={[styles.selectFieldValue, selectedCustomer && styles.selectFieldValueSelected]}>
+                  {selectedCustomer ? selectedCustomer.name : '請選擇客戶（可選）'}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.selectFieldRight}>
+              {selectedCustomer && (
+                <Pressable
+                  style={styles.clearButton}
+                  onPress={handleClearCustomer}
+                  hitSlop={8}
+                >
+                  <X size={16} color={colors.textTertiary} />
+                </Pressable>
+              )}
+              <ChevronLeft size={18} color={colors.textTertiary} style={styles.selectChevron} />
+            </View>
+          </Pressable>
+
+          {/* 已選擇客戶時顯示資訊 */}
+          {selectedCustomer && (
+            <View style={styles.selectedCustomerInfo}>
+              <Text style={styles.selectedCustomerLabel}>客戶電話</Text>
+              <Text style={styles.selectedCustomerValue}>{selectedCustomer.phone || '無'}</Text>
+              {selectedCustomer.address && (
+                <>
+                  <Text style={[styles.selectedCustomerLabel, { marginTop: spacing.sm }]}>客戶地址</Text>
+                  <Text style={styles.selectedCustomerValue}>{selectedCustomer.address}</Text>
+                </>
+              )}
+            </View>
+          )}
+
+          {/* 未選擇客戶時顯示輸入框 */}
+          {!selectedCustomer && (
+            <>
+              <View style={[styles.inputRow, { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, marginTop: spacing.md }]}>
+                <Text style={styles.inputLabel}>客戶名稱</Text>
+                <RNTextInput
+                  style={styles.input}
+                  placeholder="請輸入客戶名稱"
+                  placeholderTextColor={colors.textTertiary}
+                  value={customerName}
+                  onChangeText={setCustomerName}
+                />
+              </View>
+              <View style={[styles.inputRow, { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, marginTop: spacing.md }]}>
+                <Text style={styles.inputLabel}>聯絡電話</Text>
+                <RNTextInput
+                  style={styles.input}
+                  placeholder="請輸入聯絡電話"
+                  placeholderTextColor={colors.textTertiary}
+                  value={customerPhone}
+                  onChangeText={setCustomerPhone}
+                  keyboardType="phone-pad"
+                />
+              </View>
+              <View style={[styles.inputRow, { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, marginTop: spacing.md }]}>
+                <Text style={styles.inputLabel}>備註</Text>
+                <RNTextInput
+                  style={[styles.input, styles.notesInput]}
+                  placeholder="填寫配送相關備註"
+                  placeholderTextColor={colors.textTertiary}
+                  value={notes}
+                  onChangeText={setNotes}
+                  multiline
+                  numberOfLines={2}
+                />
+              </View>
+            </>
+          )}
         </Card>
       </View>
 
@@ -669,8 +749,32 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
             {selectedItems.map((item) => {
               const effectiveStock = getEffectiveStock(item.itemId, selectedItems, warehouseStocks);
               const isLowStock = effectiveStock <= 0;
+              // 即時從 inventoryStore 取得最新 imageUrl，避免 selectedItems 缺少 imageUrl
+              const liveImageUrl = item.imageUrl ?? items.find((it) => it.id === item.itemId)?.imageUrl;
               return (
                 <Card key={item.itemId} style={[styles.itemCard, isLowStock && styles.itemCardLowStock]}>
+                  {liveImageUrl ? (
+                    <Pressable
+                      onPress={() =>
+                        setLightboxImage({ uri: liveImageUrl, name: item.itemName })
+                      }
+                      hitSlop={6}
+                      style={({ pressed }) => [
+                        styles.itemImageWrap,
+                        pressed && styles.itemImagePressed,
+                      ]}
+                    >
+                      <Image
+                        source={{ uri: liveImageUrl }}
+                        style={styles.itemImage}
+                        resizeMode="cover"
+                      />
+                    </Pressable>
+                  ) : (
+                    <View style={styles.itemImagePlaceholder}>
+                      <Package size={18} color={colors.textTertiary} />
+                    </View>
+                  )}
                   <View style={styles.itemInfo}>
                     <Text style={styles.itemName}>{item.itemName}</Text>
                     <Text style={[styles.itemMeta, isLowStock && styles.itemMetaLowStock]}>
@@ -685,7 +789,14 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
                   >
                     <Minus size={16} color={colors.primary} />
                   </Pressable>
-                  <Text style={styles.quantityText}>{item.quantity}</Text>
+                  <RNTextInput
+                    style={styles.quantityInput}
+                    value={item.editingQuantity}
+                    onChangeText={(text) => handleQuantityChange(item.itemId, text)}
+                    onBlur={() => handleQuantityBlur(item.itemId)}
+                    keyboardType="number-pad"
+                    selectTextOnFocus
+                  />
                   <Pressable
                     style={styles.quantityBtn}
                     onPress={() => handleIncreaseItem(item.itemId)}
@@ -732,6 +843,60 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
             <Truck size={16} color={colors.primary} />
             <Text style={styles.summaryText}>總重量: {totalWeight.toFixed(2)} kg</Text>
           </View>
+
+          {/* 物品明細列表 */}
+          {selectedItems.length > 0 && (
+            <View style={styles.summaryItemsList}>
+              {selectedItems.map((item, index) => {
+                // 從 inventoryStore 即時查找 imageUrl，避免 selectedItems 中缺少 imageUrl
+                const liveImageUrl = item.imageUrl ?? items.find((it) => it.id === item.itemId)?.imageUrl;
+                return (
+                <View
+                  key={item.itemId}
+                  style={[
+                    styles.summaryItemRow,
+                    index === selectedItems.length - 1 && styles.summaryItemRowLast,
+                  ]}
+                >
+                  {liveImageUrl ? (
+                    <Pressable
+                      onPress={() =>
+                        setLightboxImage({ uri: liveImageUrl, name: item.itemName })
+                      }
+                      hitSlop={6}
+                      style={({ pressed }) => [
+                        styles.summaryItemImageWrap,
+                        pressed && styles.summaryItemImagePressed,
+                      ]}
+                    >
+                      <Image
+                        source={{ uri: liveImageUrl }}
+                        style={styles.summaryItemImage}
+                        resizeMode="cover"
+                      />
+                    </Pressable>
+                  ) : (
+                    <View style={styles.summaryItemImagePlaceholder}>
+                      <Package size={18} color={colors.textTertiary} />
+                    </View>
+                  )}
+                  <View style={styles.summaryItemContent}>
+                    <Text style={styles.summaryItemName} numberOfLines={2}>
+                      {item.itemName}
+                    </Text>
+                    <Text style={styles.summaryItemMeta}>
+                      數量 {item.quantity} ・ 單件 {item.unitWeight} kg ・ 小計{' '}
+                      {(item.quantity * item.unitWeight).toFixed(2)} kg
+                    </Text>
+                  </View>
+                </View>
+              );
+              })}
+            </View>
+          )}
+
+          <View style={styles.summaryDivider} />
+
           <View style={styles.summaryRow}>
             <View style={[styles.pinDot, styles.pinDotPickup]} />
             <Text style={styles.summaryLabel}>取貨點</Text>
@@ -749,45 +914,74 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>選擇司機</Text>
         <Text style={styles.sectionSubtitle}>
-          選擇司機後，系統會自動顯示該司機的車輛
+          選擇司機後，系統會自動顯示該司機的車輛。不選擇司機會建立待處理訂單，稍後再分配。
         </Text>
 
         {mergedDrivers.length === 0 ? (
           <Card style={styles.emptyCard}>
             <User size={32} color={colors.textTertiary} />
             <Text style={styles.emptyText}>暫無可用司機</Text>
+            <Text style={styles.emptyHint}>將建立待處理訂單，稍後再分配司機</Text>
           </Card>
         ) : (
-          mergedDrivers.map((driver) => {
-            const isSelected = selectedDriverId === driver.id;
-            const driverCars = vehicles.filter((v) => v.assignedDriverId === driver.id);
-            return (
-              <Pressable
-                key={driver.id}
-                style={[styles.driverCard, isSelected && styles.driverCardSelected]}
-                onPress={() => handleDriverSelect(driver.id)}
-              >
-                <View style={styles.driverCardLeft}>
-                  <View style={[styles.driverAvatar, isSelected && styles.driverAvatarSelected]}>
-                    <Text style={[styles.driverAvatarText, isSelected && styles.driverAvatarTextSelected]}>
-                      {driver.name.charAt(0)}
-                    </Text>
-                  </View>
-                  <View style={styles.driverInfo}>
-                    <Text style={[styles.driverName, isSelected && styles.driverNameSelected]}>
-                      {driver.name}
-                    </Text>
-                    <Text style={[styles.driverDetail, isSelected && styles.driverDetailSelected]}>
-                      {driver.phone}
-                    </Text>
-                  </View>
+          <>
+            {/* 不選擇司機選項 */}
+            <Pressable
+              style={[styles.driverCard, selectedDriverId === null && styles.driverCardSelected]}
+              onPress={() => handleDriverSelect('')}
+            >
+              <View style={styles.driverCardLeft}>
+                <View style={[styles.driverAvatar, selectedDriverId === null && styles.driverAvatarSelected, { backgroundColor: colors.surface }]}>
+                  <Text style={[styles.driverAvatarText, selectedDriverId === null && styles.driverAvatarTextSelected]}>
+                    ?
+                  </Text>
                 </View>
-                <View style={[styles.checkCircle, isSelected && styles.checkCircleSelected]}>
-                  {isSelected && <Check size={14} color="#fff" />}
+                <View style={styles.driverInfo}>
+                  <Text style={[styles.driverName, selectedDriverId === null && styles.driverNameSelected]}>
+                    不選擇司機
+                  </Text>
+                  <Text style={[styles.driverDetail, selectedDriverId === null && styles.driverDetailSelected]}>
+                    建立待處理訂單，稍後再分配
+                  </Text>
                 </View>
-              </Pressable>
-            );
-          })
+              </View>
+              <View style={[styles.checkCircle, selectedDriverId === null && styles.checkCircleSelected]}>
+                {selectedDriverId === null && <Check size={14} color="#fff" />}
+              </View>
+            </Pressable>
+
+            {/* 司機列表 */}
+            {mergedDrivers.map((driver) => {
+              const isSelected = selectedDriverId === driver.id;
+              const driverCars = vehicles.filter((v) => v.assignedDriverId === driver.id);
+              return (
+                <Pressable
+                  key={driver.id}
+                  style={[styles.driverCard, isSelected && styles.driverCardSelected]}
+                  onPress={() => handleDriverSelect(driver.id)}
+                >
+                  <View style={styles.driverCardLeft}>
+                    <View style={[styles.driverAvatar, isSelected && styles.driverAvatarSelected]}>
+                      <Text style={[styles.driverAvatarText, isSelected && styles.driverAvatarTextSelected]}>
+                        {driver.name.charAt(0)}
+                      </Text>
+                    </View>
+                    <View style={styles.driverInfo}>
+                      <Text style={[styles.driverName, isSelected && styles.driverNameSelected]}>
+                        {driver.name}
+                      </Text>
+                      <Text style={[styles.driverDetail, isSelected && styles.driverDetailSelected]}>
+                        {driver.phone}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={[styles.checkCircle, isSelected && styles.checkCircleSelected]}>
+                    {isSelected && <Check size={14} color="#fff" />}
+                  </View>
+                </Pressable>
+              );
+            })}
+          </>
         )}
       </View>
     </Animated.View>
@@ -887,6 +1081,17 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
                       }}
                       disabled={isAdded || effectiveStock === 0}
                     >
+                      {item.imageUrl ? (
+                        <Image
+                          source={{ uri: item.imageUrl }}
+                          style={styles.pickItemImage}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={styles.pickItemImagePlaceholder}>
+                          <Package size={20} color={colors.textTertiary} />
+                        </View>
+                      )}
                       <View style={styles.pickItemInfo}>
                         <Text style={styles.pickItemName}>{item.name}</Text>
                         <Text style={styles.pickItemMeta}>
@@ -955,6 +1160,248 @@ export function AddDeliveryForm({ mode = 'add', initialData }: AddDeliveryFormPr
               <Text style={styles.successButtonText}>OK</Text>
             </Pressable>
           </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* 錯誤提示 Modal */}
+      <Modal
+        visible={errorModal !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setErrorModal(null)}
+      >
+        <Pressable style={styles.successModalOverlay} onPress={() => setErrorModal(null)}>
+          <Pressable style={styles.successModalContent} onPress={(e) => e.stopPropagation()}>
+            <View style={[styles.successIconContainer, { backgroundColor: 'rgba(220, 53, 69, 0.15)' }]}>
+              <Text style={{ fontSize: 32, fontWeight: '700', color: colors.danger }}>!</Text>
+            </View>
+            <Text style={styles.successTitle}>{errorModal?.title ?? t('common.error')}</Text>
+            <Text style={styles.successMessage}>{errorModal?.message ?? ''}</Text>
+            <Pressable
+              style={[styles.successButton, { backgroundColor: colors.danger }]}
+              onPress={() => setErrorModal(null)}
+            >
+              <Text style={styles.successButtonText}>確定</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+      {/* 客戶選擇 Modal */}
+      <Modal
+        visible={showCustomerPicker}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowCustomerPicker(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>選擇客戶</Text>
+            <Pressable onPress={() => setShowCustomerPicker(false)} style={styles.modalCloseBtn}>
+              <X size={22} color={colors.textSecondary} />
+            </Pressable>
+          </View>
+
+          {/* 新增客戶按鈕 */}
+          <View style={styles.customerModalActions}>
+            <Pressable
+              style={styles.addCustomerBtn}
+              onPress={() => {
+                setShowCustomerPicker(false);
+                setShowAddCustomer(true);
+              }}
+            >
+              <Plus size={16} color={colors.primary} />
+              <Text style={styles.addCustomerBtnText}>新增客戶</Text>
+            </Pressable>
+          </View>
+
+          {/* 搜尋框 */}
+          <View style={styles.searchContainer}>
+            <Search size={18} color={colors.textTertiary} />
+            <RNTextInput
+              style={styles.searchInput}
+              placeholder="搜尋客戶名稱或電話..."
+              placeholderTextColor={colors.textTertiary}
+              value={customerSearchQuery}
+              onChangeText={setCustomerSearchQuery}
+            />
+            {customerSearchQuery.length > 0 && (
+              <Pressable onPress={() => setCustomerSearchQuery('')}>
+                <X size={16} color={colors.textTertiary} />
+              </Pressable>
+            )}
+          </View>
+
+          {filteredCustomers.length === 0 ? (
+            <View style={styles.modalEmpty}>
+              <Users size={48} color={colors.textTertiary} />
+              <Text style={styles.emptyText}>找不到客戶</Text>
+              <Text style={styles.emptyHint}>點擊上方按鈕新增客戶</Text>
+            </View>
+          ) : (
+            <ScrollView style={styles.modalScroll}>
+              {filteredCustomers.map((customer) => (
+                <Pressable
+                  key={customer.id}
+                  style={[styles.customerCard, selectedCustomer?.id === customer.id && styles.customerCardSelected]}
+                  onPress={() => handleSelectCustomer(customer)}
+                >
+                  <View style={styles.customerCardLeft}>
+                    <View style={[styles.customerAvatar, selectedCustomer?.id === customer.id && styles.customerAvatarSelected]}>
+                      <Text style={[styles.customerAvatarText, selectedCustomer?.id === customer.id && styles.customerAvatarTextSelected]}>
+                        {customer.name.charAt(0)}
+                      </Text>
+                    </View>
+                    <View style={styles.customerInfo}>
+                      <Text style={[styles.customerName, selectedCustomer?.id === customer.id && styles.customerNameSelected]}>
+                        {customer.name}
+                      </Text>
+                      <Text style={[styles.customerDetail, selectedCustomer?.id === customer.id && styles.customerDetailSelected]}>
+                        {customer.phone || '無電話'}
+                        {customer.address && ` • ${customer.address}`}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={[styles.checkCircle, selectedCustomer?.id === customer.id && styles.checkCircleSelected]}>
+                    {selectedCustomer?.id === customer.id && <Check size={14} color="#fff" />}
+                  </View>
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
+
+          {/* 確認按鈕 */}
+          <View style={styles.modalFooter}>
+            <Button
+              title="確認"
+              variant="primary"
+              size="lg"
+              onPress={() => setShowCustomerPicker(false)}
+            />
+          </View>
+        </View>
+      </Modal>
+
+      {/* 新增客戶 Modal */}
+      <Modal
+        visible={showAddCustomer}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowAddCustomer(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>新增客戶</Text>
+            <Pressable onPress={() => setShowAddCustomer(false)} style={styles.modalCloseBtn}>
+              <X size={22} color={colors.textSecondary} />
+            </Pressable>
+          </View>
+
+          <ScrollView style={styles.modalScroll}>
+            <View style={styles.addCustomerForm}>
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>客戶名稱 *</Text>
+                <RNTextInput
+                  style={styles.formInput}
+                  placeholder="請輸入客戶名稱"
+                  placeholderTextColor={colors.textTertiary}
+                  value={newCustomerName}
+                  onChangeText={setNewCustomerName}
+                />
+              </View>
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>聯絡電話</Text>
+                <RNTextInput
+                  style={styles.formInput}
+                  placeholder="請輸入聯絡電話"
+                  placeholderTextColor={colors.textTertiary}
+                  value={newCustomerPhone}
+                  onChangeText={setNewCustomerPhone}
+                  keyboardType="phone-pad"
+                />
+              </View>
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>地址</Text>
+                <RNTextInput
+                  style={[styles.formInput, styles.formInputMultiline]}
+                  placeholder="請輸入客戶地址"
+                  placeholderTextColor={colors.textTertiary}
+                  value={newCustomerAddress}
+                  onChangeText={setNewCustomerAddress}
+                  multiline
+                  numberOfLines={3}
+                />
+              </View>
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>備註</Text>
+                <RNTextInput
+                  style={[styles.formInput, styles.formInputMultiline]}
+                  placeholder="填寫客戶相關備註"
+                  placeholderTextColor={colors.textTertiary}
+                  value={newCustomerNotes}
+                  onChangeText={setNewCustomerNotes}
+                  multiline
+                  numberOfLines={3}
+                />
+              </View>
+            </View>
+          </ScrollView>
+
+          <View style={styles.addCustomerFooter}>
+            <View style={styles.buttonRow}>
+              <Button
+                title="取消"
+                variant="secondary"
+                size="lg"
+                onPress={() => {
+                  setShowAddCustomer(false);
+                  setShowCustomerPicker(true);
+                }}
+                style={styles.buttonHalf}
+              />
+              <Button
+                title="新增"
+                variant="primary"
+                size="lg"
+                onPress={handleAddNewCustomer}
+                style={styles.buttonHalf}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 縮圖 Lightbox Modal */}
+      <Modal
+        visible={lightboxImage !== null}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setLightboxImage(null)}
+        statusBarTranslucent
+      >
+        <Pressable
+          style={styles.lightboxOverlay}
+          onPress={() => setLightboxImage(null)}
+        >
+          <Pressable
+            style={styles.lightboxCloseBtn}
+            onPress={() => setLightboxImage(null)}
+            hitSlop={12}
+          >
+            <X size={22} color="#fff" />
+          </Pressable>
+          {lightboxImage && (
+            <View style={styles.lightboxContent}>
+              <Image
+                source={{ uri: lightboxImage.uri }}
+                style={styles.lightboxImage}
+                resizeMode="contain"
+              />
+              <Text style={styles.lightboxCaption} numberOfLines={2}>
+                {lightboxImage.name}
+              </Text>
+            </View>
+          )}
         </Pressable>
       </Modal>
     </KeyboardAvoidingView>
@@ -1196,6 +1643,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: spacing.md,
     marginBottom: spacing.sm,
+    gap: spacing.md,
+  },
+  itemImage: {
+    width: 48,
+    height: 48,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.surface,
+  },
+  itemImageWrap: {
+    borderRadius: borderRadius.md,
+    overflow: 'hidden',
+  },
+  itemImagePressed: {
+    opacity: 0.7,
+    transform: [{ scale: 0.96 }],
+  },
+  itemImagePlaceholder: {
+    width: 48,
+    height: 48,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   itemInfo: {
     flex: 1,
@@ -1239,6 +1711,19 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     minWidth: 30,
     textAlign: 'center',
+  },
+  quantityInput: {
+    width: 56,
+    height: 36,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.card,
+    fontSize: typography.fontSize.base,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    textAlign: 'center',
+    paddingHorizontal: spacing.xs,
   },
   removeBtn: {
     width: 32,
@@ -1288,6 +1773,68 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.textTertiary,
     minWidth: 42,
+  },
+  summaryDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: spacing.sm,
+  },
+  summaryItemsList: {
+    marginTop: spacing.xs,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+  },
+  summaryItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingBottom: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    gap: spacing.md,
+  },
+  summaryItemRowLast: {
+    paddingBottom: 0,
+    borderBottomWidth: 0,
+  },
+  summaryItemImage: {
+    width: 48,
+    height: 48,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.surface,
+  },
+  summaryItemImageWrap: {
+    borderRadius: borderRadius.md,
+    overflow: 'hidden',
+  },
+  summaryItemImagePressed: {
+    opacity: 0.7,
+    transform: [{ scale: 0.96 }],
+  },
+  summaryItemImagePlaceholder: {
+    width: 48,
+    height: 48,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  summaryItemContent: {
+    flex: 1,
+  },
+  summaryItemName: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  summaryItemMeta: {
+    fontSize: typography.fontSize.xs,
+    color: colors.textSecondary,
   },
   driverCard: {
     flexDirection: 'row',
@@ -1525,11 +2072,28 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     padding: spacing.lg,
     marginBottom: spacing.md,
+    gap: spacing.md,
   },
   pickItemCardAdded: {
     borderColor: colors.primary,
     backgroundColor: colors.primaryGlow,
     opacity: 0.7,
+  },
+  pickItemImage: {
+    width: 56,
+    height: 56,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.surface,
+  },
+  pickItemImagePlaceholder: {
+    width: 56,
+    height: 56,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   pickItemInfo: {
     flex: 1,
@@ -1576,5 +2140,255 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryGlow,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Select Field 樣式
+  selectField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  selectFieldLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  selectFieldContent: {
+    marginLeft: spacing.md,
+    flex: 1,
+  },
+  selectFieldLabel: {
+    fontSize: typography.fontSize.xs,
+    color: colors.textTertiary,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  selectFieldValue: {
+    fontSize: typography.fontSize.base,
+    color: colors.textTertiary,
+    marginTop: 2,
+  },
+  selectFieldValueSelected: {
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  selectFieldRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  clearButton: {
+    padding: spacing.xs,
+    marginRight: spacing.xs,
+  },
+  selectChevron: {
+    transform: [{ rotate: '180deg' }],
+  },
+  selectedCustomerInfo: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  selectedCustomerLabel: {
+    fontSize: typography.fontSize.xs,
+    color: colors.textTertiary,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  selectedCustomerValue: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+  },
+  // 客戶選擇 Modal 樣式
+  customerModalActions: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+  },
+  addCustomerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryGlow,
+    gap: spacing.xs,
+  },
+  addCustomerBtnText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: spacing.lg,
+    marginVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: spacing.sm,
+    fontSize: typography.fontSize.base,
+    color: colors.textPrimary,
+  },
+  customerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.card,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  customerCardSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryGlow,
+  },
+  customerCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  customerAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  customerAvatarSelected: {
+    backgroundColor: colors.primary,
+  },
+  customerAvatarText: {
+    fontSize: typography.fontSize.base,
+    fontWeight: '700',
+    color: colors.textSecondary,
+  },
+  customerAvatarTextSelected: {
+    color: '#fff',
+  },
+  customerInfo: {
+    flex: 1,
+  },
+  customerName: {
+    fontSize: typography.fontSize.base,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  customerNameSelected: {
+    color: colors.primary,
+  },
+  customerDetail: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+  },
+  customerDetailSelected: {
+    color: colors.primary,
+    opacity: 0.8,
+  },
+  // 新增客戶表單樣式
+  addCustomerForm: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+  },
+  formGroup: {
+    marginBottom: spacing.lg,
+  },
+  formLabel: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+  },
+  formInput: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    fontSize: typography.fontSize.base,
+    color: colors.textPrimary,
+  },
+  formInputMultiline: {
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  addCustomerFooter: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  buttonHalf: {
+    flex: 1,
+  },
+
+  // Lightbox 樣式
+  lightboxOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  lightboxCloseBtn: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  lightboxContent: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xxl,
+  },
+  lightboxImage: {
+    width: '100%',
+    flex: 1,
+    marginVertical: spacing.lg,
+  },
+  lightboxCaption: {
+    fontSize: typography.fontSize.base,
+    fontWeight: '600',
+    color: '#fff',
+    textAlign: 'center',
+    marginTop: spacing.md,
+    marginBottom: spacing.lg,
   },
 });

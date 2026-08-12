@@ -20,10 +20,14 @@
  */
 import { useState, useCallback, useEffect } from 'react';
 import { Platform } from 'react-native';
-import { gps808Api } from '@/utils/gps808Api';
+import { gps808Api, getWebProxyBaseUrlSync } from '@/utils/gps808Api';
 import { useGps808Store } from '@/store/gps808Store';
 
 const IS_WEB = Platform.OS === 'web';
+/** 手機不支援 flv.js，統一使用 HLS；PC 維持 FLV 以取得最低延遲 */
+const USE_HLS = IS_WEB && /Mobi|Android|iPhone|iPad/i.test(
+  typeof navigator !== 'undefined' ? navigator.userAgent : '',
+);
 
 export interface DeviceStatus {
   id?: string;
@@ -124,13 +128,15 @@ export function useVideoPlayer(options: VideoPlayerOptions = {}): UseVideoPlayer
       const jsession = await gps808Api.getStoredSession();
 
       if (jsession && IS_WEB) {
-        const url = `http://localhost:3001/api/gps/flv-stream?devIdno=${devIdno}&channel=${activeChannel}&stream=${quality === 'sd' ? 1 : 0}&jsessionId=${jsession}`;
+        const proxyBase = getWebProxyBaseUrlSync();
+        const streamPath = USE_HLS ? 'hls-stream' : 'flv-stream';
+        const url = `${proxyBase}/api/gps/${streamPath}?devIdno=${devIdno}&channel=${activeChannel}&stream=${quality === 'sd' ? 1 : 0}&jsessionId=${jsession}`;
         setVideoUrl(url);
       } else {
         const result = await gps808Api.getLiveVideoUrl(devIdno, {
           channel: activeChannel,
           quality,
-          protocol: 'flv',
+          protocol: USE_HLS ? 'hls' : 'flv',
         });
 
         if (result.result === 0 && result.flvUrl) {

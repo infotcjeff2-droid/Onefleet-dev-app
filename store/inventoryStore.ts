@@ -14,6 +14,23 @@ import {
 import { storage } from '@/utils/storage';
 import { getWarehouseCoords } from '@/utils/warehouseCoords';
 import { useAuthStore } from './authStore';
+import {
+  inventorySyncEnabled,
+  pullInventoryFromSupabase,
+  pushAlert,
+  pushDispatch,
+  pushItem,
+  pushReplenishment,
+  pushStock,
+  pushTruck,
+  pushWarehouse,
+  softDeleteAlert,
+  softDeleteDispatch,
+  softDeleteItem,
+  softDeleteReplenishment,
+  softDeleteTruck,
+  softDeleteWarehouse,
+} from '@/utils/inventorySync';
 
 const STORAGE_KEYS = {
   warehouses: 'inventories_warehouses',
@@ -145,6 +162,7 @@ interface InventoryState {
 
   // Bulk operations
   loadAll: () => Promise<void>;
+  syncFromCloud: () => Promise<void>;
   resetAll: () => Promise<void>;
   initWithDummyData: () => Promise<void>;
 }
@@ -220,6 +238,7 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
     const updated = [...get().warehouses, newWarehouse];
     set({ warehouses: updated });
     await persistWarehouses(updated);
+    void pushWarehouse(newWarehouse);
     return newWarehouse;
   },
 
@@ -235,12 +254,15 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
     });
     set({ warehouses: updated });
     await persistWarehouses(updated);
+    const changed = updated.find((wh) => wh.id === id);
+    if (changed) void pushWarehouse(changed);
   },
 
   deleteWarehouse: async (id) => {
     const updated = get().warehouses.filter((wh) => wh.id !== id);
     set({ warehouses: updated });
     await persistWarehouses(updated);
+    void softDeleteWarehouse(id);
   },
 
   getWarehouseById: (id) => get().warehouses.find((wh) => wh.id === id),
@@ -273,6 +295,7 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
     set({ items: updated });
     await persistItems(updated);
     console.log(`[addItem] item saved: id=${newItem.id}, name=${newItem.name}`);
+    void pushItem(newItem);
     return newItem;
   },
 
@@ -282,6 +305,8 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
     );
     set({ items: updated });
     await persistItems(updated);
+    const changed = updated.find((i) => i.id === id);
+    if (changed) void pushItem(changed);
   },
 
   deleteItem: async (id) => {
@@ -311,6 +336,7 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
       persistReplenishment(replenishmentOrders),
       persistDispatches(dispatchOrders),
     ]);
+    void softDeleteItem(id);
   },
 
   getItemById: (id) => get().items.find((item) => item.id === id),
@@ -380,6 +406,7 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
     set({ warehouseStocks: updated });
     await persistStocks(updated);
     console.log(`[deductStock] 完成`);
+    void pushStock(updated[stockIndex]);
     return true;
   },
 
@@ -398,6 +425,7 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
       };
       set({ warehouseStocks: updated });
       await persistStocks(updated);
+      void pushStock(updated[existingIndex]);
     } else {
       const newStock: WarehouseStock = {
         id: `stock-${Date.now()}`,
@@ -411,6 +439,7 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
       set({ warehouseStocks: updated });
       await persistStocks(updated);
       console.log(`[addStock] new stock added: wh=${warehouseId}, item=${itemId}, qty=${quantity}`);
+      void pushStock(newStock);
     }
   },
 
@@ -448,6 +477,7 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
     const updated = [...get().trucks, newTruck];
     set({ trucks: updated });
     await persistTrucks(updated);
+    void pushTruck(newTruck);
     return newTruck;
   },
 
@@ -457,12 +487,15 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
     );
     set({ trucks: updated });
     await persistTrucks(updated);
+    const changed = updated.find((t) => t.id === id);
+    if (changed) void pushTruck(changed);
   },
 
   deleteTruck: async (id) => {
     const updated = get().trucks.filter((truck) => truck.id !== id);
     set({ trucks: updated });
     await persistTrucks(updated);
+    void softDeleteTruck(id);
   },
 
   getAvailableTrucks: () => {
@@ -536,6 +569,8 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
     );
     set({ stockAlerts: updated });
     await persistAlerts(updated);
+    const changed = updated.find((a) => a.id === alertId);
+    if (changed) void pushAlert(changed);
   },
 
   // ============ Replenishment Actions ============
@@ -570,6 +605,7 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
     const updated = [...get().replenishmentOrders, order];
     set({ replenishmentOrders: updated });
     await persistReplenishment(updated);
+    void pushReplenishment(order);
     return order;
   },
 
@@ -579,6 +615,8 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
     );
     set({ replenishmentOrders: updated });
     await persistReplenishment(updated);
+    const changed = updated.find((o) => o.id === id);
+    if (changed) void pushReplenishment(changed);
   },
 
   autoCreateReplenishmentForDeficit: async (deficitQuantity, item, warehouse) => {
@@ -598,6 +636,7 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
     const updated = [...get().replenishmentOrders, order];
     set({ replenishmentOrders: updated });
     await persistReplenishment(updated);
+    void pushReplenishment(order);
     return order;
   },
 
@@ -736,6 +775,7 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
     const updated = [...get().dispatchOrders, dispatch];
     set({ dispatchOrders: updated });
     await persistDispatches(updated);
+    void pushDispatch(dispatch);
     return dispatch;
   },
 
@@ -745,6 +785,8 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
     );
     set({ dispatchOrders: updated });
     await persistDispatches(updated);
+    const changed = updated.find((d) => d.id === id);
+    if (changed) void pushDispatch(changed);
   },
 
   // ============ Bulk Operations ============
@@ -760,6 +802,66 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
       get().loadDispatches(),
     ]);
     set({ isLoading: false });
+  },
+
+  /**
+   * 從 Supabase 拉取目前 company 的完整庫存快照並寫入 store + 本地 storage。
+   * 觸發時機：
+   *   - 登入完成後（讓新裝置 / 新帳號看到雲端資料）
+   *   - App 從背景回到前景（refresh）
+   *   - 手動下拉重新整理
+   *
+   * 注意：只有當 Supabase 有資料時才覆蓋本地，
+   * 避免本地新增的資料被空的雲端資料覆蓋。
+   */
+  syncFromCloud: async () => {
+    if (!inventorySyncEnabled) {
+      console.log('[inventoryStore] syncFromCloud skipped: supabase not configured');
+      return;
+    }
+
+    set({ isLoading: true });
+    try {
+      const snapshot = await pullInventoryFromSupabase();
+
+      // 檢查 Supabase 是否有真實資料（不是全部空陣列）
+      const hasCloudData = snapshot.warehouses.length > 0
+        || snapshot.items.length > 0
+        || snapshot.stocks.length > 0
+        || snapshot.trucks.length > 0;
+
+      if (hasCloudData) {
+        // 有雲端資料時，更新 store
+        set({
+          warehouses: snapshot.warehouses,
+          items: snapshot.items,
+          warehouseStocks: snapshot.stocks,
+          trucks: snapshot.trucks,
+          replenishmentOrders: snapshot.replenishment,
+          stockAlerts: snapshot.alerts,
+          dispatchOrders: snapshot.dispatches,
+        });
+
+        // 鏡像寫回本地，讓離線時仍能運作
+        await Promise.all([
+          persistWarehouses(snapshot.warehouses),
+          persistItems(snapshot.items),
+          persistStocks(snapshot.stocks),
+          persistTrucks(snapshot.trucks),
+          persistReplenishment(snapshot.replenishment),
+          persistAlerts(snapshot.alerts),
+          persistDispatches(snapshot.dispatches),
+        ]);
+      } else {
+        console.log('[inventoryStore] syncFromCloud: cloud is empty, preserving local data');
+      }
+
+      console.log('[inventoryStore] syncFromCloud done');
+    } catch (err) {
+      console.warn('[inventoryStore] syncFromCloud failed:', err);
+    } finally {
+      set({ isLoading: false });
+    }
   },
 
   resetAll: async () => {

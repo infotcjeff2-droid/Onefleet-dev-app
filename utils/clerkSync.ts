@@ -103,6 +103,33 @@ export async function syncUsersToClerk(
   return data;
 }
 
+export interface DeleteResult {
+  deleted: boolean;
+  clerkId?: string;
+  alreadyMissing?: boolean;
+}
+
+/**
+ * 從 Clerk 真實刪除使用者（垃圾桶永久刪除用）。
+ * 必須透過 Supabase Edge Function 才能拿到 CLERK_SECRET_KEY。
+ * 若 Edge Function 未部署或呼叫失敗，會丟出錯誤。
+ */
+export async function deleteClerkUserByEmail(email: string): Promise<DeleteResult> {
+  const data = await callEdgeFunction<{ result: DeleteResult }>({
+    action: 'delete',
+    email,
+  });
+  return data.result;
+}
+
+export async function deleteClerkUserById(clerkUserId: string): Promise<DeleteResult> {
+  const data = await callEdgeFunction<{ result: DeleteResult }>({
+    action: 'delete',
+    clerkUserId,
+  });
+  return data.result;
+}
+
 /**
  * 列出 Clerk 中所有使用者（直接呼叫 Clerk REST API，需確保環境有 key）
  */

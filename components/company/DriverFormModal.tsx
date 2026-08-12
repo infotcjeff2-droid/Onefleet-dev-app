@@ -23,6 +23,7 @@ import { colors, spacing, borderRadius, typography } from '@/constants/theme';
 import type { User as UserType } from '@/types';
 import * as ImagePicker from 'expo-image-picker';
 import { useThemeStore } from '@/store/themeStore';
+import { supabase } from '@/utils/supabase';
 
 const isWeb = Platform.OS === 'web';
 
@@ -82,9 +83,13 @@ interface DriverFormModalProps {
 export function DriverFormModal({ visible, onClose, driver, onSave }: DriverFormModalProps) {
   const { t } = useTranslation();
   const { colors: themeColors } = useThemeStore();
-  const { addUser, updateUser, users, loadUsers } = useUserManagementStore();
+  const { addUser, updateUser, users, loadUsers, syncUsers } = useUserManagementStore();
   const isEditing = !!driver;
   const companies = users.filter((u) => u.role === 'company');
+
+  // Direct companies from Supabase (bypasses trash filter)
+  const [supabaseCompanies, setSupabaseCompanies] = useState<Array<{ id: string; name: string; nameZh?: string }>>([]);
+  const [loadingCompanies, setLoadingCompanies] = useState(false);
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -95,10 +100,48 @@ export function DriverFormModal({ visible, onClose, driver, onSave }: DriverForm
   const [loading, setLoading] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [formReady, setFormReady] = useState(false);
+
+  // Fetch companies directly from Supabase
+  const fetchCompaniesFromSupabase = async () => {
+    console.log('[DriverFormModal] fetchCompaniesFromSupabase called, supabase:', !!supabase);
+    setLoadingCompanies(true);
+    try {
+      console.log('[DriverFormModal] querying user_profile table...');
+      const { data, error } = await supabase
+        .from('user_profile')
+        .select('id, name, name_zh')
+        .eq('role', 'company')
+        .eq('is_deleted', false)
+        .order('created_at', { ascending: true });
+
+      console.log('[DriverFormModal] query result - data:', data?.length, 'error:', error);
+
+      if (error) {
+        console.error('[DriverFormModal] fetchCompanies error:', error);
+        setSupabaseCompanies([]);
+      } else {
+        const mapped = (data || []).map((c: any) => ({
+          id: c.id,
+          name: c.name_zh || c.name || c.id,
+        }));
+        console.log('[DriverFormModal] Companies from Supabase:', mapped.length, mapped);
+        setSupabaseCompanies(mapped);
+      }
+    } catch (err) {
+      console.error('[DriverFormModal] fetchCompanies exception:', err);
+      setSupabaseCompanies([]);
+    } finally {
+      setLoadingCompanies(false);
+    }
+  };
 
   useEffect(() => {
-    // Ensure users are loaded when modal opens
-    loadUsers();
+    // Fetch companies when modal opens
+    if (visible) {
+      fetchCompaniesFromSupabase();
+      loadUsers();
+    }
   }, [visible]);
 
   useEffect(() => {
@@ -205,19 +248,18 @@ export function DriverFormModal({ visible, onClose, driver, onSave }: DriverForm
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={handleClose}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.overlay}
       >
-        <Pressable style={styles.backdrop} onPress={handleClose} />
         <View style={styles.container}>
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
             <Text style={[styles.title, { color: colors.textPrimary }]}>
               {isEditing ? t('company.editDriver') : t('company.addDriver') || (isEditing ? '編輯司機' : '新增司機')}
             </Text>
             <Pressable onPress={handleClose} hitSlop={8}>
-              <X size={24} color={colors.textSecondary} />
+              <X size={20} color={colors.textSecondary} />
             </Pressable>
           </View>
 
@@ -259,16 +301,17 @@ export function DriverFormModal({ visible, onClose, driver, onSave }: DriverForm
               autoCapitalize="words"
             />
 
-            {/* Company Select Field */}
+            {/* Company Select Field - directly from Supabase */}
             <SelectField
               label={t('company.title') || '公司'}
-              placeholder={t('company.selectCompany') || '選擇公司'}
+              placeholder={loadingCompanies ? '載入中...' : (t('company.selectCompany') || '選擇公司')}
               value={companyId || ''}
-              options={companies.map((c) => ({
+              options={supabaseCompanies.map((c) => ({
                 value: c.id,
-                label: c.nameZh || c.name || c.email,
+                label: c.nameZh || c.name,
               }))}
               onValueChange={setCompanyId}
+              disabled={loadingCompanies}
             />
 
             <TextInput
@@ -326,18 +369,17 @@ export function DriverFormModal({ visible, onClose, driver, onSave }: DriverForm
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    justifyContent: 'flex-end',
-  },
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: colors.overlay,
-    pointerEvents: 'box-none',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+    backgroundColor: 'rgba(0,0,0,0.6)',
   },
   container: {
+    width: '100%',
+    maxWidth: 520,
     backgroundColor: colors.surface,
-    borderTopLeftRadius: borderRadius['2xl'],
-    borderTopRightRadius: borderRadius['2xl'],
-    maxHeight: '90%',
+    borderRadius: borderRadius.xl,
+    overflow: 'hidden',
   },
   header: {
     flexDirection: 'row',

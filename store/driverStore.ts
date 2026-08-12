@@ -80,13 +80,16 @@ export const useDriverStore = create<DriverState>((set, get) => ({
       // managed_drivers 為「司機清單」的單一真相來源；managed_users 只用於
       // 同步「公司歸屬」(companyId) 等欄位,絕對不會把 managed_users 中的
       // role='driver' 重新插入 managed_drivers（否則刪除後又會復活）。
+      // 同時，若 managed_users 中已刪除某司機，要從 managed_drivers 中移除。
       let merged: Driver[] = [...filtered];
       const currentUser = useAuthStore.getState().user;
+      const existingDriverIds = new Set<string>();
       if (storedUsers) {
         const parsedUsers: StoredUser[] = JSON.parse(storedUsers);
         const driverUsers = parsedUsers.filter((user) => user.role === 'driver');
 
         for (const userDriver of driverUsers) {
+          existingDriverIds.add(userDriver.id);
           const existingIndex = merged.findIndex(
             (driver) => driver.email.toLowerCase() === userDriver.email.toLowerCase()
           );
@@ -98,6 +101,9 @@ export const useDriverStore = create<DriverState>((set, get) => ({
           }
           // 重要：不再 push 新 driver，避免「刪除後又再出現」
         }
+
+        // ★ 過濾掉已被從 managed_users 刪除的司機
+        merged = merged.filter((d) => existingDriverIds.has(d.id) || !d.userId);
       }
 
       // 若 storage 完全是空的，初始化 defaultDrivers（首次使用才需要）

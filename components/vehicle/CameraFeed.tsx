@@ -1,14 +1,19 @@
 import React, { useEffect, useRef, useState, memo, useCallback } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Pressable, Platform } from 'react-native';
 import { WifiOff, Video } from 'lucide-react-native';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { gps808Api } from '@/utils/gps808Api';
+import { gps808Api, getWebProxyBaseUrlSync } from '@/utils/gps808Api';
 import { useGps808Store } from '@/store/gps808Store';
 import { FlvPlayer } from './FlvPlayer';
+import { HlsVideo } from './HlsVideo';
 import { colors, borderRadius, spacing, typography } from '@/constants/theme';
 import { defaultColors } from '@/store/themeStore';
 
 const IS_WEB = typeof window !== 'undefined';
+/** 手機不支援 flv.js，統一使用 HLS；PC 維持 FLV 以取得最低延遲 */
+const USE_HLS = IS_WEB && Platform.OS === 'web' && /Mobi|Android|iPhone|iPad/i.test(
+  typeof navigator !== 'undefined' ? navigator.userAgent : '',
+);
 
 // 畫質類型
 export type StreamQuality = 'sd' | 'hd';
@@ -39,7 +44,7 @@ interface CameraFeedProps {
   showQualityControl?: boolean;
 }
 
-type FeedState = 'loading' | 'streaming' | 'device-offline' | 'offline' | 'error' | 'no-device';
+type FeedState = 'loading' | 'streaming' | 'streaming-hls' | 'streaming-pending' | 'device-offline' | 'offline' | 'error' | 'no-device';
 
 function CameraFeedComponent({
   item,
@@ -56,83 +61,112 @@ function CameraFeedComponent({
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isDeviceOnline, setIsDeviceOnline] = useState<boolean | null>(null);
-  const { isConnected } = useGps808Store();
+  const { isConnected, loadConfig } = useGps808Store();
 
   const displayLabel = plateNumber || vehicleName || item.id;
 
-  // 初始化和監控設備狀態與串流
-  useEffect(() => {
-    if (!devIdno || !isConnected) {
+  // 重試函式 - 提升到組件作用域以便在 JSX 中引用
+  const resolveUrl = useCallback(async () => {
+    if (!devIdno) {
+      setFeedState('offline');
+      return;
+    }
+
+    if (!isConnected) {
       setFeedState('device-offline');
       return;
     }
 
-    // 檢查設備狀態
-    const checkStatus = async () => {
-      try {
-        const result = await gps808Api.getDeviceStatus(devIdno, false);
-        if (result.result === 0 && result.status) {
-          const online = result.status.ol === 1 || result.status.ol === '1';
-          setIsDeviceOnline(online);
-          return online;
+    setFeedState('loading');
+    setErrorMsg(null);
+
+    try {
+      // 先檢查 session 是否有效（使用影像 API 驗證）
+      const isSessionValid = await gps808Api.ping();
+      if (!isSessionValid) {
+        console.log('[CameraFeed] Session 無效或已過期，嘗試自動重連...');
+        
+        // 呼叫 loadConfig 觸發自動重連
+        await loadConfig();
+        
+        // 重新檢查 session 是否有效
+        const isSessionValidAgain = await gps808Api.ping();
+        if (!isSessionValidAgain) {
+          // 如果重連後 session 仍然無效，可能是用戶沒有配置
+          // 嘗試直接連接，讓代理處理 session（代理有 admin session 快取）
+          console.log('[CameraFeed] 自動重連失敗，直接嘗試連接...');
         }
-        setIsDeviceOnline(false);
-        return false;
-      } catch {
-        setIsDeviceOnline(false);
-        return false;
       }
-    };
 
-    // 取得串流 URL
-    const resolveUrl = async () => {
-      setFeedState('loading');
-      setErrorMsg(null);
+      // 檢查設備狀態
+      const result = await gps808Api.getDeviceStatus(devIdno, false);
+      if (result.result === 0 && result.status) {
+        const online = result.status.ol === 1 || result.status.ol === '1';
+        setIsDeviceOnline(online);
 
-      try {
-        const jsession = await gps808Api.getStoredSession();
+        if (!online) {
+          setFeedState('device-offline');
+          return;
+        }
+      } else {
+        setIsDeviceOnline(false);
+        setFeedState('device-offline');
+        return;
+      }
 
-        if (jsession && IS_WEB) {
-          const streamParam = quality === 'sd' ? 1 : 0;
-          const url = `http://localhost:3001/api/gps/flv-stream?devIdno=${devIdno}&channel=${channel}&stream=${streamParam}&jsessionId=${jsession}`;
-          setResolvedUrl(url);
+      // 取得串流 URL
+      const jsession = await gps808Api.getStoredSession();
+
+      if (jsession && IS_WEB) {
+        const streamParam = quality === 'sd' ? 1 : 0;
+        const proxyBase = getWebProxyBaseUrlSync();
+        const streamPath = USE_HLS ? 'hls-stream' : 'flv-stream';
+        const url = `${proxyBase}/api/gps/${streamPath}?devIdno=${devIdno}&channel=${channel}&stream=${streamParam}&jsessionId=${jsession}`;
+        setResolvedUrl(url);
+        setFeedState(USE_HLS ? 'streaming-hls' : 'streaming');
+      } else {
+        const videoResult = await gps808Api.getLiveVideoUrl(devIdno, {
+          channel,
+          quality,
+          protocol: USE_HLS ? 'hls' : 'flv',
+        });
+
+        if (videoResult.result === 0 && videoResult.videoUrl) {
+          setResolvedUrl(videoResult.videoUrl);
           setFeedState('streaming');
         } else {
-          const result = await gps808Api.getLiveVideoUrl(devIdno, {
-            channel,
-            quality,
-            protocol: 'flv',
-          });
-
-          if (result.result === 0 && result.videoUrl) {
-            setResolvedUrl(result.videoUrl);
-            setFeedState('streaming');
-          } else {
-            setErrorMsg(result.error || '無法取得影像 URL');
-            setFeedState('error');
-          }
+          setErrorMsg(videoResult.error || '無法取得影像串流');
+          setFeedState('error');
         }
-      } catch (err) {
-        setErrorMsg(String(err));
-        setFeedState('error');
       }
-    };
+    } catch (err) {
+      setErrorMsg(String(err));
+      setFeedState('error');
+    }
+  }, [devIdno, channel, quality, isConnected]);
 
-    // 同時檢查狀態和取得 URL
-    checkStatus().then((online) => {
-      if (online !== false) {
-        resolveUrl();
-      } else {
-        setFeedState('device-offline');
-      }
-    });
-  }, [devIdno, channel, isConnected]);
+  // 初始化和監控設備狀態與串流
+  useEffect(() => {
+    // 等待連線就緒
+    if (!devIdno) {
+      setFeedState('offline');
+      return;
+    }
+
+    // 如果尚未連線，等待連線建立
+    if (!isConnected) {
+      setFeedState('device-offline');
+      return;
+    }
+
+    resolveUrl();
+  }, [devIdno, isConnected, resolveUrl]);
 
   // 為了穩定性，quality 變更時不立即更新 URL
   // 如需切換畫質，可透過重新選擇設備來刷新
 
   const getStatusColor = () => {
-    if (feedState === 'streaming') return '#22C55E';
+    if (feedState === 'streaming' || feedState === 'streaming-hls') return '#22C55E';
     if (feedState === 'loading') return '#F59E0B';
     if (feedState === 'error') return '#EF4444';
     if (feedState === 'device-offline') return '#EF4444';
@@ -167,6 +201,17 @@ function CameraFeedComponent({
           />
         );
 
+      case 'streaming-hls':
+        if (!resolvedUrl) return null;
+        return (
+          <HlsVideo
+            url={resolvedUrl}
+            autoPlay
+            muted={true}
+            controls={true}
+          />
+        );
+
       case 'device-offline':
         return (
           <View style={styles.placeholder}>
@@ -180,14 +225,15 @@ function CameraFeedComponent({
 
       case 'error':
         return (
-          <Pressable style={styles.placeholder} onPress={devIdno ? resolveStreamUrl : undefined}>
+          <Pressable style={styles.placeholder} onPress={devIdno ? resolveUrl : undefined}>
             <View style={styles.placeholderIcon}>
               <WifiOff size={28} color="#EF4444" />
             </View>
             <Text style={[styles.placeholderLabel, { color: '#EF4444' }]}>
               {errorMsg?.includes('404') ? '影像服務未開通' 
-                : errorMsg?.includes('權限') ? '無影像查看權限'
-                : errorMsg?.includes('未連接') ? '影像串流未連接'
+                : errorMsg?.includes('權限') || errorMsg?.includes('影像') ? '無影像查看權限'
+                : errorMsg?.includes('JSESSIONID') ? '連線驗證中...'
+                : errorMsg?.includes('過期') ? '正在重新連線...'
                 : errorMsg || '連線失敗'}
             </Text>
             <Text style={styles.retryText}>
@@ -233,7 +279,7 @@ function CameraFeedComponent({
           </Text>
         </View>
         <View style={styles.headerRight}>
-          {feedState === 'streaming' && (
+          {(feedState === 'streaming' || feedState === 'streaming-hls') && (
             <View style={styles.streamBadge}>
               <Text style={styles.streamBadgeText}>LIVE</Text>
             </View>
@@ -248,7 +294,7 @@ function CameraFeedComponent({
               <Text style={styles.streamBadgeText}>...</Text>
             </View>
           )}
-          {showQualityControl && (feedState === 'streaming' || feedState === 'streaming-pending') && (
+          {showQualityControl && (feedState === 'streaming' || feedState === 'streaming-hls' || feedState === 'streaming-pending') && (
             <Pressable
               style={styles.qualityBtn}
               onPress={() => {
@@ -265,8 +311,15 @@ function CameraFeedComponent({
         </View>
       </View>
 
-      {/* Video / Placeholder Area — streaming 時禁用 pointerEvents 讓 FlvPlayer 可點擊 */}
-      <View style={styles.videoArea} pointerEvents={feedState === 'streaming' ? 'box-none' : 'auto'}>
+      {/* Video / Placeholder Area — streaming 時禁用 pointerEvents 讓播放器可點擊 */}
+      <View
+        style={styles.videoArea}
+        pointerEvents={
+          feedState === 'streaming' || feedState === 'streaming-hls'
+            ? 'box-none'
+            : 'auto'
+        }
+      >
         {renderContent()}
       </View>
     </Pressable>

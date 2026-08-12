@@ -119,6 +119,7 @@ export default function DispatchPage() {
 
   const onRefresh = async () => {
     setRefreshing(true);
+    await useInventoryStore.getState().syncFromCloud();
     await Promise.all([
       loadWarehouses(),
       loadItems(),

@@ -3,6 +3,7 @@ import { colors, borderRadius, spacing, animation } from '@/constants/theme';
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 type ButtonSize = 'sm' | 'md' | 'lg';
+type IconPosition = 'left' | 'right';
 
 interface ButtonProps {
   title: string;
@@ -13,6 +14,7 @@ interface ButtonProps {
   loading?: boolean;
   fullWidth?: boolean;
   icon?: React.ReactNode;
+  iconPosition?: IconPosition; // 'left' | 'right'
   style?: ViewStyle;
 }
 
@@ -59,10 +61,12 @@ export function Button({
   loading = false,
   fullWidth = false,
   icon,
+  iconPosition = 'left',
   style,
 }: ButtonProps) {
   const v = variantStyles[variant];
   const s = sizeStyles[size];
+  const isIconRight = iconPosition === 'right';
 
   const handlePress = () => {
     if (!disabled && !loading && onPress) {
@@ -93,10 +97,11 @@ export function Button({
           <ActivityIndicator size="small" color={v.text} />
         ) : (
           <>
-            {icon && <View style={styles.icon}>{icon}</View>}
+            {!isIconRight && icon && <View style={styles.icon}>{icon}</View>}
             <Text style={[styles.text, { color: v.text, fontSize: s.fontSize, fontWeight: s.fontWeight }]}>
               {title}
             </Text>
+            {isIconRight && icon && <View style={[styles.icon, styles.iconRight]}>{icon}</View>}
           </>
         )}
       </View>
@@ -120,6 +125,10 @@ const styles = StyleSheet.create({
   },
   icon: {
     marginRight: spacing.sm,
+  },
+  iconRight: {
+    marginRight: 0,
+    marginLeft: spacing.sm,
   },
   text: {
     fontWeight: '600',
