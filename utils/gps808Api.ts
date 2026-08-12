@@ -37,27 +37,20 @@ let runtimeServerUrl: string | null = null;
 /** 記憶體快取：避免每次 API 呼叫都做字串處理 */
 function getWebBaseUrl(): string {
   if (runtimeServerUrl) return runtimeServerUrl;
-  // 1. 雲端 URL（Vercel 部署優先）
+  // 1. 雲端 URL（Vercel 部署）
   const envUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL;
   if (envUrl) {
     runtimeServerUrl = envUrl.replace(/\/$/, '');
     return runtimeServerUrl;
   }
 
-  // 2. 動態 origin（本地 / LAN 開發）
+  // 2. 動態 origin（同一網域的 /api/gps 路徑）
   if (typeof window !== 'undefined' && window.location?.origin) {
-    try {
-      const url = new URL(window.location.origin);
-      url.port = String(PROXY_PORT);
-      url.pathname = 'api/gps';
-      runtimeServerUrl = url.toString().replace(/\/$/, '');
-      return runtimeServerUrl;
-    } catch {
-      // Fallback
-    }
+    runtimeServerUrl = `${window.location.origin}/api/gps`;
+    return runtimeServerUrl;
   }
 
-  // 3. Fallback：localhost（純本地無網路的情況）
+  // 3. Fallback：localhost:3001
   runtimeServerUrl = `http://localhost:${PROXY_PORT}/api/gps`;
   return runtimeServerUrl;
 }
@@ -78,16 +71,10 @@ export function getWebProxyBaseUrlSync(): string {
   }
 
   if (typeof window !== 'undefined' && (window as any).location?.origin) {
-    try {
-      const url = new URL((window as any).location.origin);
-      url.port = String(PROXY_PORT);
-      return url.toString().replace(/\/$/, '');
-    } catch {
-      // Fallback
-    }
+    return `${(window as any).location.origin}/api/gps`;
   }
 
-  return `http://localhost:${PROXY_PORT}`;
+  return `http://localhost:${PROXY_PORT}/api/gps`;
 }
 
 /** 清除 runtime cache — 切換 user 或 reload 之後使用 */

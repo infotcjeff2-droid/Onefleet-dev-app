@@ -50,16 +50,9 @@ function getWebProxyUrl(): string {
   if (envUrl) return envUrl.replace(/\/$/, '');
 
   if (typeof window !== 'undefined' && window.location?.origin) {
-    try {
-      const url = new URL(window.location.origin);
-      url.port = '3001';
-      url.pathname = 'api/gps';
-      return url.toString().replace(/\/$/, '');
-    } catch {
-      // fallback
-    }
+    return `${window.location.origin}/api/gps`;
   }
-  return 'http://localhost:3001/api/gps';
+  return `http://localhost:3001/api/gps`;
 }
 
 function getInitialConfig(): Gps808Config {
