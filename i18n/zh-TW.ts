@@ -283,6 +283,7 @@ export const zhTW = {
     liveTracking: '實時追蹤',
     liveTab: '即時',
     historyTab: '過往',
+    recordingTab: '錄像',
     trackingSectionTitle: '實時監控',
     openFullScreenMonitor: '開啟全螢幕監控',
     vehicleInfo: '車輛資訊',

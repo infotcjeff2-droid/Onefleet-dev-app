@@ -45,6 +45,7 @@ function AppContent() {
   const { isInitialized } = useTranslation();
 
   useEffect(() => {
+    console.log('[GPS808] _layout.tsx: calling loadGpsConfig');
     checkAuth();
     loadUsers().then(() => syncUsers());
     loadVehicles(); // 不要自動 sync，避免 RLS 問題導致數據被清空

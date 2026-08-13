@@ -7,6 +7,7 @@ import { colors, borderRadius, spacing, typography } from '@/constants/theme';
 import { useTranslation } from '@/i18n';
 import { useDriverStore } from '@/store/driverStore';
 import { useUserManagementStore } from '@/store/userManagementStore';
+import { useGps808Store, GpsDeviceStatusType } from '@/store/gps808Store';
 
 interface VehicleCardProps {
   vehicle: Vehicle;
@@ -26,15 +27,104 @@ function getFuelTypeTranslation(fuelType: string, t: (key: string) => string): s
   return t(fuelKey);
 }
 
+/**
+ * 根據 GPS 狀態取得翻譯 key
+ * GPS 狀態：行駛中 / 已停泊 / 無訊號
+ */
+function getGpsStatusTranslation(status: GpsDeviceStatusType, t: (key: string) => string): string {
+  switch (status) {
+    case 'moving':
+      return t('vehicles.moving');
+    case 'parked':
+      return t('vehicles.parked');
+    case 'offline':
+      return t('vehicles.noSignal');
+    default:
+      return t('vehicles.noSignal');
+  }
+}
+
+/**
+ * 根據 GPS 狀態取得 Badge variant
+ * 行駛中: 綠色, 已停泊: 灰色, 無訊號: 橙色, 未連線: 紅色
+ */
+function getGpsStatusBadgeVariant(status: GpsDeviceStatusType): 'active' | 'inactive' | 'warning' | 'danger' {
+  switch (status) {
+    case 'moving':
+      return 'active'; // 綠色
+    case 'parked':
+      return 'inactive'; // 灰色
+    case 'offline':
+      return 'warning'; // 橙色
+    default:
+      return 'warning';
+  }
+}
+
+/**
+ * 根據車輛狀態取得 Badge variant
+ * vehicle.status: active / maintenance / inactive
+ * 無 GPS 設備時使用藍色 (info)
+ */
+function getVehicleStatusBadgeVariant(status: string, hasGpsDevice: boolean): 'active' | 'maintenance' | 'inactive' | 'info' {
+  if (!hasGpsDevice) {
+    return 'info'; // 無 GPS 設備：藍色
+  }
+  switch (status) {
+    case 'active':
+      return 'active';
+    case 'maintenance':
+      return 'maintenance';
+    case 'inactive':
+    default:
+      return 'inactive';
+  }
+}
+
 export function VehicleCard({ vehicle, onPress, index = 0 }: VehicleCardProps) {
   const { t } = useTranslation();
   const hasImage = vehicle.imageUrl && vehicle.imageUrl.trim() !== '';
   const { getDriverById } = useDriverStore();
   const { getCompanyById } = useUserManagementStore();
+  const { isConnected, deviceStatusCache, getDeviceStatus } = useGps808Store();
 
   // Get driver and company info
   const driver = vehicle.assignedDriverId ? getDriverById(vehicle.assignedDriverId) : null;
   const company = driver?.companyId ? getCompanyById(driver.companyId) : null;
+
+  // 取得 GPS 設備 ID（優先使用 devIdno）
+  const gpsDeviceId = vehicle.devIdno || vehicle.gpsDeviceId;
+
+  // 檢查是否有 GPS 設備且已連線
+  const hasGpsDevice = !!gpsDeviceId;
+  const isGpsConnected = isConnected && hasGpsDevice;
+
+  // 取得 GPS 狀態
+  const gpsStatus = isGpsConnected ? getDeviceStatus(gpsDeviceId) : undefined;
+
+  // 決定顯示的狀態：如果有 GPS 設備且已連線，使用 GPS 狀態；否則使用車輛狀態
+  let displayStatusLabel: string;
+  let displayStatusVariant: 'active' | 'maintenance' | 'inactive' | 'info';
+  let useGpsStatus = false;
+
+  if (isGpsConnected && gpsStatus) {
+    // 有 GPS 設備且有狀態資料，使用 GPS 狀態
+    useGpsStatus = true;
+    displayStatusLabel = getGpsStatusTranslation(gpsStatus.status, t);
+    displayStatusVariant = getGpsStatusBadgeVariant(gpsStatus.status);
+  } else if (isGpsConnected && !gpsStatus) {
+    // 有 GPS 設備但還沒有狀態資料（正在獲取中）
+    displayStatusLabel = t('vehicles.fetchingGps');
+    displayStatusVariant = 'info';
+  } else if (hasGpsDevice && !isConnected) {
+    // 有 GPS 設備但未連線：紅色
+    displayStatusLabel = t('vehicles.gpsNotConnected');
+    displayStatusVariant = 'danger';
+  } else {
+    // 沒有 GPS 設備，使用車輛狀態：藍色
+    displayStatusLabel = t('vehicles.' + vehicle.status);
+    displayStatusVariant = getVehicleStatusBadgeVariant(vehicle.status, hasGpsDevice);
+  }
 
   return (
     <Pressable
@@ -60,8 +150,8 @@ export function VehicleCard({ vehicle, onPress, index = 0 }: VehicleCardProps) {
           <View style={styles.imageOverlay} />
           <View style={styles.statusBadge}>
             <Badge
-              label={t('vehicles.' + vehicle.status)}
-              variant={vehicle.status}
+              label={displayStatusLabel}
+              variant={displayStatusVariant}
               dot
               solid
               delay={index * 50}

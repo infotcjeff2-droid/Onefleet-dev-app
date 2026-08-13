@@ -2,6 +2,12 @@
  * HTTP-FLV 播放器元件
  * 使用 flv.js 在 Web 端播放 FLV 串流
  * 支援即時影像和歷史回放
+ *
+ * 控制層行為：
+ * - 播放時控制層預設隱藏（opacity: 0, pointerEvents: none）
+ * - hover 或點擊影片區域時 fade in 顯示（300ms 過渡動畫）
+ * - 顯示後 3 秒無互動自動 fade out 隱藏
+ * - 滑鼠離開播放區域時立即開始倒數隱藏
  */
 
 import { useEffect, useRef, useState, useCallback, memo } from 'react';
@@ -54,6 +60,10 @@ export interface FlvPlayerProps {
 }
 
 type PlayerState = 'idle' | 'loading' | 'playing' | 'paused' | 'error' | 'buffering' | 'waiting_for_interaction';
+
+/** 控制層淡入淡出動畫的時間參數（毫秒） */
+const CONTROLS_FADE_DURATION = 300;
+const CONTROLS_AUTO_HIDE_DELAY = 3000;
 
 interface DataUsageStats {
   bytesReceived: number;
@@ -117,6 +127,57 @@ function FlvPlayerComponent({
   const [isMuted, setIsMuted] = useState(muted);
   const [needsInteraction, setNeedsInteraction] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  /** 控制層是否正在顯示（用於 CSS 過渡動畫） */
+  const [controlsVisible, setControlsVisible] = useState(false);
+
+  // 控制層自動隱藏計時器
+  const hideControlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 清除自動隱藏計時器
+  const clearHideTimer = useCallback(() => {
+    if (hideControlsTimerRef.current) {
+      clearTimeout(hideControlsTimerRef.current);
+      hideControlsTimerRef.current = null;
+    }
+  }, []);
+
+  // 顯示控制層並設定自動隱藏
+  const showControlsWithTimer = useCallback(() => {
+    clearHideTimer();
+    setControlsVisible(true);
+    hideControlsTimerRef.current = setTimeout(() => {
+      setControlsVisible(false);
+      hideControlsTimerRef.current = null;
+    }, CONTROLS_AUTO_HIDE_DELAY);
+  }, [clearHideTimer]);
+
+  // 立即隱藏控制層（滑鼠離開）
+  const hideControls = useCallback(() => {
+    clearHideTimer();
+    setControlsVisible(false);
+  }, [clearHideTimer]);
+
+  // 滑鼠進入播放區域
+  const handleMouseEnter = useCallback(() => {
+    if (playerState === 'playing' || playerState === 'paused') {
+      setControlsVisible(true);
+      clearHideTimer();
+    }
+  }, [playerState, clearHideTimer]);
+
+  // 滑鼠離開播放區域
+  const handleMouseLeave = useCallback(() => {
+    hideControls();
+  }, [hideControls]);
+
+  // 點擊播放區域：切換控制層顯示
+  const handleContainerClick = useCallback((e: any) => {
+    // 如果點擊的是控制按鈕，不切換控制層
+    if (e?.target?.closest?.('[data-control-btn]')) {
+      return;
+    }
+    showControlsWithTimer();
+  }, [showControlsWithTimer]);
 
   // 處理使用者點擊（解除靜音和開始播放）
   const handleUserInteraction = useCallback(() => {
@@ -126,7 +187,7 @@ function FlvPlayerComponent({
       setIsMuted(false);
       setNeedsInteraction(false);
       hasUserInteracted.current = true;
-      
+
       const playPromise = videoRef.current.play();
       if (playPromise !== undefined) {
         playPromise.catch((err) => {
@@ -137,6 +198,13 @@ function FlvPlayerComponent({
       }
     }
   }, [needsInteraction]);
+
+  // 組件卸載時清理計時器
+  useEffect(() => {
+    return () => {
+      clearHideTimer();
+    };
+  }, [clearHideTimer]);
 
   // 切換靜音
   const toggleMute = useCallback(() => {
@@ -167,6 +235,20 @@ function FlvPlayerComponent({
         hasAudio: true,
         hasVideo: true,
         cors: true,
+        // 改善串流緩衝設定
+        enableStashBuffer: true,
+        stashInitialSize: 256 * 1024, // 256KB 初始緩衝（預設 128KB）
+        autoCleanupSourceBuffer: true,
+        autoCleanupMaxBackwardDuration: 3,  // 超過 3 秒往後快取就清理（減少記憶體）
+        autoCleanupMinBackwardDuration: 1,   // 最小保留 1 秒往後快取
+        // 降低延遲設定
+        lazyLoad: false,                   // 禁用懶加載，保持串流連續
+        lazyLoadMaxDuration: 0,
+        lazyLoadRecoverDuration: 0,
+        // 重連設定
+        liveBufferLatencyChasing: true,    // 直播串流追逐模式：即時追上進度
+        liveBufferLatencyMaxLatency: 2.0,  // 最大延遲 2 秒（可根據網路調整）
+        liveBufferLatencyMinRemain: 0.5,   // 最小保留 0.5 秒
       });
 
       player.attachMediaElement(videoRef.current);
@@ -199,19 +281,53 @@ function FlvPlayerComponent({
       player.on(flvjs.Events.ERROR, (errType: string, errDetail: string, errObject: any) => {
         console.error('[FlvPlayer] Error:', errType, errDetail, errObject);
         let errorMessage = `播放錯誤: ${errDetail}`;
-        
+
         // 根據錯誤類型提供更具體的錯誤訊息
         if (errType === 'NetworkError') {
-          errorMessage = '網路連線失敗，可能是：CORS 限制、串流伺服器無回應、或 session 已過期';
+          errorMessage = '網路連線失敗，正在嘗試重新連線...';
+          // 網路錯誤：自動重試一次（避免短暫網路波動導致播放中斷）
+          if (!playerRef.current?._retryingNetworkError) {
+            console.warn('[FlvPlayer] Network error, will retry once...');
+            if (playerRef.current) {
+              (playerRef.current as any)._retryingNetworkError = true;
+              setTimeout(() => {
+                if (playerRef.current) {
+                  (playerRef.current as any)._retryingNetworkError = false;
+                }
+                // 重新初始化播放器
+                initPlayer();
+              }, 1500);
+            }
+          } else {
+            errorMessage = '網路連線失敗，可能是：CORS 限制、串流伺服器無回應、或 session 已過期';
+          }
         } else if (errType === 'MediaError') {
-          errorMessage = '影片格式解析失敗';
+          errorMessage = '影片格式解析失敗，正在嘗試重新載入...';
+          // MediaError：自動重新初始化
+          if (!playerRef.current?._retryingMediaError) {
+            console.warn('[FlvPlayer] Media error, retrying...');
+            if (playerRef.current) {
+              (playerRef.current as any)._retryingMediaError = true;
+              setTimeout(() => {
+                if (playerRef.current) {
+                  (playerRef.current as any)._retryingMediaError = false;
+                }
+                initPlayer();
+              }, 1500);
+            }
+          } else {
+            errorMessage = '影片格式解析失敗';
+          }
         } else if (errDetail === 'HttpFLV: Load failed') {
           errorMessage = '無法載入 FLV 串流，請確認：1) 設備在線 2) session 有效 3) 串流伺服器正常';
         }
-        
-        setPlayerState('error');
-        setErrorMsg(errorMessage);
-        onError?.(errorMessage);
+
+        // 非網路/媒體錯誤才設置錯誤狀態
+        if (errType !== 'NetworkError' || (playerRef.current && (playerRef.current as any)._retryingNetworkError)) {
+          setPlayerState('error');
+          setErrorMsg(errorMessage);
+          onError?.(errorMessage);
+        }
       });
 
       // 直播串流不會有 LOADING_COMPLETE，忽略此事件
@@ -442,19 +558,28 @@ function FlvPlayerComponent({
 
   return (
     <View
-      ref={containerRef}
+      ref={containerRef as any}
       style={[styles.container, getAspectRatioStyle()]}
-      onClick={handleUserInteraction}
+      onClick={handleContainerClick}
     >
       {/* 影片元素 */}
       <video
-        ref={videoRef}
+        ref={videoRef as any}
         style={styles.video}
         muted={isMuted}
         playsInline
         autoPlay={autoplay}
         controls={false}
       />
+
+      {/* 滑鼠事件偵測層（透明的，觸發 hover 顯示控制層） */}
+      {controls && (playerState === 'playing' || playerState === 'paused') && (
+        <View
+          style={styles.mouseDetector}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+        />
+      )}
 
       {/* 等待使用者互動（Chrome 自動播放政策） */}
       {needsInteraction && (
@@ -505,81 +630,97 @@ function FlvPlayerComponent({
         </View>
       )}
 
-      {/* 控制欄 */}
+      {/* 控制欄 - hover/點擊顯示，自動隱藏 */}
       {controls && (playerState === 'playing' || playerState === 'paused') && (
         <View
-          style={styles.controlsOverlay}
-          onTouchEnd={() => setShowControls(!showControls)}
+          style={[
+            styles.controlsOverlay,
+            {
+              opacity: controlsVisible ? 1 : 0,
+              transition: `opacity ${CONTROLS_FADE_DURATION}ms ease-in-out`,
+              pointerEvents: controlsVisible ? 'box-none' : 'none',
+            }
+          ]}
         >
-          {showControls && (
-            <>
-              {/* 數據用量 */}
-              <View style={styles.dataUsageBar}>
-                <View style={styles.dataUsageItem}>
-                  <Wifi size={12} color={colors.textSecondary} />
-                  <Text style={styles.dataUsageText}>
-                    {formatDataSize(dataUsage.bytesReceived)}
-                  </Text>
-                </View>
-                <View style={styles.dataUsageItem}>
-                  <Text style={styles.dataUsageText}>
-                    {formatDuration(dataUsage.duration)}
-                  </Text>
-                </View>
-              </View>
-
-              {/* 播放控制 */}
-              <View style={styles.playbackControls}>
-                <Pressable style={styles.controlBtn} onPress={togglePlay}>
-                  {isPaused ? (
-                    <Play size={24} color="#FFFFFF" />
-                  ) : (
-                    <View style={styles.pauseIcon}>
-                      <View style={styles.pauseBar} />
-                      <View style={styles.pauseBar} />
-                    </View>
-                  )}
-                </Pressable>
-                <Pressable style={styles.controlBtn} onPress={toggleMute}>
-                  {isMuted ? (
-                    <VolumeX size={24} color="#FFFFFF" />
-                  ) : (
-                    <Volume2 size={24} color="#FFFFFF" />
-                  )}
-                </Pressable>
-              </View>
-
-              {/* 全屏按鈕 */}
-              <Pressable
-                style={styles.settingsBtn}
-                onPress={() => {
-                  if (containerRef.current) {
-                    if (!isFullScreen) {
-                      if (containerRef.current.requestFullscreen) {
-                        containerRef.current.requestFullscreen();
-                      } else if ((containerRef.current as any).webkitRequestFullscreen) {
-                        (containerRef.current as any).webkitRequestFullscreen();
-                      }
-                      setIsFullScreen(true);
-                    } else {
-                      if (document.exitFullscreen) {
-                        document.exitFullscreen();
-                      } else if ((document as any).webkitExitFullscreen) {
-                        (document as any).webkitExitFullscreen();
-                      }
-                      setIsFullScreen(false);
+          {/* 右上角全屏按鈕 */}
+          <View style={styles.topControls}>
+            <Pressable
+              style={[styles.settingsBtn, { pointerEvents: 'auto' }]}
+              data-control-btn
+              onPress={() => {
+                if (containerRef.current) {
+                  if (!isFullScreen) {
+                    if (containerRef.current.requestFullscreen) {
+                      containerRef.current.requestFullscreen();
+                    } else if ((containerRef.current as any).webkitRequestFullscreen) {
+                      (containerRef.current as any).webkitRequestFullscreen();
                     }
+                    setIsFullScreen(true);
+                  } else {
+                    if (document.exitFullscreen) {
+                      document.exitFullscreen();
+                    } else if ((document as any).webkitExitFullscreen) {
+                      (document as any).webkitExitFullscreen();
+                    }
+                    setIsFullScreen(false);
                   }
-                }}
+                }
+              }}
+            >
+              {isFullScreen ? (
+                <Minimize2 size={18} color="#FFFFFF" />
+              ) : (
+                <Maximize2 size={18} color="#FFFFFF" />
+              )}
+            </Pressable>
+          </View>
+
+          {/* 底部控制區 */}
+          <View style={styles.bottomControls}>
+            {/* 數據用量 */}
+            <View style={styles.dataUsageBar}>
+              <View style={styles.dataUsageItem}>
+                <Wifi size={12} color={colors.textSecondary} />
+                <Text style={styles.dataUsageText}>
+                  {formatDataSize(dataUsage.bytesReceived)}
+                </Text>
+              </View>
+              <View style={styles.dataUsageItem}>
+                <Text style={styles.dataUsageText}>
+                  {formatDuration(dataUsage.duration)}
+                </Text>
+              </View>
+            </View>
+
+            {/* 播放控制（居中） */}
+            <View style={styles.playbackControls}>
+              <Pressable
+                style={[styles.controlBtn, { pointerEvents: 'auto' }]}
+                data-control-btn
+                onPress={togglePlay}
               >
-                {isFullScreen ? (
-                  <Minimize2 size={18} color="#FFFFFF" />
+                {isPaused ? (
+                  <Play size={24} color="#FFFFFF" />
                 ) : (
-                  <Maximize2 size={18} color="#FFFFFF" />
+                  <View style={styles.pauseIcon}>
+                    <View style={styles.pauseBar} />
+                    <View style={styles.pauseBar} />
+                  </View>
                 )}
               </Pressable>
-            </>
-          )}
+              <Pressable
+                style={[styles.controlBtn, { pointerEvents: 'auto' }]}
+                data-control-btn
+                onPress={toggleMute}
+              >
+                {isMuted ? (
+                  <VolumeX size={24} color="#FFFFFF" />
+                ) : (
+                  <Volume2 size={24} color="#FFFFFF" />
+                )}
+              </Pressable>
+            </View>
+          </View>
         </View>
       )}
     </View>
@@ -598,6 +739,10 @@ const styles = StyleSheet.create({
     height: '100%',
     objectFit: 'contain',
     backgroundColor: '#0f0f1a',
+  },
+  mouseDetector: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 5,
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
@@ -675,10 +820,20 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FFFFFF',
   },
+  // 控制層：zIndex 10 以確保在影片之上
   controlsOverlay: {
     ...StyleSheet.absoluteFillObject,
+    zIndex: 10,
+    justifyContent: 'space-between',
+  },
+  topControls: {
+    flexDirection: 'row',
     justifyContent: 'flex-end',
-    pointerEvents: 'box-none',
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.sm,
+  },
+  bottomControls: {
+    alignItems: 'center',
   },
   dataUsageBar: {
     flexDirection: 'row',
@@ -724,9 +879,6 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   settingsBtn: {
-    position: 'absolute',
-    top: spacing.xs,
-    right: spacing.xs,
     width: 32,
     height: 32,
     borderRadius: 16,

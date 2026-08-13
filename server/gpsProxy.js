@@ -18,7 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const cryptoUtil = require('./sessionCrypto');
 
-const GPS_SERVER = 'console.onefleet.hk';
+const GPS_SERVER = process.env.GPS_SERVER || 'console.onefleet.hk';
 const PORT = 3001;
 
 // 管理員登入配置（用於影像功能）

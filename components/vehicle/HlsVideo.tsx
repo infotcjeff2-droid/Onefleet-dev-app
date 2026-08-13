@@ -9,8 +9,13 @@
  * 跨瀏覽器：
  *   - Chrome / Edge / Safari（macOS / iOS）：原生支援 HLS
  *   - Android Chrome / WebView：原生不支援 HLS，要用 hls.js
+ *
+ * 緩衝優化：
+ *   - 增大 maxBufferLength / maxMaxBufferLength 減少重新緩衝次數
+ *   - 啟用 liveSyncDurationCount 同步到直播邊緣
+ *   - 網路錯誤時自動重連（最多 3 次）
  */
-import { useEffect, useRef, memo } from 'react';
+import { useEffect, useRef, memo, useState } from 'react';
 import { View } from 'react-native';
 
 export interface HlsVideoProps {
@@ -23,6 +28,10 @@ export interface HlsVideoProps {
   muted?: boolean;
   /** 是否循環 */
   loop?: boolean;
+  /** 緩衝開始回調 */
+  onBuffering?: (buffering: boolean) => void;
+  /** 錯誤回調 */
+  onError?: (error: string) => void;
 }
 
 /**
@@ -42,10 +51,18 @@ function HlsVideoComponent({
   autoPlay = true,
   muted = true,
   loop = false,
+  onBuffering,
+  onError,
 }: HlsVideoProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const hlsInstanceRef = useRef<any>(null);
+  /** 自動重連計數 */
+  const retryCountRef = useRef(0);
+  const MAX_RETRY = 3;
+  /** 當前 URL（用於偵測變更） */
+  const urlRef = useRef<string>('');
+  const [isBuffering, setIsBuffering] = useState(false);
 
   // 載入影片 / 切換 URL
   useEffect(() => {
@@ -114,28 +131,76 @@ function HlsVideoComponent({
           }
           const hls = new Hls({
             enableWorker: true,
-            lowLatencyMode: false,
-            maxBufferLength: 30,
-            maxMaxBufferLength: 60,
+            // 緩衝優化：增大緩衝區減少重新緩衝次數
+            maxBufferLength: 30,        // 最多緩衝 30 秒（預設 30，設大一點讓直播更穩定）
+            maxMaxBufferLength: 120,    // 最大緩衝 120 秒（預設 60）
+            maxBufferSize: 50 * 1000 * 1000, // 最大緩衝 50MB
+            maxBufferHole: 0.5,        // 緩衝缺口閾值（預設 0.5）
+            // 直播優化：同步到直播邊緣，保持低延遲
+            liveSyncDurationCount: 3,   // 保持落後直播 3 個分段的延遲
+            liveMaxLatencyDurationCount: 8, // 最大落後 8 個分段
+            liveDurationInfinity: true, // 直播串流不應有 duration
+            // 降低延遲
+            lowLatencyMode: false,      // 關閉低延遲模式（可能增加卡頓）
+            // 網路錯誤容忍度
+            fragLoadingMaxRetry: 3,    // 每個分段最多重試 3 次
+            manifestLoadingMaxRetry: 3, // manifest 載入最多重試 3 次
           });
           hlsInstanceRef.current = hls;
           hls.loadSource(url);
           hls.attachMedia(video);
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
             console.log('[HlsVideo] manifest parsed, ready to play');
+            retryCountRef.current = 0; // 重置重試計數
             if (autoPlay) {
               video.play().catch((e: any) => console.warn('[HlsVideo] autoplay blocked', e));
             }
           });
           hls.on(Hls.Events.ERROR, (_e: any, data: any) => {
             console.warn('[HlsVideo] hls error', data?.type, data?.details, data?.fatal);
-            if (data?.fatal && Hls) {
-              if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-                hls.startLoad();
-              } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-                hls.recoverMediaError();
+            if (data?.fatal) {
+              switch (data.type) {
+                case Hls.ErrorTypes.NETWORK_ERROR:
+                  console.warn('[HlsVideo] Network error, attempting to recover...');
+                  if (retryCountRef.current < MAX_RETRY) {
+                    retryCountRef.current++;
+                    console.log(`[HlsVideo] Retry ${retryCountRef.current}/${MAX_RETRY}...`);
+                    // 重新載入 manifest
+                    hls.startLoad();
+                    setTimeout(() => {
+                      if (hlsInstanceRef.current) {
+                        hls.startLoad();
+                      }
+                    }, 2000);
+                  } else {
+                    console.error('[HlsVideo] Max retries reached, giving up');
+                    hls.destroy();
+                    onError?.('網路連線失敗，請檢查網路後重試');
+                  }
+                  break;
+                case Hls.ErrorTypes.MEDIA_ERROR:
+                  console.warn('[HlsVideo] Media error, attempting to recover...');
+                  hls.recoverMediaError();
+                  break;
+                default:
+                  console.error('[HlsVideo] Fatal error, destroying...');
+                  hls.destroy();
+                  onError?.(`播放錯誤: ${data?.details || '未知錯誤'}`);
+                  break;
               }
             }
+          });
+
+          // 緩衝狀態監聽
+          video.addEventListener('waiting', () => {
+            console.log('[HlsVideo] Waiting / buffering...');
+            setIsBuffering(true);
+            onBuffering?.(true);
+          });
+          video.addEventListener('playing', () => {
+            console.log('[HlsVideo] Playing');
+            setIsBuffering(false);
+            onBuffering?.(false);
           });
         })
         .catch((err) => {

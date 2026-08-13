@@ -286,6 +286,7 @@ export const en = {
     liveTracking: 'Live Tracking',
     liveTab: 'Live',
     historyTab: 'History',
+    recordingTab: 'Recording',
     trackingSectionTitle: 'Real-time Tracking',
     openFullScreenMonitor: 'Open Full Screen Monitor',
     vehicleInfo: 'Vehicle Info',

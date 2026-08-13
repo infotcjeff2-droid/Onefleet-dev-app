@@ -40,6 +40,12 @@ class WebStorage implements StorageAdapter {
       this.init();
       this._data[key] = value;
       this.save();
+      // 同步寫入獨立的 localStorage key，避免大 JSON 序列化瓶頸
+      try {
+        localStorage.setItem(key, value);
+      } catch {
+        // 靜默失敗，主要 storage 仍可工作
+      }
       return Promise.resolve();
     }
     return AsyncStorage.setItem(key, value);
@@ -48,6 +54,16 @@ class WebStorage implements StorageAdapter {
   async getItem(key: string): Promise<string | null> {
     if (isWeb) {
       this.init();
+      // 優先從獨立 localStorage 讀取（避免大 JSON 解析）
+      try {
+        const direct = localStorage.getItem(key);
+        if (direct !== null) {
+          this._data[key] = direct;
+          return Promise.resolve(direct);
+        }
+      } catch {
+        // 忽略錯誤
+      }
       return Promise.resolve(this._data[key] || null);
     }
     return AsyncStorage.getItem(key);
@@ -57,7 +73,16 @@ class WebStorage implements StorageAdapter {
     if (isWeb) {
       this.init();
       delete this._data[key];
-      this.save();
+      try {
+        this.save();
+      } catch {
+        // 當主 JSON 太大無法保存時，仍嘗試刪除獨立 key
+      }
+      try {
+        localStorage.removeItem(key);
+      } catch {
+        // 忽略錯誤
+      }
       return Promise.resolve();
     }
     return AsyncStorage.removeItem(key);

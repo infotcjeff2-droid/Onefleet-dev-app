@@ -54,14 +54,12 @@ function ConfigItem({
 function Gps808Panel() {
   const { t } = useTranslation();
   const colors = useThemeStore((s) => s.colors);
-  const { config, isConnected, isSaving, isLoading, error, loadConfig, testConnection, disconnect, clearError } = useGps808Store();
+  const { config, isConnected, isSaving, isLoading, error, testConnection, disconnect, clearError } = useGps808Store();
   const [localConfig, setLocalConfig] = useState(config);
   const [testing, setTesting] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
-  useEffect(() => {
-    loadConfig();
-  }, []);
+  // loadConfig 已在 _layout.tsx 中統一調用，無需重複調用
 
   useEffect(() => {
     setLocalConfig(config);

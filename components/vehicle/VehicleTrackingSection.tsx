@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/Card';
 import { GpsLiveTracker } from './GpsLiveTracker';
 import { GpsTrackHistory } from './GpsTrackHistory';
 import { FullScreenMonitor } from './FullScreenMonitor';
+import { VideoRecordingCard } from './VideoRecordingCard';
 import type { CameraFeedItem } from './CameraFeed';
 import { colors, spacing, typography } from '@/constants/theme';
 import { useTranslation } from '@/i18n';
@@ -20,6 +21,8 @@ interface VehicleTrackingSectionProps {
   cameraFeeds?: CameraFeedItem[];
 }
 
+type TabType = 'live' | 'history' | 'recording';
+
 export function VehicleTrackingSection({
   devIdno,
   plateNumber,
@@ -27,10 +30,10 @@ export function VehicleTrackingSection({
   cameraFeeds: propCameraFeeds,
 }: VehicleTrackingSectionProps) {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<'live' | 'history' | 'camera'>('live');
+  const [activeTab, setActiveTab] = useState<TabType>('live');
   const [showFullScreen, setShowFullScreen] = useState(false);
   const fadeAnim = useRef(new Animated.Value(1)).current;
-  const previousTabRef = useRef<'live' | 'history' | 'camera'>('live');
+  const previousTabRef = useRef<TabType>('live');
 
   // 根據設備 ID 自動生成 4 通道的攝影機配置
   const defaultCameraFeeds: CameraFeedItem[] = DEFAULT_CAMERA_LABELS.map((label, index) => ({
@@ -56,7 +59,7 @@ export function VehicleTrackingSection({
     }).start();
   }, [activeTab, fadeAnim]);
 
-  const renderTabButton = (tab: 'live' | 'history' | 'camera', label: string) => {
+  const renderTabButton = (tab: TabType, label: string) => {
     const isActive = activeTab === tab;
     return (
       <Pressable
@@ -97,6 +100,7 @@ export function VehicleTrackingSection({
         <View style={styles.tabBar}>
           {renderTabButton('live', t('vehicles.liveTab'))}
           {renderTabButton('history', t('vehicles.historyTab'))}
+          {renderTabButton('recording', t('vehicles.recordingTab'))}
           <View style={styles.tabBarUnderline} />
         </View>
 
@@ -108,11 +112,17 @@ export function VehicleTrackingSection({
               onStatusUpdate={onStatusUpdate}
               bare
             />
-          ) : (
+          ) : activeTab === 'history' ? (
             <GpsTrackHistory
               devIdno={devIdno}
               plateNumber={plateNumber}
               bare
+            />
+          ) : (
+            <VideoRecordingCard
+              devIdno={devIdno}
+              plateNumber={plateNumber}
+              height={280}
             />
           )}
         </Animated.View>

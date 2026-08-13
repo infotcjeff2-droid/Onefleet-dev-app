@@ -9,8 +9,8 @@ import {
   deleteVehicleFromSupabase,
   hasSupabaseEnv,
 } from '@/utils/fleetSync';
-import { useGps808Store } from './gps808Store';
-import { fetchGpsVehicles } from './gps808Store';
+import { useGps808Store, GpsDeviceStatusCache, GpsDeviceStatusType } from './gps808Store';
+import { fetchGpsVehicles, gps808Api } from './gps808Store';
 
 const LOCAL_STORAGE_KEY = 'vehicles_v_legacy'; // 保留舊本地 key
 

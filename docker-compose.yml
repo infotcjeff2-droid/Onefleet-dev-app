@@ -1,0 +1,22 @@
+version: '3.9'
+
+services:
+  gps-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: fleet-pro-gps-proxy:latest
+    container_name: fleet-gps-proxy
+    ports:
+      - "3001:3001"
+    environment:
+      - GPS_ADMIN_ACCOUNT=${GPS_ADMIN_ACCOUNT:-admin}
+      - GPS_ADMIN_PASSWORD_MD5=${GPS_ADMIN_PASSWORD_MD5:-4FF4C011268967DF32B6253CA0E7BDF0}
+      - GPS_SERVER=${GPS_SERVER:-console.onefleet.hk}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

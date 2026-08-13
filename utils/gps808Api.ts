@@ -56,25 +56,39 @@ function getWebBaseUrl(): string {
 }
 
 /**
- * 同步版本：取得 Web 端的 proxy 對外 base URL（不含 path）。
+ * 同步版本：取得 Web 端的 proxy 對外 base URL（不含 /api/gps path）。
  * 用途：在元件 render / 建構影像串流 URL 時即時取得正確的 host。
  *
  * 解析優先順序：
- *   1. EXPO_PUBLIC_GPS_PROXY_URL（雲端部署）
- *   2. window.location.origin（自動推算 host，把 port 換成 PROXY_PORT）
- *   3. http://localhost:3001（純本地 fallback）
+ *   1. 本機入口（localhost / 127.0.0.1 / ::1）→ 直接打 PROXY_PORT，
+ *      避免 expo metro dev server 攔截 /api/gps 路由
+ *   2. EXPO_PUBLIC_GPS_PROXY_URL（雲端部署）
+ *   3. window.location.origin（自動推算 host，把 port 換成 PROXY_PORT）
+ *   4. http://localhost:3001（純本地 fallback）
+ *
+ * 呼叫端範例： `${getWebProxyBaseUrlSync()}/api/gps/flv-stream?...`
+ *   → localhost 時  http://localhost:3001/api/gps/flv-stream
+ *   → 線上時      https://xxx.vercel.app/api/gps/flv-stream
  */
 export function getWebProxyBaseUrlSync(): string {
+  if (typeof window !== 'undefined' && (window as any).location?.hostname) {
+    const host = (window as any).location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
+      return `http://localhost:${PROXY_PORT}`;
+    }
+  }
+
   const envUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL;
   if (envUrl) {
-    return envUrl.replace(/\/$/, '');
+    // EXPO_PUBLIC_GPS_PROXY_URL 若含 /api/gps 要去掉，確保回傳一致格式
+    return envUrl.replace(/\/api\/gps\/?$/, '').replace(/\/$/, '');
   }
 
   if (typeof window !== 'undefined' && (window as any).location?.origin) {
-    return `${(window as any).location.origin}/api/gps`;
+    return (window as any).location.origin;
   }
 
-  return `http://localhost:${PROXY_PORT}/api/gps`;
+  return `http://localhost:${PROXY_PORT}`;
 }
 
 /** 清除 runtime cache — 切換 user 或 reload 之後使用 */
@@ -95,7 +109,16 @@ async function getEffectiveBaseUrl(): Promise<string> {
   if (!IS_WEB) {
     return 'https://console.onefleet.hk';
   }
-  // 優先使用上次呼叫 setServerUrl() 寫入的值，確保 login/ping 一定走一致的路徑
+  // Web 端：若當前頁面是 localhost / 127.0.0.1，強制走本機 proxy port，
+  // 避免 expo metro dev server 攔截 /api/gps 路由造成 400/404。
+  // 此情境下不走 storage 也不走 origin 拼接，直接指向 http://localhost:3001/api/gps。
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    const host = window.location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
+      return `http://localhost:${PROXY_PORT}/api/gps`;
+    }
+  }
+  // 其他 host（LAN / 線上）：維持原本的「storage → origin 拼接 → fallback」邏輯
   const stored = await getWebStoredServerUrl();
   if (stored) return stored.replace(/\/$/, '');
   return getWebBaseUrl();

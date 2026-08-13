@@ -1,0 +1,19 @@
+# 排除所有非必要檔案，縮小映像體積
+node_modules
+.git
+.expo
+assets
+public
+app
+components
+constants
+hooks
+pages
+server/**/*.js
+!server/gpsProxy.js
+store
+tailwind.config.js
+tsconfig.json
+*.md
+.env
+.env.*

@@ -1,0 +1,37 @@
+app = "fleet-pro-gps-proxy"
+primary_region = "hkg"  # 香港，接近 console.onefleet.hk
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "3001"
+  GPS_SERVER = "console.onefleet.hk"
+
+[http_service]
+  internal_port = 3001
+  force_https = true
+  auto_stop_machines = "idle"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+# 閒置時自動關機省錢，有請求時自動啟動
+[http_service.concurrency]
+  type = "connections"
+  hard_limit = 100
+  soft_limit = 80
+
+# 允許來自任何來源的請求（CORS proxy）
+[[http_service.checks]]
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "10s"
+  method = "GET"
+  path = "/health"
+  restart_limit = 3
+
+# 部署環境變數（在 Fly.io Dashboard 或 CLI 設定）：
+# fly secrets set GPS_ADMIN_ACCOUNT=your_account
+# fly secrets set GPS_ADMIN_PASSWORD_MD5=your_md5_password
+# fly secrets set GPS_SERVER=console.onefleet.hk
