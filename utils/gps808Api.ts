@@ -109,6 +109,13 @@ async function getEffectiveBaseUrl(): Promise<string> {
   if (!IS_WEB) {
     return 'https://console.onefleet.hk';
   }
+
+  // 檢測當前是否在 Vercel 環境
+  const isVercel = typeof window !== 'undefined' &&
+    (window.location?.hostname?.includes('vercel.app') ||
+     window.location?.hostname?.includes('vercel-dev.com') ||
+     process.env.VERCEL === '1');
+
   // Web 端：若當前頁面是 localhost / 127.0.0.1，強制走本機 proxy port，
   // 避免 expo metro dev server 攔截 /api/gps 路由造成 400/404。
   // 此情境下不走 storage 也不走 origin 拼接，直接指向 http://localhost:3001/api/gps。
@@ -118,13 +125,29 @@ async function getEffectiveBaseUrl(): Promise<string> {
       return `http://localhost:${PROXY_PORT}/api/gps`;
     }
   }
+
   // 其他 host（LAN / 線上）：維持原本的「storage → origin 拼接 → fallback」邏輯
+  // 但如果存儲的 URL 包含 localhost（從本地開發遺留），則忽略它
   const stored = await getWebStoredServerUrl();
-  if (stored) return stored.replace(/\/$/, '');
+  if (stored && !isVercel) {
+    return stored.replace(/\/$/, '');
+  }
   return getWebBaseUrl();
 }
 
 export async function setServerUrl(url: string): Promise<void> {
+  // 在 Vercel 環境下，不應該存儲 localhost URL
+  const isVercel = typeof window !== 'undefined' &&
+    (window.location?.hostname?.includes('vercel.app') ||
+     process.env.VERCEL === '1');
+
+  // 清理 localhost URL（從本地開發遺留）
+  if (isVercel && url.includes('localhost')) {
+    runtimeServerUrl = null;
+    await storage.removeItem(SERVER_URL_KEY);
+    return;
+  }
+
   runtimeServerUrl = url.replace(/\/$/, '');
   await storage.setItem(SERVER_URL_KEY, runtimeServerUrl);
 }
