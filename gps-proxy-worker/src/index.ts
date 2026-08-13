@@ -63,6 +63,10 @@ async function handleFlvStream(request: Request, url: URL): Promise<Response> {
   const stream = url.searchParams.get('stream') || '0';
   const jsessionId = url.searchParams.get('jsessionId') || '';
 
+  if (!devIdno) {
+    return new Response('Missing devIdno parameter', { status: 400 });
+  }
+
   const flvUrl = `http://${GPS_SERVER}:${GPS_VIDEO_PORT}/3/3?AVType=1&jsession=${encodeURIComponent(jsessionId)}&DevIDNO=${encodeURIComponent(devIdno)}&Channel=${channel}&Stream=${stream}`;
 
   console.log('[GPS Proxy] FLV URL:', flvUrl);
@@ -71,21 +75,50 @@ async function handleFlvStream(request: Request, url: URL): Promise<Response> {
     const response = await fetch(flvUrl, {
       headers: {
         'Accept': 'video/x-flv, application/octet-stream, */*',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       },
     });
 
-    // 使用 streaming 響應
-    const stream = response.body as ReadableStream;
+    const status = response.status;
+    const contentType = response.headers.get('content-type') || '';
 
-    return new Response(stream, {
-      status: response.status,
+    // 讀取響應內容（前 100 字節用於調試）
+    const buffer = await response.arrayBuffer();
+    const uint8Array = new Uint8Array(buffer);
+    const firstBytes = Array.from(uint8Array.slice(0, 20)).map(b => b.toString(16)).join(' ');
+
+    console.log('[GPS Proxy] FLV response - status:', status, 'content-type:', contentType, 'first-bytes:', firstBytes, 'size:', buffer.byteLength);
+
+    // FLV 文件應該以 'FLV' (0x46 0x4C 0x56) 開頭
+    const isFlv = firstBytes.startsWith('46 4c 56') || String.fromCharCode(uint8Array[0]) + String.fromCharCode(uint8Array[1]) + String.fromCharCode(uint8Array[2]) === 'FLV';
+
+    if (!isFlv && buffer.byteLength < 1000) {
+      // 不是 FLV 且響應很小，可能是錯誤信息
+      const textDecoder = new TextDecoder();
+      const text = textDecoder.decode(buffer);
+      console.error('[GPS Proxy] Not FLV content:', text.substring(0, 300));
+
+      return new Response(JSON.stringify({
+        error: 'Video server returned non-FLV content',
+        status,
+        contentType,
+        firstBytes,
+        preview: text.substring(0, 300),
+      }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // 返回 FLV 數據
+    return new Response(buffer, {
+      status: 200,
       headers: {
         'Content-Type': 'video/x-flv',
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Connection': 'keep-alive',
+        'Access-Control-Allow-Headers': '*',
+        'Cache-Control': 'no-cache',
       },
     });
   } catch (error) {
