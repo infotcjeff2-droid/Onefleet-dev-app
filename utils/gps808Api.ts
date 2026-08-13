@@ -735,56 +735,22 @@ export const gps808Api = {
       ? `http://console.onefleet.hk:6604/3/3?AVType=1&jsession=${jsession}&DevIDNO=${devIdno}&Channel=${channel}&Stream=${stream}`
       : `http://console.onefleet.hk:6604/3/3?AVType=1&DevIDNO=${devIdno}&Channel=${channel}&Stream=${stream}`;
 
-    // Web 端：透過代理服務器回傳影像 URL（避免瀏覽器 CORS 限制）
+    // 構建 proxy base URL
+    const proxyBase = getWebBaseUrl().replace(/\/api\/gps$/, '');
+
+    // Web 端：始終使用 Cloudflare Worker proxy URL
     if (IS_WEB) {
-      try {
-        const apiEndpoint = `/api/gps/video-url?${queryString}`;
-        const response = await fetch(apiEndpoint);
-        
-        if (response.ok) {
-          const data = await response.json();
-          
-          if (data.result === 0) {
-            const videoUrl = data.videoUrl || '';
-            const mediaIp = data.ip || '';
-            const mediaPort = data.port || '';
-            
-            let apiFlvUrl = data.flvUrl || '';
-            if (!apiFlvUrl && mediaIp && mediaPort) {
-              apiFlvUrl = `rtmp://${mediaIp}:${mediaPort}/live/${devIdno}_${channel}`;
-            }
-            
-            const apiHlsUrl = data.hlsUrl || '';
-            
-            return {
-              result: 0,
-              videoUrl: videoUrl || apiFlvUrl || apiHlsUrl,
-              flvUrl: apiFlvUrl || flvUrl,
-              hlsUrl: apiHlsUrl || hlsUrl,
-            };
-          }
-          
-          // 代理服務器失敗時，使用 808GPS 官方文檔的標準 URL
-          console.warn('[gps808Api] 代理獲取影像 URL 失敗，使用 808GPS 標準 URL:', data.error);
-          return {
-            result: 0,
-            videoUrl: protocol === 'hls' ? hlsUrl : flvUrl,
-            flvUrl,
-            hlsUrl,
-          };
-        } else {
-          return { result: -1, error: `API 錯誤: ${response.status}` };
-        }
-      } catch (err) {
-        console.error('[gps808Api] Web 端獲取影像 URL 失敗:', err);
-        // 即使代理失敗，也返回 808GPS 標準 URL（讓瀏覽器直接嘗試）
-        return {
-          result: 0,
-          videoUrl: protocol === 'hls' ? hlsUrl : flvUrl,
-          flvUrl,
-          hlsUrl,
-        };
-      }
+      // 直接構建 proxy URL（避免 fetch 失敗時返回不安全的 HTTP URL）
+      const streamPath = protocol === 'hls' ? 'hls-stream' : 'flv-stream';
+      const proxyFlvUrl = `${proxyBase}/api/gps/${streamPath}?devIdno=${devIdno}&channel=${channel}&stream=${stream}${jsession ? `&jsessionId=${jsession}` : ''}`;
+      const proxyHlsUrl = `${proxyBase}/api/gps/hls-stream?devIdno=${devIdno}&channel=${channel}&stream=${stream}${jsession ? `&jsessionId=${jsession}` : ''}`;
+
+      return {
+        result: 0,
+        videoUrl: proxyFlvUrl,
+        flvUrl: proxyFlvUrl,
+        hlsUrl: proxyHlsUrl,
+      };
     }
 
     // 原生端直接使用影像 URL（依據 808GPS 官方文檔格式）
