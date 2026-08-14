@@ -37,38 +37,20 @@ let runtimeServerUrl: string | null = null;
 /** 記憶體快取：避免每次 API 呼叫都做字串處理 */
 function getWebBaseUrl(): string {
   if (runtimeServerUrl) return runtimeServerUrl;
-
-  // 1. 公司內網檢測
-  if (typeof window !== 'undefined' && window.location?.hostname) {
-    const host = window.location.hostname;
-    const isLocalhost = host === 'localhost' || host === '127.0.0.1' || host === '::1';
-    const isIntranet = /^192\.168\.\d+\.\d+$/.test(host) ||
-                       /^10\.\d+\.\d+\.\d+$/.test(host) ||
-                       /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/.test(host) ||
-                       host.endsWith('.onefleet.hk') ||
-                       host === 'onefleet.hk';
-
-    if (isLocalhost || isIntranet) {
-      const port = isLocalhost ? PROXY_PORT : PROXY_PORT;
-      runtimeServerUrl = `http://${host}:${port}/api/gps`;
-      return runtimeServerUrl;
-    }
-  }
-
-  // 2. 雲端 URL（Vercel 部署）
+  // 1. 雲端 URL（Vercel 部署）
   const envUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL;
   if (envUrl) {
-    runtimeServerUrl = `${envUrl.replace(/\/$/, '')}/api/gps`;
+    runtimeServerUrl = envUrl.replace(/\/$/, '');
     return runtimeServerUrl;
   }
 
-  // 3. 動態 origin（同一網域的 /api/gps 路徑）
+  // 2. 動態 origin（同一網域的 /api/gps 路徑）
   if (typeof window !== 'undefined' && window.location?.origin) {
     runtimeServerUrl = `${window.location.origin}/api/gps`;
     return runtimeServerUrl;
   }
 
-  // 4. Fallback：localhost:3001
+  // 3. Fallback：localhost:3001
   runtimeServerUrl = `http://localhost:${PROXY_PORT}/api/gps`;
   return runtimeServerUrl;
 }
@@ -78,42 +60,21 @@ function getWebBaseUrl(): string {
  * 用途：在元件 render / 建構影像串流 URL 時即時取得正確的 host。
  *
  * 解析優先順序：
- *   1. 公司內網（192.168.x.x, 10.x.x.x, onefleet.hk）→ 使用本地代理
+ *   1. 本機入口（localhost / 127.0.0.1 / ::1）→ 直接打 PROXY_PORT，
+ *      避免 expo metro dev server 攔截 /api/gps 路由
  *   2. EXPO_PUBLIC_GPS_PROXY_URL（雲端部署）
  *   3. window.location.origin（自動推算 host，把 port 換成 PROXY_PORT）
  *   4. http://localhost:3001（純本地 fallback）
  *
  * 呼叫端範例： `${getWebProxyBaseUrlSync()}/api/gps/flv-stream?...`
- *   → 本地開發時  http://localhost:3001/api/gps/flv-stream
- *   → 公司內網  http://192.168.x.x:3001/api/gps/flv-stream
+ *   → localhost 時  http://localhost:3001/api/gps/flv-stream
  *   → 線上時      https://xxx.vercel.app/api/gps/flv-stream
  */
 export function getWebProxyBaseUrlSync(): string {
   if (typeof window !== 'undefined' && (window as any).location?.hostname) {
     const host = (window as any).location.hostname;
-
-    // 檢測是否為公司內網
-    const isLocalhost = host === 'localhost' || host === '127.0.0.1' || host === '::1';
-    const isIntranet = /^192\.168\.\d+\.\d+$/.test(host) ||
-                       /^10\.\d+\.\d+\.\d+$/.test(host) ||
-                       /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/.test(host) ||
-                       host.endsWith('.onefleet.hk') ||
-                       host === 'onefleet.hk' ||
-                       host.endsWith('.local') ||
-                       host === 'fleetpro';
-
-    if (isLocalhost || isIntranet) {
-      // 公司內網：使用本地代理服務器
-      // 動態計算本地代理 URL（將 web port 替換為 proxy port）
-      const port = (window as any).location.port;
-      const localProxyPort = PROXY_PORT; // 3001
-
-      if (isLocalhost) {
-        return `http://localhost:${localProxyPort}`;
-      }
-
-      // 內網其他機器：使用相同的 IP，port 3001
-      return `http://${host}:${localProxyPort}`;
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
+      return `http://localhost:${PROXY_PORT}`;
     }
   }
 

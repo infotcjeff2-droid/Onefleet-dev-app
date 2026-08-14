@@ -93,10 +93,9 @@ export default function VideoTestScreen() {
       const jsession = await gps808Api.getStoredSession();
 
       if (jsession && IS_WEB) {
-        const proxyBase = getWebProxyBaseUrlSync();
-        const streamPath = USE_HLS ? 'hls-stream' : 'flv-stream';
-        const url = `${proxyBase}/api/gps/${streamPath}?devIdno=${devIdno}&channel=${activeChannel}&stream=${quality === 'sd' ? 1 : 0}&jsessionId=${jsession}`;
-        setVideoUrl(url);
+        // 最簡單方法：iframe 嵌入 808GPS 官方 H5 播放器頁面
+        const iframeUrl = `https://console.onefleet.hk/808gps/open/hls/index.html?lang=zh&devIdno=${encodeURIComponent(devIdno)}&jsession=${encodeURIComponent(jsession)}&channel=${activeChannel}&stream=${quality === 'sd' ? 1 : 0}`;
+        setVideoUrl(iframeUrl);
       } else {
         // 原生端直接使用
         const result = await gps808Api.getLiveVideoUrl(devIdno, {
@@ -317,7 +316,21 @@ export default function VideoTestScreen() {
           <Text style={styles.sectionTitle}>播放器</Text>
           <View style={styles.playerContainer}>
             {isOnline && videoUrl ? (
-              USE_HLS ? (
+              IS_WEB ? (
+                // Web 端：iframe 嵌入 808GPS 官方 H5 播放器（最簡單方法）
+                <iframe
+                  src={videoUrl}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    border: 'none',
+                    backgroundColor: '#000',
+                    display: 'block',
+                  } as any}
+                  allow="autoplay; encrypted-media"
+                  allowFullScreen
+                />
+              ) : USE_HLS ? (
                 <HlsVideo
                   url={videoUrl}
                   autoPlay

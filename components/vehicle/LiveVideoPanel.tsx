@@ -47,7 +47,7 @@ export interface LiveVideoPanelProps {
 }
 
 type StreamQuality = 'sd' | 'hd';
-type PlaybackState = 'idle' | 'loading' | 'playing' | 'playing-hls' | 'error';
+type PlaybackState = 'idle' | 'loading' | 'playing' | 'playing-hls' | 'playing-iframe' | 'error';
 
 function LiveVideoPanelComponent({
   devIdno,
@@ -129,14 +129,14 @@ function LiveVideoPanelComponent({
       const jsession = await gps808Api.getStoredSession();
 
       if (jsession && IS_WEB) {
-        const streamParam = quality === 'sd' ? 1 : 0;
-        const proxyBase = getWebProxyBaseUrlSync();
-        const streamPath = USE_HLS ? 'hls-stream' : 'flv-stream';
-        const url = `${proxyBase}/api/gps/${streamPath}?devIdno=${devIdno}&channel=${activeChannel}&stream=${streamParam}&jsessionId=${jsession}`;
-        setVideoUrl(url);
-        setPlaybackState(USE_HLS ? 'playing-hls' : 'playing');
+        // 最簡單方法：直接 iframe 嵌入 808GPS 官方 H5 播放器頁面
+        // 完全不需要 CORS proxy 或串流代理，由官方播放器處理所有影像播放
+        const iframeUrl = `https://console.onefleet.hk/808gps/open/hls/index.html?lang=zh&devIdno=${encodeURIComponent(devIdno)}&jsession=${encodeURIComponent(jsession)}&channel=${activeChannel}&stream=${quality === 'sd' ? 1 : 0}`;
+        setVideoUrl(iframeUrl);
+        setPlaybackState('playing-iframe');
         onPlay?.();
-      } else {
+        return;
+      }
         // 原生端直接使用
         const result = await gps808Api.getLiveVideoUrl(devIdno, {
           channel: activeChannel,
@@ -258,6 +258,23 @@ function LiveVideoPanelComponent({
     }
 
     if (videoUrl) {
+      if (playbackState === 'playing-iframe') {
+        // 最簡單方法：iframe 嵌入 808GPS 官方 H5 播放器
+        return (
+          <iframe
+            src={videoUrl}
+            style={{
+              width: '100%',
+              height: '100%',
+              border: 'none',
+              backgroundColor: '#000',
+              display: 'block',
+            } as any}
+            allow="autoplay; encrypted-media"
+            allowFullScreen
+          />
+        );
+      }
       if (playbackState === 'playing-hls') {
         return (
           <HlsVideo

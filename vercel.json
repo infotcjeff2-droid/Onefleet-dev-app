@@ -2,7 +2,7 @@
   "buildCommand": "npx expo export --platform web",
   "outputDirectory": "dist",
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "headers": [
     {
@@ -10,8 +10,34 @@
       "headers": [
         { "key": "Access-Control-Allow-Origin", "value": "*" },
         { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, x-gps-jsession" },
-        { "key": "Access-Control-Expose-Headers", "value": "Set-Cookie" }
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, x-gps-jsession, Range" },
+        { "key": "Access-Control-Expose-Headers", "value": "Set-Cookie, Content-Length, Content-Range" }
+      ]
+    },
+    {
+      "source": "/api/gps/flv-stream",
+      "headers": [
+        { "key": "Content-Type", "value": "video/x-flv" },
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET, OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Range" },
+        { "key": "Cache-Control", "value": "no-cache" }
+      ]
+    },
+    {
+      "source": "/api/gps/hls-stream",
+      "headers": [
+        { "key": "Content-Type", "value": "application/vnd.apple.mpegurl" },
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Cache-Control", "value": "no-cache" }
+      ]
+    },
+    {
+      "source": "/api/gps/hls-segment",
+      "headers": [
+        { "key": "Content-Type", "value": "video/mp2t" },
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Cache-Control", "value": "public, max-age=10" }
       ]
     }
   ]

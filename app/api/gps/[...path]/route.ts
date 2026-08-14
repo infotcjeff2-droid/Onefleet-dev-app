@@ -1,16 +1,18 @@
 /**
  * Vercel GPS Proxy - Catch-all Route
  * 
- * 處理所有未匹配的 /api/gps/* 請求，轉發到 808GPS 服務器
+ * 處理所有 /api/gps/* 請求，轉發到 808GPS 服務器
+ * 包括 JSON API 和影像串流 (FLV/HLS)
  */
 
 const GPS_SERVER = 'console.onefleet.hk';
-const GPS_VIDEO_PORT = 6604;
+const GPS_VIDEO_PORT = '6604';
 
-// Session 緩存
+// Session 緩存（邊緣級別）
 let sessionCache: string | null = null;
 
-// 視頻流處理 - 使用標準 runtime（非 edge）
+export const runtime = 'edge';
+
 export async function GET(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const pathname = url.pathname;
@@ -28,145 +30,25 @@ export async function GET(request: Request): Promise<Response> {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
-  // 移除 /api/gps 前綴
-  const apiPath = pathname.replace(/^\/api\/gps/, '');
-  const queryString = searchParams.toString();
-  const fullPath = queryString ? `${apiPath}?${queryString}` : apiPath;
-
-  // ============ FLV 流處理 ============
-  if (apiPath.includes('/flv-stream')) {
-    return handleFlvStream(request, url, searchParams);
+  // ============ FLV 串流處理 ============
+  if (pathname.includes('/flv-stream')) {
+    return handleFlvStream(url);
   }
 
-  // ============ HLS 流處理 ============
-  if (apiPath.includes('/hls-stream')) {
-    return handleHlsStream(request, url, searchParams);
+  // ============ HLS m3u8 處理 ============
+  if (pathname.includes('/hls-stream')) {
+    return handleHlsStream(url);
+  }
+
+  // ============ HLS TS 分段處理 ============
+  if (pathname.includes('/hls-segment')) {
+    return handleHlsSegment(url);
   }
 
   // ============ JSON API 處理 ============
-  return handleJsonApi(request, fullPath, corsHeaders);
-}
-
-// ============ FLV 串流處理 ============
-async function handleFlvStream(request: Request, url: URL, searchParams: URLSearchParams): Promise<Response> {
-  const devIdno = searchParams.get('devIdno') || '';
-  const channel = searchParams.get('channel') || '0';
-  const stream = searchParams.get('stream') || '0';
-  const jsessionId = searchParams.get('jsessionId') || '';
-
-  if (!devIdno) {
-    return new Response('Missing devIdno', { status: 400 });
-  }
-
-  const flvUrl = `http://${GPS_SERVER}:${GPS_VIDEO_PORT}/3/3?AVType=1&jsession=${encodeURIComponent(jsessionId)}&DevIDNO=${encodeURIComponent(devIdno)}&Channel=${channel}&Stream=${stream}`;
-
-  console.log('[Vercel Proxy] FLV URL:', flvUrl);
-
-  try {
-    const response = await fetch(flvUrl, {
-      headers: {
-        'Accept': 'video/x-flv, */*',
-        'User-Agent': 'Mozilla/5.0',
-      },
-    });
-
-    if (!response.ok) {
-      return new Response(JSON.stringify({ error: 'Upstream error', status: response.status }), {
-        status: 502,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
-    // 檢查是否為 FLV
-    const initialBuffer = await response.arrayBuffer();
-    const uint8Array = new Uint8Array(initialBuffer);
-    const isFlv = uint8Array[0] === 0x46 && uint8Array[1] === 0x4C && uint8Array[2] === 0x56;
-
-    if (!isFlv && initialBuffer.byteLength < 500) {
-      const text = new TextDecoder().decode(initialBuffer);
-      return new Response(JSON.stringify({ error: 'Not FLV', preview: text.substring(0, 200) }), {
-        status: 502,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
-    // 流式傳輸
-    const readable = new ReadableStream({
-      start(controller) {
-        controller.enqueue(initialBuffer);
-        if (response.body) {
-          response.body.getReader().then(reader => {
-            const pump = () => reader.read().then(({ done, value }) => {
-              if (done) { controller.close(); return; }
-              controller.enqueue(value);
-              pump();
-            });
-            pump();
-          }).catch(e => controller.error(e));
-        } else {
-          controller.close();
-        }
-      },
-    });
-
-    return new Response(readable, {
-      status: 200,
-      headers: {
-        'Content-Type': 'video/x-flv',
-        'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'no-cache',
-      },
-    });
-  } catch (error) {
-    console.error('[Vercel Proxy] FLV error:', error);
-    return new Response(JSON.stringify({ error: String(error) }), { status: 502 });
-  }
-}
-
-// ============ HLS m3u8 處理 ============
-async function handleHlsStream(request: Request, url: URL, searchParams: URLSearchParams): Promise<Response> {
-  const devIdno = searchParams.get('devIdno') || '';
-  const channel = searchParams.get('channel') || '0';
-  const stream = searchParams.get('stream') || '0';
-  const jsessionId = searchParams.get('jsessionId') || '';
-
-  if (!devIdno) {
-    return new Response('Missing devIdno', { status: 400 });
-  }
-
-  const m3u8Filename = `1_${devIdno}_${channel}_${stream}.m3u8`;
-  const hlsUrl = `http://${GPS_SERVER}:${GPS_VIDEO_PORT}/hls/${m3u8Filename}?jsession=${encodeURIComponent(jsessionId)}`;
-
-  console.log('[Vercel Proxy] HLS URL:', hlsUrl);
-
-  try {
-    const response = await fetch(hlsUrl, {
-      headers: {
-        'Accept': '*/*',
-        'User-Agent': 'Mozilla/5.0',
-      },
-    });
-
-    const content = await response.text();
-
-    return new Response(content, {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/vnd.apple.mpegurl',
-        'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'no-cache',
-      },
-    });
-  } catch (error) {
-    console.error('[Vercel Proxy] HLS error:', error);
-    return new Response(JSON.stringify({ error: String(error) }), { status: 502 });
-  }
-}
-
-// ============ JSON API 處理 ============
-async function handleJsonApi(request: Request, fullPath: string, corsHeaders: Record<string, string>): Promise<Response> {
-  const url = new URL(request.url);
-  const searchParams = url.searchParams;
+  const apiPath = pathname.replace(/^\/api\/gps/, '');
+  const queryString = searchParams.toString();
+  const fullPath = queryString ? `${apiPath}?${queryString}` : apiPath;
 
   const jsessionId = request.headers.get('x-gps-jsession') ||
                      searchParams.get('jsessionId') ||
@@ -186,12 +68,12 @@ async function handleJsonApi(request: Request, fullPath: string, corsHeaders: Re
 
     const response = await fetch(gpsUrl, { headers });
 
-    // 提取並緩存 session
     const setCookie = response.headers.get('set-cookie');
     if (setCookie) {
       const match = setCookie.match(/JSESSIONID=([^;]+)/);
       if (match) {
         sessionCache = match[1];
+        console.log('[Vercel GPS Proxy] Session cached:', match[1].substring(0, 16) + '...');
       }
     }
 
@@ -210,7 +92,6 @@ async function handleJsonApi(request: Request, fullPath: string, corsHeaders: Re
   }
 }
 
-// POST 處理
 export async function POST(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const pathname = url.pathname;
@@ -228,6 +109,7 @@ export async function POST(request: Request): Promise<Response> {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
+  // JSON API 處理
   const apiPath = pathname.replace(/^\/api\/gps/, '');
   const queryString = searchParams.toString();
   const fullPath = queryString ? `${apiPath}?${queryString}` : apiPath;
@@ -249,6 +131,8 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     const gpsUrl = `https://${GPS_SERVER}${fullPath}`;
+    console.log(`[Vercel GPS Proxy] Forwarding POST to: ${gpsUrl}`);
+
     const response = await fetch(gpsUrl, {
       method: 'POST',
       headers,
@@ -260,6 +144,7 @@ export async function POST(request: Request): Promise<Response> {
       const match = setCookie.match(/JSESSIONID=([^;]+)/);
       if (match) {
         sessionCache = match[1];
+        console.log('[Vercel GPS Proxy] Session cached:', match[1].substring(0, 16) + '...');
       }
     }
 
@@ -275,5 +160,198 @@ export async function POST(request: Request): Promise<Response> {
   } catch (error) {
     console.error('[Vercel GPS Proxy] POST error:', error);
     return Response.json({ result: -1, error: String(error) }, { status: 502 });
+  }
+}
+
+// ============ FLV 串流處理函式 ============
+async function handleFlvStream(url: URL): Promise<Response> {
+  const devIdno = url.searchParams.get('devIdno') || '';
+  const channel = url.searchParams.get('channel') || '0';
+  const stream = url.searchParams.get('stream') || '0';
+  const jsessionId = url.searchParams.get('jsessionId') || '';
+
+  if (!devIdno) {
+    return new Response('Missing devIdno parameter', { status: 400 });
+  }
+
+  const flvUrl = `http://${GPS_SERVER}:${GPS_VIDEO_PORT}/3/3?AVType=1&jsession=${encodeURIComponent(jsessionId)}&DevIDNO=${encodeURIComponent(devIdno)}&Channel=${channel}&Stream=${stream}`;
+
+  console.log('[Vercel FLV] Fetching:', flvUrl.substring(0, 150) + '...');
+
+  try {
+    const response = await fetch(flvUrl, {
+      headers: {
+        'Accept': 'video/x-flv, application/octet-stream, */*',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      },
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      console.error('[Vercel FLV] Upstream error:', response.status, text.substring(0, 200));
+      return new Response(JSON.stringify({
+        error: 'Video server returned error',
+        status: response.status,
+        message: text.substring(0, 500),
+      }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (!response.body) {
+      return new Response('No response body', { status: 502 });
+    }
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        const reader = response.body!.getReader();
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+              controller.close();
+              break;
+            }
+            controller.enqueue(value);
+          }
+        } catch (error) {
+          console.error('[Vercel FLV] Stream error:', error);
+          controller.error(error);
+        }
+      },
+    });
+
+    return new Response(stream, {
+      status: 200,
+      headers: {
+        'Content-Type': 'video/x-flv',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Range',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    });
+  } catch (error) {
+    console.error('[Vercel FLV] Error:', error);
+    return new Response('FLV stream error: ' + String(error), { status: 502 });
+  }
+}
+
+// ============ HLS m3u8 處理函式 ============
+async function handleHlsStream(url: URL): Promise<Response> {
+  const devIdno = url.searchParams.get('devIdno') || '';
+  const channel = url.searchParams.get('channel') || '0';
+  const stream = url.searchParams.get('stream') || '0';
+  const jsessionId = url.searchParams.get('jsessionId') || '';
+
+  if (!devIdno) {
+    return new Response('Missing devIdno parameter', { status: 400 });
+  }
+
+  const m3u8Filename = `1_${devIdno}_${channel}_${stream}.m3u8`;
+  const hlsUrl = `http://${GPS_SERVER}:${GPS_VIDEO_PORT}/hls/${m3u8Filename}?jsession=${encodeURIComponent(jsessionId)}`;
+
+  console.log('[Vercel HLS] Fetching:', hlsUrl.substring(0, 150) + '...');
+
+  try {
+    const response = await fetch(hlsUrl, {
+      headers: {
+        'Accept': '*/*',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      },
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      console.error('[Vercel HLS] Upstream error:', response.status, text.substring(0, 200));
+      return new Response(`HLS upstream error: ${response.status}`, { status: 502 });
+    }
+
+    const text = await response.text();
+    const proxyBase = `${url.protocol}//${url.host}`;
+    const segSession = jsessionId ? `&jsessionId=${encodeURIComponent(jsessionId)}` : '';
+
+    const rewritten = text.split(/\r?\n/).map((line: string) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) {
+        return line;
+      }
+      if (trimmed.endsWith('.ts') || trimmed.includes('.ts?') || /^\d+\.ts/.test(trimmed)) {
+        return `${proxyBase}/api/gps/hls-segment?url=${encodeURIComponent(trimmed)}${segSession}`;
+      }
+      return line;
+    }).join('\n');
+
+    return new Response(rewritten, {
+      headers: {
+        'Content-Type': 'application/vnd.apple.mpegurl',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-cache',
+      },
+    });
+  } catch (error) {
+    console.error('[Vercel HLS] Error:', error);
+    return new Response('HLS stream error: ' + String(error), { status: 502 });
+  }
+}
+
+// ============ HLS TS 分段處理函式 ============
+async function handleHlsSegment(url: URL): Promise<Response> {
+  const segmentUrl = url.searchParams.get('url') || '';
+
+  if (!segmentUrl) {
+    return new Response('Missing segment url parameter', { status: 400 });
+  }
+
+  console.log('[Vercel HLS Segment] Fetching:', segmentUrl.substring(0, 200) + '...');
+
+  try {
+    const response = await fetch(segmentUrl, {
+      headers: {
+        'Accept': '*/*',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      },
+    });
+
+    if (!response.ok) {
+      console.error('[Vercel HLS Segment] Upstream error:', response.status);
+      return new Response('Segment upstream error', { status: 502 });
+    }
+
+    if (!response.body) {
+      return new Response('No response body', { status: 502 });
+    }
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        const reader = response.body!.getReader();
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+              controller.close();
+              break;
+            }
+            controller.enqueue(value);
+          }
+        } catch (error) {
+          console.error('[Vercel HLS Segment] Stream error:', error);
+          controller.error(error);
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'video/mp2t',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=10',
+      },
+    });
+  } catch (error) {
+    console.error('[Vercel HLS Segment] Error:', error);
+    return new Response('Segment error: ' + String(error), { status: 502 });
   }
 }

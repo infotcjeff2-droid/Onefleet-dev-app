@@ -79,30 +79,30 @@ async function handleFlvStream(request: Request, url: URL): Promise<Response> {
       },
     });
 
-    if (!response.ok) {
-      const text = await response.text();
-      console.error('[GPS Proxy] FLV upstream error:', response.status, text.substring(0, 200));
-      return new Response(JSON.stringify({ error: 'Upstream error', status: response.status }), {
-        status: response.status,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
+    const status = response.status;
+    const contentType = response.headers.get('content-type') || '';
 
-    // 檢查是否是錯誤響應（讀取前 100 字節）
-    const initialBuffer = await response.arrayBuffer();
-    const initialUint8 = new Uint8Array(initialBuffer);
-    const firstBytes = Array.from(initialUint8.slice(0, 10)).map(b => b.toString(16)).join(' ');
+    // 讀取響應內容（前 100 字節用於調試）
+    const buffer = await response.arrayBuffer();
+    const uint8Array = new Uint8Array(buffer);
+    const firstBytes = Array.from(uint8Array.slice(0, 20)).map(b => b.toString(16)).join(' ');
 
-    // FLV 應該以 'FLV' (0x46 0x4C 0x56) 開頭
-    const isFlv = firstBytes.startsWith('46 4c 56');
+    console.log('[GPS Proxy] FLV response - status:', status, 'content-type:', contentType, 'first-bytes:', firstBytes, 'size:', buffer.byteLength);
 
-    if (!isFlv && initialBuffer.byteLength < 500) {
+    // FLV 文件應該以 'FLV' (0x46 0x4C 0x56) 開頭
+    const isFlv = firstBytes.startsWith('46 4c 56') || String.fromCharCode(uint8Array[0]) + String.fromCharCode(uint8Array[1]) + String.fromCharCode(uint8Array[2]) === 'FLV';
+
+    if (!isFlv && buffer.byteLength < 1000) {
+      // 不是 FLV 且響應很小，可能是錯誤信息
       const textDecoder = new TextDecoder();
-      const text = textDecoder.decode(initialBuffer);
+      const text = textDecoder.decode(buffer);
       console.error('[GPS Proxy] Not FLV content:', text.substring(0, 300));
 
       return new Response(JSON.stringify({
         error: 'Video server returned non-FLV content',
+        status,
+        contentType,
+        firstBytes,
         preview: text.substring(0, 300),
       }), {
         status: 502,
@@ -110,39 +110,8 @@ async function handleFlvStream(request: Request, url: URL): Promise<Response> {
       });
     }
 
-    // 合併初始緩衝區和後續流
-    const stream = response.body;
-
-    // 創建新的可讀流，先發送初始數據，然後串流其餘部分
-    const initialChunk = initialBuffer;
-    let sentInitial = false;
-
-    const readableStream = new ReadableStream({
-      async start(controller) {
-        // 先發送初始緩衝區
-        controller.enqueue(initialChunk);
-        sentInitial = true;
-
-        // 然後串流其餘數據
-        if (stream) {
-          const reader = stream.getReader();
-          try {
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              controller.enqueue(value);
-            }
-          } catch (e) {
-            console.error('[GPS Proxy] Stream error:', e);
-          } finally {
-            reader.releaseLock();
-          }
-        }
-        controller.close();
-      },
-    });
-
-    return new Response(readableStream, {
+    // 返回 FLV 數據
+    return new Response(buffer, {
       status: 200,
       headers: {
         'Content-Type': 'video/x-flv',
@@ -150,7 +119,6 @@ async function handleFlvStream(request: Request, url: URL): Promise<Response> {
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
         'Access-Control-Allow-Headers': '*',
         'Cache-Control': 'no-cache',
-        'Transfer-Encoding': 'chunked',
       },
     });
   } catch (error) {
