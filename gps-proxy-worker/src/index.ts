@@ -11,8 +11,9 @@ const GPS_VIDEO_PORT = '6604';
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, x-gps-jsession, Cookie',
+  'Access-Control-Allow-Headers': 'Content-Type, x-gps-jsession, Cookie, Origin, Accept, Accept-Language',
   'Access-Control-Max-Age': '86400',
+  'Access-Control-Expose-Headers': 'Set-Cookie, JSESSIONID',
 };
 
 export default {
@@ -273,11 +274,26 @@ async function handleJsonApi(request: Request, url: URL): Promise<Response> {
 
     const data = await response.json();
 
+    // ★ 提取 Set-Cookie header 中的 session 並返回給客戶端
+    // 客戶端會從 JSON 中的 _proxySession 欄位讀取 session
+    const setCookie = response.headers.get('set-cookie');
+    if (setCookie) {
+      const match = setCookie.match(/JSESSIONID=([^;]+)/i);
+      if (match) {
+        (data as any)._proxySession = match[1];
+        console.log('[GPS Proxy] Extracted session from Set-Cookie:', match[1].substring(0, 16) + '...');
+      }
+    }
+
     return new Response(JSON.stringify(data), {
       status: response.status,
       headers: {
         'Content-Type': 'application/json',
-        ...corsHeaders,
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, x-gps-jsession, Cookie, Origin',
+        'Access-Control-Expose-Headers': 'Set-Cookie',
+        'Cache-Control': 'no-store',
       },
     });
   } catch (error) {

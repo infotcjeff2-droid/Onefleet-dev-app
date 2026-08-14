@@ -24,27 +24,52 @@ class WebStorage implements StorageAdapter {
       const stored = localStorage.getItem(this._storageKey);
       if (stored) {
         this._data = JSON.parse(stored);
+        console.log('[WebStorage] 從 localStorage 載入資料, keys:', Object.keys(this._data).length);
+      } else {
+        console.log('[WebStorage] localStorage 中無資料, 使用空物件');
       }
-    } catch {
+    } catch (e) {
+      console.warn('[WebStorage] localStorage 讀取失敗:', e);
       this._data = {};
     }
     this._init = true;
   }
 
   private save() {
-    localStorage.setItem(this._storageKey, JSON.stringify(this._data));
+    const jsonData = JSON.stringify(this._data);
+    try {
+      localStorage.setItem(this._storageKey, jsonData);
+      console.log('[WebStorage] 已儲存資料到 localStorage, 大小:', jsonData.length, 'bytes');
+    } catch (e) {
+      console.warn('[WebStorage] localStorage 儲存失敗 (可能已滿或被阻止):', e);
+      // 嘗試只儲存每個 key 到獨立的 localStorage item（減少單一 JSON 的大小）
+      this._saveIndividual();
+    }
+  }
+
+  /** 個別儲存每個 key 到獨立的 localStorage item */
+  private _saveIndividual() {
+    for (const [key, value] of Object.entries(this._data)) {
+      try {
+        localStorage.setItem(key, value);
+      } catch {
+        // 忽略
+      }
+    }
   }
 
   async setItem(key: string, value: string): Promise<void> {
     if (isWeb) {
       this.init();
       this._data[key] = value;
+      console.log('[WebStorage] setItem, key:', key, 'value length:', value.length);
       this.save();
       // 同步寫入獨立的 localStorage key，避免大 JSON 序列化瓶頸
       try {
         localStorage.setItem(key, value);
-      } catch {
-        // 靜默失敗，主要 storage 仍可工作
+        console.log('[WebStorage] setItem 已寫入獨立 localStorage key:', key);
+      } catch (e) {
+        console.warn('[WebStorage] 獨立 localStorage 寫入失敗:', e);
       }
       return Promise.resolve();
     }
@@ -59,12 +84,17 @@ class WebStorage implements StorageAdapter {
         const direct = localStorage.getItem(key);
         if (direct !== null) {
           this._data[key] = direct;
+          console.log('[WebStorage] getItem 從獨立 localStorage 讀取 key:', key);
           return Promise.resolve(direct);
         }
-      } catch {
-        // 忽略錯誤
+      } catch (e) {
+        console.warn('[WebStorage] 獨立 localStorage 讀取失敗:', e);
       }
-      return Promise.resolve(this._data[key] || null);
+      const result = this._data[key] || null;
+      if (result === null) {
+        console.log('[WebStorage] getItem 未找到 key:', key);
+      }
+      return Promise.resolve(result);
     }
     return AsyncStorage.getItem(key);
   }

@@ -61,6 +61,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   login: async (email: string, password: string) => {
     await new Promise((resolve) => setTimeout(resolve, 800));
 
+    // ★ 除錯日誌：登入流程開始
+    console.log('[authStore] login() 開始, email:', email);
+    console.log('[authStore] hasSupabaseEnv:', hasSupabaseEnv);
+
     // ★ 垃圾桶鎖定檢查：若此 email 仍在垃圾桶中（被軟刪,30 天保留期內）,
     //   即使密碼正確也拒絕登入,避免「軟刪後還能登入」的漏洞
     try {
@@ -202,10 +206,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return { success: true };
     }
 
+    // ★ 除錯日誌：內建帳號比對後，準備檢查 managed users
+    console.log('[authStore] 內建帳號比對完成，準備檢查 managed users');
+    console.log('[authStore] hasSupabaseEnv:', hasSupabaseEnv);
+
     // ── 2. Managed users(從本地 / Supabase 同步) ─────────────────────────────
     // 確保 users 已載入(否則直接從 storage 讀取)
     let managedUserList: { email: string; password?: string; companyId?: string; role: UserRole; id: string; name: string; phone?: string; avatar?: string; nameZh?: string; nameEn?: string; address?: string }[] = [];
     const { users, loadUsers, syncUsers } = await import('./userManagementStore').then((module) => module.useUserManagementStore.getState());
+    console.log('[authStore] userManagementStore 初始 users.length:', users.length);
     if (users.length === 0) {
       // users 未載入,先載入本地;若本地為空,嘗試從 Supabase 拉取
       await loadUsers();
@@ -236,6 +245,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const managedUser = managedUserList.find(
       (item) => typeof item?.email === 'string' && item.email.toLowerCase() === normalizedEmail && item.password === password
     );
+    console.log('[authStore] managed user 比對結果:', managedUser ? '找到' : '未找到');
     if (managedUser) {
       const { password: _password, ...userWithoutPassword } = managedUser;
       // 確保使用最新的 companyId(從 userManagementStore 取得)
@@ -248,6 +258,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return { success: true };
     }
 
+    console.log('[authStore] 登入失敗: Invalid email or password');
     return { success: false, error: 'Invalid email or password' };
   },
 

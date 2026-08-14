@@ -32,13 +32,14 @@ export async function POST(request: Request): Promise<Response> {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json',
       },
       body: new URLSearchParams({ account, password }),
     });
 
     const data = await response.json();
 
-    // 提取 session
+    // ★ 提取 session 並返回給客戶端（支援 _proxySession 格式）
     const setCookie = response.headers.get('set-cookie');
     if (setCookie) {
       const match = setCookie.match(/JSESSIONID=([^;]+)/);

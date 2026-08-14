@@ -10,8 +10,17 @@
       "headers": [
         { "key": "Access-Control-Allow-Origin", "value": "*" },
         { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, x-gps-jsession" },
-        { "key": "Access-Control-Expose-Headers", "value": "Set-Cookie" }
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, x-gps-jsession, Origin, Accept, Accept-Language" },
+        { "key": "Access-Control-Expose-Headers", "value": "Set-Cookie, JSESSIONID" },
+        { "key": "Access-Control-Max-Age", "value": "86400" }
+      ]
+    },
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, PUT, DELETE, OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" }
       ]
     }
   ]

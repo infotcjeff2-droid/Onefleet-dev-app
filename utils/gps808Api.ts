@@ -391,26 +391,42 @@ export const gps808Api = {
    */
   async login(account: string, password: string): Promise<Gps808LoginResult> {
     const base = await getEffectiveBaseUrl();
+    console.log('[GPS808] login() 開始');
+    console.log('[GPS808] 使用 base URL:', base);
+    console.log('[GPS808] 帳號:', account);
+    
     try {
       const headers: Record<string, string> = {
         'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'application/json',
       };
 
       // 808GPS API requires MD5 encrypted password via password parameter
       // 注意：如果密碼已經是 32 字元的 MD5 格式（由 relogin 傳入），則不再加密
       const isAlreadyEncrypted = /^[a-f0-9]{32}$/i.test(password);
       const encryptedPassword = isAlreadyEncrypted ? password : md5(password);
+      console.log('[GPS808] 密碼已加密:', isAlreadyEncrypted ? '是 (MD5)' : '否 (將加密)');
 
       const url = `${base}/StandardApiAction_login.action`;
+      console.log('[GPS808] 登入 URL:', url);
+      
+      const body = new URLSearchParams({ account, password: encryptedPassword }).toString();
+      console.log('[GPS808] 請求 body:', body.replace(/password=[^&]+/, 'password=***'));
+      
       const res = await fetch(url, {
         method: 'POST',
         headers,
-        body: new URLSearchParams({ account, password: encryptedPassword }).toString(),
+        body,
         ...(IS_WEB ? {} : { credentials: 'include' }),
       });
 
+      console.log('[GPS808] 響應狀態:', res.status);
+      console.log('[GPS808] 響應 headers:', Array.from(res.headers.entries()));
+      console.log('[GPS808] 響應 content-type:', res.headers.get('content-type'));
+      
       // 首先獲取響應文本
       const text = await res.text();
+      console.log('[GPS808] 響應內容 (前500字):', text.substring(0, 500));
 
       // 嘗試從 JSON 響應中提取 session（proxy 會在 JSON 中返回 _proxySession）
       let jsession: string | undefined;
@@ -418,15 +434,29 @@ export const gps808Api = {
 
       try {
         jsonResponse = JSON.parse(text);
+        console.log('[GPS808] JSON 解析成功, result:', (jsonResponse as any).result);
         // 從 proxy 返回的 JSON 中提取 session
         if (jsonResponse && typeof jsonResponse === 'object') {
-          if ((jsonResponse as Record<string, unknown>)._proxySession) {
-            jsession = (jsonResponse as Record<string, unknown>)._proxySession as string;
-            console.log('[GPS808] 從 proxy 響應中獲取 session:', jsession?.substring(0, 16) + '...');
+          // 支援 _proxySession (新格式) 和 jsession (直接返回)
+          const proxySession = (jsonResponse as Record<string, unknown>)._proxySession;
+          const directJsession = (jsonResponse as Record<string, unknown>).jsession;
+          if (proxySession) {
+            jsession = proxySession as string;
+            console.log('[GPS808] 從 _proxySession 獲取 session:', jsession?.substring(0, 16) + '...');
+          } else if (directJsession) {
+            jsession = directJsession as string;
+            console.log('[GPS808] 從 jsession 獲取 session:', jsession?.substring(0, 16) + '...');
+          }
+          
+          // 檢查登入結果
+          const resultCode = (jsonResponse as Record<string, unknown>).result;
+          console.log('[GPS808] 登入結果 code:', resultCode);
+          if (resultCode !== 0) {
+            console.log('[GPS808] 登入失敗, 錯誤訊息:', (jsonResponse as Record<string, unknown>).message);
           }
         }
-      } catch {
-        // 不是 JSON，嘗試從 header 提取
+      } catch (e) {
+        console.warn('[GPS808] JSON 解析失敗, 原始內容:', text.substring(0, 200));
       }
 
       // 如果沒有從 JSON 獲取到，嘗試從 headers 提取（原生環境）
@@ -474,11 +504,14 @@ export const gps808Api = {
       }
 
       if (text.includes('result":0') || text.includes('"result": 0')) {
+        console.log('[GPS808] 檢測到 result:0 但無 session');
         return { success: true, error: 'Login OK but no session received' };
       }
 
-      return { success: false, error: `Invalid credentials (${res.status})` };
+      console.log('[GPS808] 登入失敗: Invalid credentials 或網路錯誤');
+      return { success: false, error: `Invalid credentials (HTTP ${res.status})` };
     } catch (err) {
+      console.error('[GPS808] 網路錯誤:', err);
       return { success: false, error: `Network error: ${String(err)}` };
     }
   },

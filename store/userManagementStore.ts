@@ -102,9 +102,12 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
   syncError: null,
 
   loadUsers: async () => {
+    // ★ 除錯日誌
+    console.log('[userManagement] loadUsers() 開始');
     try {
       const stored = await storage.getItem(STORAGE_KEY);
       let users: ManagedUser[] = stored ? JSON.parse(stored) : [];
+      console.log('[userManagement] loadUsers 從 storage 載入 users.length:', users.length);
 
       // Migration: 如果 storage 已污染（含有 defaultDrivers 的 ID 但未經正常創建流程），
       // 清理掉這些啞資料，讓 users 保持乾淨。
@@ -113,6 +116,7 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
 
       // 再消毒一次：把缺 id / email 的結構不完整資料清掉，避免後續登入比對崩潰
       const sanitized = sanitizeUsers(migrated);
+      console.log('[userManagement] sanitizeUsers 後 users.length:', sanitized.length);
 
       if (sanitized.length < users.length) {
         users = sanitized;
@@ -129,6 +133,7 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
   },
 
   syncUsers: async () => {
+    console.log('[userManagement] syncUsers() 開始, hasSupabaseEnv:', hasSupabaseEnv);
     if (!hasSupabaseEnv) {
       return;
     }
