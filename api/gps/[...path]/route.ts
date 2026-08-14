@@ -1,7 +1,5 @@
 /**
  * Vercel GPS Proxy - Catch-all Route
- * 
- * 處理所有未匹配的 /api/gps/* 請求，轉發到 808GPS 服務器
  */
 
 export const runtime = 'edge';
@@ -13,8 +11,6 @@ export async function GET(request: Request): Promise<Response> {
   const pathname = url.pathname;
   const searchParams = url.searchParams;
 
-  console.log(`[GPS Proxy] GET: ${pathname}`);
-
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -25,7 +21,6 @@ export async function GET(request: Request): Promise<Response> {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
-  // 移除 /api/gps 前綴
   const apiPath = pathname.replace(/^\/api\/gps/, '');
   const queryString = searchParams.toString();
   const fullPath = queryString ? `${apiPath}?${queryString}` : apiPath;
@@ -43,8 +38,6 @@ export async function GET(request: Request): Promise<Response> {
     }
 
     const gpsUrl = `https://${GPS_SERVER}${fullPath}`;
-    console.log(`[GPS Proxy] Forwarding to: ${gpsUrl}`);
-
     const response = await fetch(gpsUrl, { headers });
     const data = await response.json();
 
@@ -56,7 +49,6 @@ export async function GET(request: Request): Promise<Response> {
       },
     });
   } catch (error) {
-    console.error('[GPS Proxy] GET error:', error);
     return Response.json({ result: -1, error: String(error) }, { status: 502 });
   }
 }
@@ -65,8 +57,6 @@ export async function POST(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const pathname = url.pathname;
   const searchParams = url.searchParams;
-
-  console.log(`[GPS Proxy] POST: ${pathname}`);
 
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -78,7 +68,6 @@ export async function POST(request: Request): Promise<Response> {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
-  // 移除 /api/gps 前綴
   const apiPath = pathname.replace(/^\/api\/gps/, '');
   const queryString = searchParams.toString();
   const fullPath = queryString ? `${apiPath}?${queryString}` : apiPath;
@@ -99,8 +88,6 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     const gpsUrl = `https://${GPS_SERVER}${fullPath}`;
-    console.log(`[GPS Proxy] Forwarding POST to: ${gpsUrl}`);
-
     const response = await fetch(gpsUrl, {
       method: 'POST',
       headers,
@@ -117,7 +104,6 @@ export async function POST(request: Request): Promise<Response> {
       },
     });
   } catch (error) {
-    console.error('[GPS Proxy] POST error:', error);
     return Response.json({ result: -1, error: String(error) }, { status: 502 });
   }
 }
