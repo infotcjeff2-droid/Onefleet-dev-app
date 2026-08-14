@@ -799,9 +799,9 @@ function StepTabBar({
       return 'locked';
     }
 
-    // 已完成的配送單：所有步驟都是 completed
+    // 已完成的配送單：所有步驟都是 completed，但當前查看的 tab 顯示為 current
     if (isCompleted) {
-      if (step === 'completed') return 'current';
+      if (step === currentStep) return 'current';
       return 'completed';
     }
 
