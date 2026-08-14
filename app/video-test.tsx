@@ -93,9 +93,13 @@ export default function VideoTestScreen() {
       const jsession = await gps808Api.getStoredSession();
 
       if (jsession && IS_WEB) {
-        // 最簡單方法：iframe 嵌入 808GPS 官方 H5 播放器頁面
-        const iframeUrl = `https://console.onefleet.hk/808gps/open/hls/index.html?lang=zh&devIdno=${encodeURIComponent(devIdno)}&jsession=${encodeURIComponent(jsession)}&channel=${activeChannel}&stream=${quality === 'sd' ? 1 : 0}`;
-        setVideoUrl(iframeUrl);
+        // Web 端：透過 Cloudflare Worker 代理 HLS 串流（避免 CORS）
+        // 808GPS 官方 H5 播放器頁面是 Flash 或需要手動互動，難以 iframe 嵌入
+        // hls.js 透過 Worker 取得 m3u8 + ts 片段是最穩定的方案
+        const streamParam = quality === 'sd' ? 1 : 0;
+        const workerBase = 'https://fleet-gps-proxy.infotcjeff2.workers.dev';
+        const hlsUrl = `${workerBase}/hls-stream?devIdno=${encodeURIComponent(devIdno)}&channel=${activeChannel}&stream=${streamParam}&jsessionId=${encodeURIComponent(jsession)}`;
+        setVideoUrl(hlsUrl);
       } else {
         // 原生端直接使用
         const result = await gps808Api.getLiveVideoUrl(devIdno, {
@@ -317,18 +321,13 @@ export default function VideoTestScreen() {
           <View style={styles.playerContainer}>
             {isOnline && videoUrl ? (
               IS_WEB ? (
-                // Web 端：iframe 嵌入 808GPS 官方 H5 播放器（最簡單方法）
-                <iframe
-                  src={videoUrl}
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    border: 'none',
-                    backgroundColor: '#000',
-                    display: 'block',
-                  } as any}
-                  allow="autoplay; encrypted-media"
-                  allowFullScreen
+                // Web 端：使用 hls.js 透過 Cloudflare Worker 代理 HLS 串流
+                // 808GPS 官方 H5 播放器頁面是 Flash 或需手動互動，難以 iframe 嵌入
+                <HlsVideo
+                  url={videoUrl}
+                  autoPlay
+                  muted={false}
+                  controls={true}
                 />
               ) : USE_HLS ? (
                 <HlsVideo
