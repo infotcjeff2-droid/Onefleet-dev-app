@@ -12,10 +12,17 @@ const GPS_VIDEO_PORT = '6604';
 const ADMIN_ACCOUNT = 'admin';
 const ADMIN_PASSWORD_MD5 = '4FF4C011268967DF32B6253CA0E7BDF0'; // MD5 of (hi2F/&}G2b9
 
-// Admin session 快取（避免每次 FLV 請求都重新登入）
-let cachedAdminSession: string | null = null;
-let cachedAdminSessionTime = 0;
-const ADMIN_SESSION_CACHE_TTL = 5 * 60 * 1000; // 5 分鐘快取
+// KV 中的 session 鍵名
+const KV_SESSION_KEY = 'admin_session';
+// Session 有效期 30 分鐘
+const SESSION_TTL_SECONDS = 30 * 60;
+
+interface Env {
+  GPS_SESSIONS: KVNamespace;
+}
+
+// 測試模式標誌（當 KV 未綁定時使用內存緩存）
+let useMemoryCache = false;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -26,12 +33,20 @@ const corsHeaders = {
 };
 
 export default {
-  async fetch(request: Request): Promise<Response> {
+  async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const pathname = url.pathname;
     const method = request.method;
 
     console.log(`[GPS Proxy] ${method}: ${pathname}`);
+
+    // 測試 KV 是否可用
+    if (env.GPS_SESSIONS) {
+      useMemoryCache = false;
+    } else {
+      useMemoryCache = true;
+      console.log('[GPS Proxy] KV not available, using memory cache');
+    }
 
     // CORS preflight
     if (method === 'OPTIONS') {
@@ -43,22 +58,35 @@ export default {
 
     // ============ 處理 FLV 串流 ============
     if (pathname.includes('/flv-stream')) {
-      return handleFlvStream(request, url);
+      return handleFlvStream(request, url, env);
     }
 
     // ============ 處理 HLS m3u8 ============
     if (pathname.includes('/hls-stream')) {
-      return handleHlsStream(request, url);
+      return handleHlsStream(request, url, env);
     }
 
     // ============ 處理 HLS TS 分段 ============
     if (pathname.includes('/hls-segment')) {
-      return handleHlsSegment(request, url);
+      return handleHlsSegment(request, url, env);
     }
 
     // ============ 處理視頻 URL ============
     if (pathname.includes('/video-url')) {
       return handleVideoUrl(request, url);
+    }
+
+    // ============ 測試端點 ============
+    if (pathname === '/test' || pathname === '/api/test') {
+      return new Response(JSON.stringify({
+        status: 'ok',
+        kv_available: !useMemoryCache,
+        server: GPS_SERVER,
+        timestamp: new Date().toISOString(),
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     // ============ 其他：JSON API ============
@@ -106,15 +134,24 @@ async function loginAdminSession(): Promise<string | null> {
 }
 
 /**
- * 獲取有效的 admin session（使用快取）
+ * 獲取有效的 admin session（使用 KV 或內存緩存）
  */
-async function getValidAdminSession(): Promise<string | null> {
-  const now = Date.now();
-
-  // 檢查快取是否有效
-  if (cachedAdminSession && (now - cachedAdminSessionTime) < ADMIN_SESSION_CACHE_TTL) {
-    console.log('[GPS Proxy] Using cached admin session');
-    return cachedAdminSession;
+async function getValidAdminSession(env: Env): Promise<string | null> {
+  // 嘗試從 KV 讀取
+  if (!useMemoryCache && env.GPS_SESSIONS) {
+    try {
+      const cached = await env.GPS_SESSIONS.get(KV_SESSION_KEY, 'json') as { session: string; timestamp: number } | null;
+      if (cached) {
+        const age = (Date.now() - cached.timestamp) / 1000;
+        if (age < SESSION_TTL_SECONDS) {
+          console.log('[GPS Proxy] Using KV cached session, age:', Math.round(age), 'seconds');
+          return cached.session;
+        }
+        console.log('[GPS Proxy] KV session expired, age:', Math.round(age), 'seconds');
+      }
+    } catch (e) {
+      console.error('[GPS Proxy] KV read error:', e);
+    }
   }
 
   // 獲取新 session
@@ -122,15 +159,25 @@ async function getValidAdminSession(): Promise<string | null> {
   const newSession = await loginAdminSession();
 
   if (newSession) {
-    cachedAdminSession = newSession;
-    cachedAdminSessionTime = now;
+    // 保存到 KV
+    if (!useMemoryCache && env.GPS_SESSIONS) {
+      try {
+        await env.GPS_SESSIONS.put(KV_SESSION_KEY, JSON.stringify({
+          session: newSession,
+          timestamp: Date.now(),
+        }), { expirationTtl: SESSION_TTL_SECONDS });
+        console.log('[GPS Proxy] Session saved to KV');
+      } catch (e) {
+        console.error('[GPS Proxy] KV write error:', e);
+      }
+    }
   }
 
   return newSession;
 }
 
 // ============ FLV 串流處理 ============
-async function handleFlvStream(request: Request, url: URL): Promise<Response> {
+async function handleFlvStream(request: Request, url: URL, env: Env): Promise<Response> {
   const devIdno = url.searchParams.get('devIdno') || '';
   const channel = url.searchParams.get('channel') || '0';
   const stream = url.searchParams.get('stream') || '0';
@@ -140,7 +187,7 @@ async function handleFlvStream(request: Request, url: URL): Promise<Response> {
   }
 
   // 始終使用 admin session（用戶端 session 沒有影像權限）
-  const jsessionId = await getValidAdminSession();
+  const jsessionId = await getValidAdminSession(env);
   if (!jsessionId) {
     return new Response(JSON.stringify({
       error: '無法獲取有效 session，請重試',
@@ -155,6 +202,7 @@ async function handleFlvStream(request: Request, url: URL): Promise<Response> {
   console.log('[GPS Proxy] FLV URL:', flvUrl);
 
   try {
+    // 使用流式轉發，不等待完整數據
     const response = await fetch(flvUrl, {
       headers: {
         'Accept': 'video/x-flv, application/octet-stream, */*',
@@ -165,79 +213,28 @@ async function handleFlvStream(request: Request, url: URL): Promise<Response> {
     const status = response.status;
     const contentType = response.headers.get('content-type') || '';
 
-    // 讀取響應內容（前 100 字節用於調試）
-    const buffer = await response.arrayBuffer();
-    const uint8Array = new Uint8Array(buffer);
-    const firstBytes = Array.from(uint8Array.slice(0, 20)).map(b => b.toString(16)).join(' ');
-
-    console.log('[GPS Proxy] FLV response - status:', status, 'content-type:', contentType, 'first-bytes:', firstBytes, 'size:', buffer.byteLength);
-
-    // FLV 文件應該以 'FLV' (0x46 0x4C 0x56) 開頭
-    const isFlv = firstBytes.startsWith('46 4c 56') || String.fromCharCode(uint8Array[0]) + String.fromCharCode(uint8Array[1]) + String.fromCharCode(uint8Array[2]) === 'FLV';
-
-    if (!isFlv && buffer.byteLength < 1000) {
-      // 不是 FLV 且響應很小，可能是錯誤信息
-      const textDecoder = new TextDecoder();
-      const text = textDecoder.decode(buffer);
-      console.error('[GPS Proxy] Not FLV content:', text.substring(0, 300));
-
-      // 可能是 session 過期，嘗試清除快取並重試一次
-      if (text.includes('not login') || text.includes('session') || text.includes('param error')) {
-        console.log('[GPS Proxy] Session might be invalid, retrying...');
-        cachedAdminSession = null;
-        cachedAdminSessionTime = 0;
-
-        const newJsession = await getValidAdminSession();
-        if (newJsession) {
-          const retryUrl = `http://${GPS_SERVER}:${GPS_VIDEO_PORT}/3/3?AVType=1&jsession=${encodeURIComponent(newJsession)}&DevIDNO=${encodeURIComponent(devIdno)}&Channel=${channel}&Stream=${stream}`;
-          const retryResponse = await fetch(retryUrl, {
-            headers: {
-              'Accept': 'video/x-flv, application/octet-stream, */*',
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            },
-          });
-
-          const retryBuffer = await retryResponse.arrayBuffer();
-          const retryIsFlv = String.fromCharCode(new Uint8Array(retryBuffer)[0]) + String.fromCharCode(new Uint8Array(retryBuffer)[1]) + String.fromCharCode(new Uint8Array(retryBuffer)[2]) === 'FLV';
-
-          if (retryIsFlv) {
-            console.log('[GPS Proxy] FLV retry successful');
-            return new Response(retryBuffer, {
-              status: 200,
-              headers: {
-                'Content-Type': 'video/x-flv',
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-                'Cache-Control': 'no-cache, no-store, must-revalidate',
-                'Connection': 'keep-alive',
-              },
-            });
-          }
-        }
-      }
-
-      return new Response(JSON.stringify({
-        error: 'Video server returned non-FLV content',
-        status,
-        contentType,
-        firstBytes,
-        preview: text.substring(0, 300),
-      }), {
-        status: 502,
-        headers: { 'Content-Type': 'application/json' },
+    // 流式轉發 FLV 數據
+    if (response.body) {
+      console.log('[GPS Proxy] Streaming FLV response, status:', status);
+      return new Response(response.body, {
+        status: 200,
+        headers: {
+          'Content-Type': 'video/x-flv',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+        },
       });
     }
 
-    // 返回 FLV 數據
-    return new Response(buffer, {
-      status: 200,
-      headers: {
-        'Content-Type': 'video/x-flv',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Connection': 'keep-alive',
-      },
+    // 如果沒有 body，返回錯誤
+    console.error('[GPS Proxy] No response body from FLV server');
+    return new Response(JSON.stringify({
+      error: 'No response body from video server',
+      status,
+    }), {
+      status: 502,
+      headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
     console.error('[GPS Proxy] FLV fetch error:', error);
@@ -252,7 +249,7 @@ async function handleFlvStream(request: Request, url: URL): Promise<Response> {
 }
 
 // ============ HLS m3u8 處理 ============
-async function handleHlsStream(request: Request, url: URL): Promise<Response> {
+async function handleHlsStream(request: Request, url: URL, env: Env): Promise<Response> {
   const devIdno = url.searchParams.get('devIdno') || '';
   const channel = url.searchParams.get('channel') || '0';
   const stream = url.searchParams.get('stream') || '0';
@@ -262,7 +259,7 @@ async function handleHlsStream(request: Request, url: URL): Promise<Response> {
   }
 
   // 始終使用 admin session
-  const jsessionId = await getValidAdminSession();
+  const jsessionId = await getValidAdminSession(env);
   if (!jsessionId) {
     return new Response(JSON.stringify({
       error: '無法獲取有效 session，請重試',
@@ -321,7 +318,7 @@ async function handleHlsStream(request: Request, url: URL): Promise<Response> {
 }
 
 // ============ HLS TS 分段處理 ============
-async function handleHlsSegment(request: Request, url: URL): Promise<Response> {
+async function handleHlsSegment(request: Request, url: URL, env: Env): Promise<Response> {
   const segmentUrl = url.searchParams.get('url') || '';
   const jsessionId = url.searchParams.get('jsessionId') || '';
 
@@ -330,7 +327,7 @@ async function handleHlsSegment(request: Request, url: URL): Promise<Response> {
   }
 
   // 始終使用 admin session
-  const adminSession = await getValidAdminSession();
+  const adminSession = await getValidAdminSession(env);
   const sessionToUse = adminSession || jsessionId;
 
   // 將 session 添加到分段 URL

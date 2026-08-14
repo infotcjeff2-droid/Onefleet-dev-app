@@ -1,3 +1,8 @@
 name = "final-gps-proxy"
 main = "dist/worker.mjs"
 compatibility_date = "2025-01-01"
+
+# KV 命名空間用於持久化 session
+[[kv_namespaces]]
+binding = "GPS_SESSIONS"
+id = "0847d9563387484ebefd945fa3ff0f08"
