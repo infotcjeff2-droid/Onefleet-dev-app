@@ -73,26 +73,33 @@ function getWebBaseUrl(): string {
  * 解析優先順序：
  *   1. 本機入口（localhost / 127.0.0.1 / ::1）→ 直接打 PROXY_PORT，
  *      避免 expo metro dev server 攔截 /api/gps 路由
- *   2. EXPO_PUBLIC_GPS_PROXY_URL（雲端部署）
- *   3. window.location.origin（自動推算 host，把 port 換成 PROXY_PORT）
+ *   2. window.location.origin（Vercel 部署時使用，指向自己的 Edge Function）
+ *   3. EXPO_PUBLIC_GPS_PROXY_URL（Cloudflare Worker URL，僅用於 JSON API）
  *   4. http://localhost:3001（純本地 fallback）
  *
  * 呼叫端範例： `${getWebProxyBaseUrlSync()}/api/gps/flv-stream?...`
  *   → localhost 時  http://localhost:3001/api/gps/flv-stream
- *   → 線上時      https://xxx.vercel.app/api/gps/flv-stream
+ *   → Vercel 時   https://xxx.vercel.app/api/gps/flv-stream
  */
 export function getWebProxyBaseUrlSync(): string {
   if (typeof window !== 'undefined' && (window as any).location?.hostname) {
     const host = (window as any).location.hostname;
+
+    // localhost 開發環境：使用本機 proxy
     if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
       return `http://localhost:${PROXY_PORT}`;
     }
-    // LAN / 其他 host：把當前 origin 的 port 換成 PROXY_PORT，
-    // 避免 expo metro dev server 攔截 /api/gps 路由造成 400/404。
-    // 例：http://192.168.1.55:8081 → http://192.168.1.55:3001
+
+    // Vercel 部署環境：使用當前頁面的 origin（指向 Vercel Edge Function）
+    if (host.includes('vercel.app') || host.includes('vercel-dev.com')) {
+      return (window as any).location.origin;
+    }
+
+    // LAN 訪問：把 port 從 metro dev server 換成 GPS proxy port
     if ((window as any).location?.port) {
       return `${(window as any).location.protocol}//${host}:${PROXY_PORT}`;
     }
+
     // 同源部署（reverse proxy）：origin 已經對應 proxy，直接用
     return (window as any).location.origin;
   }
@@ -139,10 +146,15 @@ async function getEffectiveBaseUrl(): Promise<string> {
     if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
       return `http://localhost:${PROXY_PORT}/api/gps`;
     }
+
+    // Vercel 環境：使用當前頁面的 origin（指向 Vercel Edge Function）
+    if (isVercel) {
+      return `${window.location.origin}/api/gps`;
+    }
   }
 
-  // 雲端 proxy URL（Vercel 部署或 LAN 環境指向已部署的 Worker）
-  // 一旦設定，LAN 環境也優先用它，避免沿用舊的、本地的 stored URL
+  // 雲端 proxy URL（Cloudflare Worker URL，僅用於 JSON API）
+  // 對於 Vercel 部署，影像串流使用 Vercel Edge Function（由 getWebProxyBaseUrlSync 處理）
   const envProxyUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL;
   if (envProxyUrl) {
     return envProxyUrl.replace(/\/$/, '') + (envProxyUrl.endsWith('/api/gps') ? '' : '/api/gps');
