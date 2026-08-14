@@ -9,6 +9,7 @@ import { useTranslation } from '@/i18n';
 import { spacing, typography } from '@/constants/theme';
 import { Cpu, Database, Wifi, Bell, Shield, FileText, Link2, ChevronRight, CheckCircle, XCircle, Globe, Activity, Map } from 'lucide-react-native';
 import { useState, useEffect } from 'react';
+import { showAlert, showConfirm } from '@/utils/webAlert';
 
 function ConfigItem({
   icon,
@@ -58,6 +59,7 @@ function Gps808Panel() {
   const [localConfig, setLocalConfig] = useState(config);
   const [testing, setTesting] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
 
   // loadConfig 已在 _layout.tsx 中統一調用，無需重複調用
 
@@ -67,7 +69,7 @@ function Gps808Panel() {
 
   const handleSave = async () => {
     if (!localConfig.account || !localConfig.password) {
-      Alert.alert(t('common.error'), t('config.gps808FillAll'));
+      showAlert(t('common.error'), t('config.gps808FillAll'));
       return;
     }
     setTesting(true);
@@ -75,15 +77,18 @@ function Gps808Panel() {
     setTesting(false);
     if (ok) {
       setIsEditing(false);
-      Alert.alert(t('common.success'), t('config.gps808Connected'));
+      showAlert(t('common.success'), t('config.gps808Connected'));
     } else {
-      Alert.alert(t('common.error'), error || t('config.gps808TestFailed'));
+      showAlert(
+        t('config.gps808LoginFailed'),
+        t('config.gps808LoginFailedMessage'),
+      );
     }
   };
 
   const handleTest = async () => {
     if (!localConfig.account || !localConfig.password) {
-      Alert.alert(t('common.error'), t('config.gps808FillAll'));
+      showAlert(t('common.error'), t('config.gps808FillAll'));
       return;
     }
     clearError();
@@ -91,33 +96,33 @@ function Gps808Panel() {
     const ok = await testConnection(localConfig);
     setTesting(false);
     if (ok) {
-      Alert.alert(t('common.success'), t('config.gps808Connected'));
+      showAlert(t('common.success'), t('config.gps808Connected'));
     } else {
-      Alert.alert(t('common.error'), error || t('config.gps808TestFailed'));
+      showAlert(
+        t('config.gps808LoginFailed'),
+        t('config.gps808LoginFailedMessage'),
+      );
     }
   };
 
-  const handleDisconnect = () => {
-    Alert.alert(
+  const handleDisconnect = async () => {
+    const confirmed = await showConfirm(
       t('config.gps808Disconnect'),
-      t('config.gps808DisconnectConfirm'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('common.confirm'),
-          style: 'destructive',
-          onPress: async () => {
-            await disconnect();
-            setLocalConfig({
-              serverUrl: 'https://console.onefleet.hk',
-              account: '',
-              password: '',
-            });
-            setIsEditing(false);
-          },
-        },
-      ],
+      t('config.gps808DisconnectWarning'),
+      t('common.confirm'),
+      t('common.cancel'),
     );
+    if (confirmed !== 'confirm') return;
+
+    setIsDisconnecting(true);
+    await disconnect();
+    setLocalConfig({
+      serverUrl: 'https://console.onefleet.hk',
+      account: '',
+      password: '',
+    });
+    setIsEditing(false);
+    setIsDisconnecting(false);
   };
 
   return (
@@ -156,6 +161,8 @@ function Gps808Panel() {
               title={t('config.gps808Disconnect')}
               variant="ghost"
               onPress={handleDisconnect}
+              loading={isDisconnecting}
+              disabled={isDisconnecting}
               style={{ flex: 1 }}
             />
           </View>
@@ -258,6 +265,8 @@ function Gps808Panel() {
               title={t('config.gps808Disconnect')}
               variant="ghost"
               onPress={handleDisconnect}
+              loading={isDisconnecting}
+              disabled={isDisconnecting}
               style={{ marginTop: spacing.md }}
             />
           )}
@@ -306,32 +315,27 @@ function GoogleMapsPanel() {
 
   const handleSave = async () => {
     if (!localApiKey.trim()) {
-      Alert.alert(t('common.error'), t('config.googleMapsApiKeyRequired'));
+      showAlert(t('common.error'), t('config.googleMapsApiKeyRequired'));
       return;
     }
     await saveConfig(localApiKey.trim());
     setLocalApiKey('');
     setIsEditing(false);
-    Alert.alert(t('common.success'), t('config.googleMapsSaved'));
+    showAlert(t('common.success'), t('config.googleMapsSaved'));
   };
 
-  const handleClear = () => {
-    Alert.alert(
+  const handleClear = async () => {
+    const confirmed = await showConfirm(
       t('config.googleMapsClear'),
       t('config.googleMapsClearConfirm'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('common.confirm'),
-          style: 'destructive',
-          onPress: async () => {
-            await clearConfig();
-            setLocalApiKey('');
-            setIsEditing(false);
-          },
-        },
-      ],
+      t('common.confirm'),
+      t('common.cancel'),
     );
+    if (confirmed !== 'confirm') return;
+
+    await clearConfig();
+    setLocalApiKey('');
+    setIsEditing(false);
   };
 
   return (

@@ -1,7 +1,7 @@
 import 'react-native-reanimated';
 import 'react-native-gesture-handler';
 import '@/global.css';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -16,7 +16,7 @@ import { useInventoryStore } from '@/store/inventoryStore';
 import { I18nProvider, useTranslation } from '@/i18n';
 import { FontScaleProvider } from '@/contexts/FontScaleContext';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { ClerkProvider } from '@clerk/expo';
 import { tokenCache } from '@/utils/tokenCache';
 import { useSyncClerkToSupabase } from '@/hooks/useSyncClerkToSupabase';
@@ -24,6 +24,7 @@ import { useEnsureUserProfile } from '@/hooks/useEnsureUserProfile';
 import { useSyncInventory } from '@/hooks/useSyncInventory';
 
 function AppContent() {
+  const router = useRouter();
   // 同步 Clerk session → Supabase auth（讓子 auth.uid() 能識別 Clerk user ID）
   useSyncClerkToSupabase();
   // 確保 OAuth 使用者首次登入時自動在 Supabase 建立 user_profile
@@ -33,6 +34,7 @@ function AppContent() {
 
   const checkAuth = useAuthStore((s) => s.checkAuth);
   const authLoading = useAuthStore((s) => s.isLoading);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const loadUsers = useUserManagementStore((s) => s.loadUsers);
   const syncUsers = useUserManagementStore((s) => s.syncUsers);
   const loadVehicles = useVehicleStore((s) => s.loadVehicles);
@@ -43,6 +45,28 @@ function AppContent() {
   const loadGpsConfig = useGps808Store((s) => s.loadConfig);
   const loadGoogleMapsConfig = useGoogleMapsStore((s) => s.loadConfig);
   const { isInitialized } = useTranslation();
+
+  // 防止重複 redirect
+  const hasRedirected = useRef(false);
+
+  // ── 登入保護：auth 檢查完成後，若未登入則導向登入頁 ──
+  useEffect(() => {
+    if (!isInitialized || authLoading) return;
+    if (isAuthenticated) {
+      hasRedirected.current = false;
+      return;
+    }
+    // auth 完成但未登入 → redirect
+    if (!hasRedirected.current) {
+      hasRedirected.current = true;
+      // 避免在 auth 相關頁面（login/register）無限 redirect
+      if (typeof window !== 'undefined') {
+        const path = window.location.pathname;
+        if (path.startsWith('/(auth)')) return;
+      }
+      router.replace('/(auth)/login');
+    }
+  }, [isInitialized, authLoading, isAuthenticated]);
 
   useEffect(() => {
     console.log('[GPS808] _layout.tsx: calling loadGpsConfig');
@@ -91,6 +115,12 @@ function AppContent() {
           <Stack.Screen name="onefleet-system-admin/fleet" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="onefleet-system-admin/dispatch" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="onefleet-system-admin/replenishment" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="onefleet-system-admin/user-management" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="onefleet-system-admin/customer-management" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="route-planner" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="video-test" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="warehouse" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="replenishment" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="+not-found" />
         </Stack>
     </>
