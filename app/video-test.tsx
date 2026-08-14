@@ -95,7 +95,7 @@ export default function VideoTestScreen() {
       if (jsession && IS_WEB) {
         const proxyBase = getWebProxyBaseUrlSync();
         const streamPath = USE_HLS ? 'hls-stream' : 'flv-stream';
-        const url = `${proxyBase}/api/gps/${streamPath}?devIdno=${devIdno}&channel=${activeChannel}&stream=${quality === 'sd' ? 1 : 0}&jsessionId=${jsession}`;
+        const url = `${proxyBase}/${streamPath}?devIdno=${devIdno}&channel=${activeChannel}&stream=${quality === 'sd' ? 1 : 0}&jsessionId=${jsession}`;
         setVideoUrl(url);
       } else {
         // 原生端直接使用
