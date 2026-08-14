@@ -23,8 +23,8 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     const formData = await request.formData();
-    const account = formData.get('account') as string;
-    const password = formData.get('password') as string;
+    const account = (formData as any).get('account') as string;
+    const password = (formData as any).get('password') as string;
 
     console.log('[Vercel GPS Proxy] Login attempt for:', account);
 
