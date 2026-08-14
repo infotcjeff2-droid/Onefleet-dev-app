@@ -15,6 +15,7 @@ import { gps808Api, getWebProxyBaseUrlSync } from '@/utils/gps808Api';
 import { useGps808Store } from '@/store/gps808Store';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 import { defaultColors } from '@/store/themeStore';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 
 const IS_WEB = Platform.OS === 'web';
 /** 手機不支援 flv.js，統一使用 HLS；PC 維持 FLV 以取得最低延遲 */
@@ -41,9 +42,10 @@ export default function VideoTestScreen() {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
+  const [isGpsReady, setIsGpsReady] = useState(false);
 
   // 從 store 獲取連線狀態
-  const { isConnected } = useGps808Store();
+  const { isConnected, loadConfig } = useGps808Store();
 
   // 獲取設備狀態
   const fetchDeviceStatus = useCallback(async () => {
@@ -131,12 +133,24 @@ export default function VideoTestScreen() {
     }
   }, [devIdno]);
 
+  // 確保 GPS 連線準備就緒後再獲取視頻
+  useEffect(() => {
+    if (!isConnected) {
+      setIsGpsReady(false);
+      return;
+    }
+    
+    // GPS 已連線，標記為就緒
+    setIsGpsReady(true);
+    console.log('[VideoTest] GPS session 就緒');
+  }, [isConnected]);
+
   // 設備 ID 改變時重新獲取影像 URL
   useEffect(() => {
-    if (isOnline) {
+    if (isOnline && isGpsReady) {
       fetchVideoUrl();
     }
-  }, [devIdno, activeChannel, quality]);
+  }, [devIdno, activeChannel, quality, isGpsReady]);
 
   // 格式化座標
   const formatCoordinate = (value: number | string | undefined, isLat: boolean) => {
@@ -316,7 +330,7 @@ export default function VideoTestScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>播放器</Text>
           <View style={styles.playerContainer}>
-            {isOnline && videoUrl ? (
+            {isOnline && isGpsReady && videoUrl ? (
               USE_HLS ? (
                 <HlsVideo
                   url={videoUrl}
@@ -334,6 +348,15 @@ export default function VideoTestScreen() {
                   onError={(err) => setPlaybackError(err)}
                 />
               )
+            ) : isOnline && !isGpsReady ? (
+              <View style={styles.noVideo}>
+                <LoadingSpinner size={32} />
+                <Text style={styles.noVideoText}>正在準備 GPS 連線...</Text>
+                <Pressable style={styles.refreshBtnSmall} onPress={() => loadConfig()}>
+                  <RefreshCw size={14} color={colors.primary} />
+                  <Text style={styles.refreshBtnTextSmall}>重試</Text>
+                </Pressable>
+              </View>
             ) : isOnline ? (
               <View style={styles.noVideo}>
                 <Video size={48} color={colors.textSecondary} />
@@ -503,6 +526,20 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     backgroundColor: colors.background,
     borderRadius: borderRadius.md,
+  },
+  refreshBtnSmall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    backgroundColor: colors.background,
+    borderRadius: borderRadius.sm,
+  },
+  refreshBtnTextSmall: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: '600',
+    color: colors.primary,
   },
   refreshBtnText: {
     fontSize: typography.fontSize.sm,

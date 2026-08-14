@@ -11,6 +11,27 @@ import {
 
 const IS_WEB = Platform.OS === 'web';
 const JSESSION_STORAGE_KEY = 'gps808_jsession';
+/** 儲存當前 session 所屬的用戶 ID（用於檢測用戶切換） */
+const JSESSION_USER_KEY = 'gps808_jsession_user';
+
+/** 保存 session 關聯的用戶 ID */
+async function saveSessionUserId(userId: string): Promise<void> {
+  try {
+    await storage.setItem(JSESSION_USER_KEY, userId);
+    console.log('[GPS808] Session userId 已保存:', userId);
+  } catch (e) {
+    console.warn('[GPS808] 保存 session userId 失敗:', e);
+  }
+}
+
+/** 獲取 session 關聯的用戶 ID */
+async function getSessionUserId(): Promise<string | null> {
+  try {
+    return await storage.getItem(JSESSION_USER_KEY);
+  } catch {
+    return null;
+  }
+}
 
 interface Gps808Config {
   serverUrl: string;
@@ -162,6 +183,17 @@ export const useGps808Store = create<Gps808State>((set, get) => {
       const userId = currentUser?.id || 'u-admin';
       console.log('[GPS808] loadConfig: userId =', userId);
 
+      // 檢測用戶是否切換：如果 session userId 與當前用戶不同，需要重新登入
+      const sessionUserId = await getSessionUserId();
+      let userSwitched = false;
+      if (sessionUserId && sessionUserId !== userId) {
+        console.log('[GPS808] 用戶切換檢測: session 屬於', sessionUserId, '但當前用戶是', userId);
+        userSwitched = true;
+        // 清除舊的 session，準備重新登入
+        await storage.removeItem(JSESSION_STORAGE_KEY);
+        await storage.removeItem(JSESSION_USER_KEY);
+      }
+
       // 優先從 Supabase 載入（多設備同步的核心）
       let parsed: Gps808Config | null = null;
       let cloudIsConnected = false;
@@ -216,6 +248,7 @@ export const useGps808Store = create<Gps808State>((set, get) => {
         // Try ping first
         const valid = await gps808Api.ping();
         if (valid) {
+          await saveSessionUserId(userId);
           set({ isConnected: true, isLoading: false });
           await storage.setItem(getStorageKey(), JSON.stringify(parsed));
           await upsertGps808ConfigToSupabase({
@@ -240,6 +273,7 @@ export const useGps808Store = create<Gps808State>((set, get) => {
           const result = await gps808Api.login(parsed.account, parsed.password);
           console.log('[GPS808] loadConfig: relogin result =', result);
           if (result.success) {
+            await saveSessionUserId(userId);
             await storage.setItem(getStorageKey(), JSON.stringify(parsed));
             set({ isConnected: true, isLoading: false });
             await upsertGps808ConfigToSupabase({
@@ -262,6 +296,7 @@ export const useGps808Store = create<Gps808State>((set, get) => {
       if (IS_WEB) {
         const jsessionStill = await storage.getItem(JSESSION_STORAGE_KEY);
         if (jsessionStill) {
+          await saveSessionUserId(userId);
           set({ isConnected: true });
 
           const valid = await gps808Api.ping();
@@ -271,6 +306,7 @@ export const useGps808Store = create<Gps808State>((set, get) => {
               await setServerUrl(proxyUrl);
               const result = await gps808Api.login(WEB_ENV_CONFIG.account, WEB_ENV_CONFIG.password);
               if (result.success) {
+                await saveSessionUserId(userId);
                 set({ isConnected: true, isLoading: false });
                 await upsertGps808ConfigToSupabase({
                   user_id: userId,
@@ -298,6 +334,7 @@ export const useGps808Store = create<Gps808State>((set, get) => {
         const result = await gps808Api.login(WEB_ENV_CONFIG.account, WEB_ENV_CONFIG.password);
         console.log('[GPS808] loadConfig: login result =', result);
         if (result.success) {
+          await saveSessionUserId(userId);
           set({ config: WEB_ENV_CONFIG, isConnected: true, isLoading: false });
           await storage.setItem(getStorageKey(), JSON.stringify(WEB_ENV_CONFIG));
           await upsertGps808ConfigToSupabase({
@@ -341,19 +378,20 @@ export const useGps808Store = create<Gps808State>((set, get) => {
       await setServerUrl(effectiveServerUrl);
       const result = await gps808Api.login(config.account, config.password);
       if (result.success) {
-      await storage.setItem(getStorageKey(), JSON.stringify({ ...config }));
-      set({ config, isConnected: true, isSaving: false });
+        await storage.setItem(getStorageKey(), JSON.stringify({ ...config }));
+        set({ config, isConnected: true, isSaving: false });
 
-      // 同步到 Supabase（多設備同步）
-      const currentUser = useAuthStore.getState().user;
-      const userId = currentUser?.id || 'u-admin';
-      await upsertGps808ConfigToSupabase({
-        user_id: userId,
-        server_url: config.serverUrl,
-        account: config.account,
-        password: config.password,
-        is_connected: true,
-      });
+        // 同步到 Supabase（多設備同步）
+        const currentUser = useAuthStore.getState().user;
+        const userId = currentUser?.id || 'u-admin';
+        await saveSessionUserId(userId);
+        await upsertGps808ConfigToSupabase({
+          user_id: userId,
+          server_url: config.serverUrl,
+          account: config.account,
+          password: config.password,
+          is_connected: true,
+        });
 
         return true;
       } else {
@@ -370,6 +408,8 @@ export const useGps808Store = create<Gps808State>((set, get) => {
   disconnect: async () => {
     await gps808Api.logout();
     await storage.removeItem(getStorageKey());
+    await storage.removeItem(JSESSION_STORAGE_KEY);
+    await storage.removeItem(JSESSION_USER_KEY);
 
     // 從 Supabase 刪除（多設備同步）
     const currentUser = useAuthStore.getState().user;

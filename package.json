@@ -76,7 +76,7 @@
     "react-test-renderer": "19.1.0",
     "sharp": "^0.35.3",
     "typescript": "~5.9.2",
-    "wrangler": "^4.123.0"
+    "wrangler": "^2.21.3"
   },
   "private": true
 }
