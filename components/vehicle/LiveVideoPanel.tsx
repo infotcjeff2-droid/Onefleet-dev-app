@@ -47,7 +47,7 @@ export interface LiveVideoPanelProps {
 }
 
 type StreamQuality = 'sd' | 'hd';
-type PlaybackState = 'idle' | 'loading' | 'playing' | 'playing-hls' | 'playing-worker' | 'error';
+type PlaybackState = 'idle' | 'loading' | 'playing' | 'playing-hls' | 'error';
 
 function LiveVideoPanelComponent({
   devIdno,
@@ -129,16 +129,14 @@ function LiveVideoPanelComponent({
       const jsession = await gps808Api.getStoredSession();
 
       if (jsession && IS_WEB) {
-        // Web 端：使用 hls.js 透過 Cloudflare Worker 代理 HLS 串流
-        // 808GPS 官方 H5 播放器頁面是 Flash 或需手動互動，難以 iframe 嵌入
         const streamParam = quality === 'sd' ? 1 : 0;
-        const workerBase = 'https://fleet-gps-proxy.infotcjeff2.workers.dev';
-        const hlsUrl = `${workerBase}/hls-stream?devIdno=${encodeURIComponent(devIdno)}&channel=${activeChannel}&stream=${streamParam}&jsessionId=${encodeURIComponent(jsession)}`;
-        setVideoUrl(hlsUrl);
-        setPlaybackState('playing-worker');
+        const proxyBase = getWebProxyBaseUrlSync();
+        const streamPath = USE_HLS ? 'hls-stream' : 'flv-stream';
+        const url = `${proxyBase}/api/gps/${streamPath}?devIdno=${devIdno}&channel=${activeChannel}&stream=${streamParam}&jsessionId=${jsession}`;
+        setVideoUrl(url);
+        setPlaybackState(USE_HLS ? 'playing-hls' : 'playing');
         onPlay?.();
-        return;
-      }
+      } else {
         // 原生端直接使用
         const result = await gps808Api.getLiveVideoUrl(devIdno, {
           channel: activeChannel,
@@ -260,8 +258,7 @@ function LiveVideoPanelComponent({
     }
 
     if (videoUrl) {
-      if (playbackState === 'playing-worker' || playbackState === 'playing-hls') {
-        // Web 端：使用 hls.js 透過 Cloudflare Worker 代理 HLS 串流
+      if (playbackState === 'playing-hls') {
         return (
           <HlsVideo
             url={videoUrl}

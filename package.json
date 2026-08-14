@@ -9,7 +9,9 @@
     "web": "expo start --web --host lan",
     "proxy": "node server/gpsProxy.js",
     "dev": "npm run proxy & npx expo start --web",
-    "postinstall": "node scripts/patch-query-core.js"
+    "postinstall": "node scripts/patch-query-core.js",
+    "deploy": "npx expo export -p web && wrangler deploy",
+    "preview": "npx expo export -p web && wrangler dev"
   },
   "dependencies": {
     "@clerk/expo": "^4.1.0",
@@ -73,7 +75,8 @@
     "eas-cli": "^20.5.1",
     "react-test-renderer": "19.1.0",
     "sharp": "^0.35.3",
-    "typescript": "~5.9.2"
+    "typescript": "~5.9.2",
+    "wrangler": "^4.123.0"
   },
   "private": true
 }

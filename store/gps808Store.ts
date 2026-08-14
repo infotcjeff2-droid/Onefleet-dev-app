@@ -76,14 +76,28 @@ const WEB_ENV_CONFIG: Gps808Config = {
 const WEB_AUTO_CONNECT = process.env.EXPO_PUBLIC_GPS808_AUTO_CONNECT === 'true';
 
 // 與 gps808Api.ts 保持一致的 proxy URL 解析邏輯
+// LAN 訪問時：把 port 從 metro (8081) 換成 GPS proxy (3001)
+
+/** 本機 GPS proxy port（需與 gps808Api.ts 的 PROXY_PORT 同步） */
+const PROXY_PORT_LOCAL = 3001;
+
 function getWebProxyUrl(): string {
   const envUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL;
   if (envUrl) return envUrl.replace(/\/$/, '');
 
-  if (typeof window !== 'undefined' && window.location?.origin) {
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    const host = window.location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
+      return `http://localhost:${PROXY_PORT_LOCAL}/api/gps`;
+    }
+    // LAN 訪問：把 port 從 metro dev server 換成 GPS proxy port
+    if (window.location?.port) {
+      return `${window.location.protocol}//${host}:${PROXY_PORT_LOCAL}/api/gps`;
+    }
+    // 同源部署（reverse proxy）：origin 已經對應 proxy
     return `${window.location.origin}/api/gps`;
   }
-  return `http://localhost:3001/api/gps`;
+  return `http://localhost:${PROXY_PORT_LOCAL}/api/gps`;
 }
 
 function getInitialConfig(): Gps808Config {

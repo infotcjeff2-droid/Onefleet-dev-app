@@ -44,8 +44,19 @@ function getWebBaseUrl(): string {
     return runtimeServerUrl;
   }
 
-  // 2. 動態 origin（同一網域的 /api/gps 路徑）
-  if (typeof window !== 'undefined' && window.location?.origin) {
+  // 2. 動態 origin：LAN 訪問時把 port 換成 PROXY_PORT
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    const host = window.location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
+      runtimeServerUrl = `http://localhost:${PROXY_PORT}/api/gps`;
+      return runtimeServerUrl;
+    }
+    // LAN 訪問：把 port 從 metro dev server 換成 GPS proxy port
+    if (window.location?.port) {
+      runtimeServerUrl = `${window.location.protocol}//${host}:${PROXY_PORT}/api/gps`;
+      return runtimeServerUrl;
+    }
+    // 同源部署（reverse proxy）：origin 已經對應 proxy
     runtimeServerUrl = `${window.location.origin}/api/gps`;
     return runtimeServerUrl;
   }
@@ -76,16 +87,20 @@ export function getWebProxyBaseUrlSync(): string {
     if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
       return `http://localhost:${PROXY_PORT}`;
     }
+    // LAN / 其他 host：把當前 origin 的 port 換成 PROXY_PORT，
+    // 避免 expo metro dev server 攔截 /api/gps 路由造成 400/404。
+    // 例：http://192.168.1.55:8081 → http://192.168.1.55:3001
+    if ((window as any).location?.port) {
+      return `${(window as any).location.protocol}//${host}:${PROXY_PORT}`;
+    }
+    // 同源部署（reverse proxy）：origin 已經對應 proxy，直接用
+    return (window as any).location.origin;
   }
 
   const envUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL;
   if (envUrl) {
     // EXPO_PUBLIC_GPS_PROXY_URL 若含 /api/gps 要去掉，確保回傳一致格式
     return envUrl.replace(/\/api\/gps\/?$/, '').replace(/\/$/, '');
-  }
-
-  if (typeof window !== 'undefined' && (window as any).location?.origin) {
-    return (window as any).location.origin;
   }
 
   return `http://localhost:${PROXY_PORT}`;
@@ -126,10 +141,17 @@ async function getEffectiveBaseUrl(): Promise<string> {
     }
   }
 
-  // 其他 host（LAN / 線上）：維持原本的「storage → origin 拼接 → fallback」邏輯
+  // 雲端 proxy URL（Vercel 部署或 LAN 環境指向已部署的 Worker）
+  // 一旦設定，LAN 環境也優先用它，避免沿用舊的、本地的 stored URL
+  const envProxyUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL;
+  if (envProxyUrl) {
+    return envProxyUrl.replace(/\/$/, '') + (envProxyUrl.endsWith('/api/gps') ? '' : '/api/gps');
+  }
+
+  // 其他 host（LAN，無 env）：維持原本的「storage → origin 拼接 → fallback」邏輯
   // 但如果存儲的 URL 包含 localhost（從本地開發遺留），則忽略它
   const stored = await getWebStoredServerUrl();
-  if (stored && !isVercel) {
+  if (stored && !isVercel && !stored.includes('localhost')) {
     return stored.replace(/\/$/, '');
   }
   return getWebBaseUrl();

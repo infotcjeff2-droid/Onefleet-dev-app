@@ -151,11 +151,7 @@ async function handleHlsStream(request: Request, url: URL): Promise<Response> {
     if (!response.ok) {
       const text = await response.text();
       console.error('[GPS Proxy] HLS error response:', text);
-      // 錯誤響應也要帶 CORS 標頭，否則瀏覽器會看到 CORS error 而非真實錯誤
-      return new Response(`HLS upstream error: ${response.status} ${text.substring(0, 100)}`, {
-        status: 502,
-        headers: corsHeaders,
-      });
+      return new Response(`HLS upstream error: ${response.status}`, { status: 502 });
     }
 
     const text = await response.text();
@@ -176,17 +172,14 @@ async function handleHlsStream(request: Request, url: URL): Promise<Response> {
 
     return new Response(rewritten, {
       headers: {
-        ...corsHeaders,
         'Content-Type': 'application/vnd.apple.mpegurl',
+        'Access-Control-Allow-Origin': '*',
         'Cache-Control': 'no-cache',
       },
     });
   } catch (error) {
     console.error('[GPS Proxy] HLS error:', error);
-    return new Response('HLS stream error: ' + String(error), {
-      status: 502,
-      headers: corsHeaders,
-    });
+    return new Response('HLS stream error: ' + String(error), { status: 502 });
   }
 }
 
