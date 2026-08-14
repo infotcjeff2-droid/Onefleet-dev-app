@@ -71,17 +71,23 @@ function getWebBaseUrl(): string {
  * 用途：在元件 render / 建構影像串流 URL 時即時取得正確的 host。
  *
  * 解析優先順序：
- *   1. 本機入口（localhost / 127.0.0.1 / ::1）→ 直接打 PROXY_PORT，
+ *   1. EXPO_PUBLIC_GPS_PROXY_URL（環境變數，雲端部署時優先使用）
+ *   2. 本機入口（localhost / 127.0.0.1 / ::1）→ 直接打 PROXY_PORT，
  *      避免 expo metro dev server 攔截 /api/gps 路由
- *   2. window.location.origin（Vercel 部署時使用，指向自己的 Edge Function）
- *   3. EXPO_PUBLIC_GPS_PROXY_URL（Cloudflare Worker URL，僅用於 JSON API）
- *   4. http://localhost:3001（純本地 fallback）
+ *   3. window.location.origin（其他部署環境）
  *
  * 呼叫端範例： `${getWebProxyBaseUrlSync()}/api/gps/flv-stream?...`
- *   → localhost 時  http://localhost:3001/api/gps/flv-stream
- *   → Vercel 時   https://xxx.vercel.app/api/gps/flv-stream
+ *   → 本地時  http://localhost:3001
+ *   → 雲端時  https://fleet-gps-proxy.xxx.workers.dev
  */
 export function getWebProxyBaseUrlSync(): string {
+  // 優先使用環境變數（Cloudflare Worker URL）
+  const envUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL;
+  if (envUrl) {
+    // 去掉 /api/gps 後綴，確保回傳一致格式
+    return envUrl.replace(/\/api\/gps\/?$/, '').replace(/\/$/, '');
+  }
+
   if (typeof window !== 'undefined' && (window as any).location?.hostname) {
     const host = (window as any).location.hostname;
 
@@ -90,24 +96,8 @@ export function getWebProxyBaseUrlSync(): string {
       return `http://localhost:${PROXY_PORT}`;
     }
 
-    // Vercel 部署環境：使用當前頁面的 origin（指向 Vercel Edge Function）
-    if (host.includes('vercel.app') || host.includes('vercel-dev.com')) {
-      return (window as any).location.origin;
-    }
-
-    // LAN 訪問：把 port 從 metro dev server 換成 GPS proxy port
-    if ((window as any).location?.port) {
-      return `${(window as any).location.protocol}//${host}:${PROXY_PORT}`;
-    }
-
-    // 同源部署（reverse proxy）：origin 已經對應 proxy，直接用
+    // 其他部署環境：使用當前頁面的 origin
     return (window as any).location.origin;
-  }
-
-  const envUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL;
-  if (envUrl) {
-    // EXPO_PUBLIC_GPS_PROXY_URL 若含 /api/gps 要去掉，確保回傳一致格式
-    return envUrl.replace(/\/api\/gps\/?$/, '').replace(/\/$/, '');
   }
 
   return `http://localhost:${PROXY_PORT}`;
@@ -126,44 +116,32 @@ async function getWebStoredServerUrl(): Promise<string | null> {
   }
 }
 
-/** Returns the effective base URL: stored URL > env/proxy URL > default. */
+/** Returns the effective base URL: env/proxy URL > stored URL > default. */
 async function getEffectiveBaseUrl(): Promise<string> {
   if (!IS_WEB) {
     return 'https://console.onefleet.hk';
   }
 
-  // 檢測當前是否在 Vercel 環境
-  const isVercel = typeof window !== 'undefined' &&
-    (window.location?.hostname?.includes('vercel.app') ||
-     window.location?.hostname?.includes('vercel-dev.com') ||
-     process.env.VERCEL === '1');
+  // 優先使用環境變數（Cloudflare Worker URL）
+  const envProxyUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL;
+  if (envProxyUrl) {
+    // 確保格式一致
+    const baseUrl = envProxyUrl.replace(/\/$/, '');
+    return baseUrl.endsWith('/api/gps') ? baseUrl : `${baseUrl}/api/gps`;
+  }
 
   // Web 端：若當前頁面是 localhost / 127.0.0.1，強制走本機 proxy port，
   // 避免 expo metro dev server 攔截 /api/gps 路由造成 400/404。
-  // 此情境下不走 storage 也不走 origin 拼接，直接指向 http://localhost:3001/api/gps。
   if (typeof window !== 'undefined' && window.location?.hostname) {
     const host = window.location.hostname;
     if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
       return `http://localhost:${PROXY_PORT}/api/gps`;
     }
-
-    // Vercel 環境：使用當前頁面的 origin（指向 Vercel Edge Function）
-    if (isVercel) {
-      return `${window.location.origin}/api/gps`;
-    }
   }
 
-  // 雲端 proxy URL（Cloudflare Worker URL，僅用於 JSON API）
-  // 對於 Vercel 部署，影像串流使用 Vercel Edge Function（由 getWebProxyBaseUrlSync 處理）
-  const envProxyUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL;
-  if (envProxyUrl) {
-    return envProxyUrl.replace(/\/$/, '') + (envProxyUrl.endsWith('/api/gps') ? '' : '/api/gps');
-  }
-
-  // 其他 host（LAN，無 env）：維持原本的「storage → origin 拼接 → fallback」邏輯
-  // 但如果存儲的 URL 包含 localhost（從本地開發遺留），則忽略它
+  // 其他 host（LAN，無 env）：使用 storage 或 origin 拼接
   const stored = await getWebStoredServerUrl();
-  if (stored && !isVercel && !stored.includes('localhost')) {
+  if (stored) {
     return stored.replace(/\/$/, '');
   }
   return getWebBaseUrl();
