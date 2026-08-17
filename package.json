@@ -10,8 +10,9 @@
     "proxy": "node server/gpsProxy.js",
     "dev": "npm run proxy & npx expo start --web",
     "postinstall": "node scripts/patch-query-core.js",
-    "deploy": "npx expo export -p web && wrangler deploy",
-    "preview": "npx expo export -p web && wrangler dev"
+    "build:web": "npx expo export -p web && node scripts/fix-import-meta.js",
+    "deploy": "npm run build:web && wrangler deploy",
+    "preview": "npm run build:web && wrangler dev"
   },
   "dependencies": {
     "@clerk/expo": "^4.1.0",
