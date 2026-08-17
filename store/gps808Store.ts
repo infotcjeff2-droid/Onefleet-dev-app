@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { storage } from '@/utils/storage';
+import { storage, isWebPlatform as IS_WEB } from '@/utils/storage';
 import { gps808Api, setServerUrl, Gps808Vehicle, resetServerUrlCache } from '@/utils/gps808Api';
 import { Platform } from 'react-native';
 import { useAuthStore } from './authStore';
@@ -9,7 +9,6 @@ import {
   deleteGps808ConfigFromSupabase,
 } from '@/utils/gps808Supabase';
 
-const IS_WEB = Platform.OS === 'web';
 const JSESSION_STORAGE_KEY = 'gps808_jsession';
 /** 儲存當前 session 所屬的用戶 ID（用於檢測用戶切換） */
 const JSESSION_USER_KEY = 'gps808_jsession_user';

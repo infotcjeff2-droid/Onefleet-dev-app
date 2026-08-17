@@ -697,10 +697,16 @@ export default function DeliveryScreen() {
   
   // 已分配列表：顯示「所有」assigned 狀態的單（不限日期）
   // 司機需要看到所有被分配給自己的單，不論 pickupTime 是今天還是明天
-  const assignedDeliveries = displayDeliveries.filter((delivery) => delivery.status === 'assigned');
+  // ★ 過濾：排除 pickupTime 已在今天之前的已分配訂單（那些已進入「已過期」tab）
+  const assignedDeliveries = displayDeliveries.filter((delivery) =>
+    delivery.status === 'assigned' && delivery.pickupTime.slice(0, 10) >= today
+  );
   
   // 配送中列表：顯示「所有」in_transit 狀態的單
-  const inTransitDeliveries = displayDeliveries.filter((delivery) => delivery.status === 'in_transit');
+  // ★ 過濾：排除 pickupTime 已在今天之前的配送中訂單（那些已進入「已過期」Tab）
+  const inTransitDeliveries = displayDeliveries.filter((delivery) =>
+    delivery.status === 'in_transit' && delivery.pickupTime.slice(0, 10) >= today
+  );
 
   // 已簽收：顯示所有已簽收的單
   const signedDeliveries = displayDeliveries.filter((delivery) => delivery.status === 'signed');
@@ -1189,7 +1195,7 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
 
-  section: { paddingHorizontal: spacing.lg, marginTop: spacing.xl, paddingBottom: 100 },
+  section: { flex: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.xl, paddingBottom: 100, justifyContent: 'center' },
   deliveryCard: { marginBottom: spacing.md, padding: 0, overflow: 'hidden' },
   cardHeader: {
     flexDirection: 'row',
@@ -1251,7 +1257,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.lg,
   },
   signedText: { fontSize: typography.fontSize.xs, color: colors.success, fontWeight: '600' },
-  emptyCard: { alignItems: 'center', paddingVertical: spacing.xxl, gap: spacing.md },
+  emptyCard: { alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.xxl, gap: spacing.md, minHeight: 200 },
   emptyText: { color: colors.textSecondary, fontSize: typography.fontSize.base },
   modalOverlay: {
     flex: 1,

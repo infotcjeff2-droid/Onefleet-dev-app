@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,18 +5,15 @@ import {
   Modal,
   Pressable,
   Platform,
+  ScrollView,
 } from 'react-native';
 import {
   X,
-  Play,
-  Radio,
-  ChevronRight,
-  WifiOff,
-  RefreshCw,
-  Gauge,
+  Database,
+  AlertTriangle,
 } from 'lucide-react-native';
-import { colors, borderRadius, spacing, typography } from '@/constants/theme';
-import { defaultColors } from '@/store/themeStore';
+import { borderRadius, spacing, typography } from '@/constants/theme';
+import { useVideoStreamStore, formatBytes } from '@/store/videoStreamStore';
 
 export type WatchMode = 'live' | 'playback';
 export type StreamQuality = 'sd' | 'hd';
@@ -31,80 +27,33 @@ export interface DataUsageStats {
 interface VideoControlPanelProps {
   visible: boolean;
   onClose: () => void;
-  mode: WatchMode;
-  onModeChange: (mode: WatchMode) => void;
-  quality: StreamQuality;
-  onQualityChange: (quality: StreamQuality) => void;
-  dataUsage?: DataUsageStats;
-  isOnline?: boolean;
-  supportsLive?: boolean;
-  supportsPlayback?: boolean;
-  onPlaybackPress?: () => void;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-}
-
-function formatDuration(seconds: number): string {
-  if (seconds === 0) return '0s';
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`;
-  }
-  if (minutes > 0) {
-    return `${minutes}m ${secs}s`;
-  }
-  return `${secs}s`;
-}
-
-function formatBitrate(kbps: number): string {
-  if (kbps >= 1000) {
-    return `${(kbps / 1000).toFixed(1)} Mbps`;
-  }
-  return `${kbps} kbps`;
+  /** 設備 ID，用於流量統計 */
+  devIdno?: string;
+  /** 車牌號 */
+  plateNumber?: string;
 }
 
 export function VideoControlPanel({
   visible,
   onClose,
-  mode,
-  onModeChange,
-  quality,
-  onQualityChange,
-  dataUsage,
-  isOnline = true,
-  supportsLive = true,
-  supportsPlayback = true,
-  onPlaybackPress,
+  devIdno,
+  plateNumber,
 }: VideoControlPanelProps) {
-  const handleModePress = (newMode: WatchMode) => {
-    if (newMode === 'playback' && mode !== 'playback') {
-      if (onPlaybackPress) {
-        onPlaybackPress();
-      } else {
-        onModeChange(newMode);
-      }
-    } else {
-      onModeChange(newMode);
-    }
+  const videoStreamStore = useVideoStreamStore();
+  const vehicleUsage = devIdno ? videoStreamStore.getVehicleUsage(devIdno) : null;
+  const settings = videoStreamStore.settings;
+
+  // 計算流量使用百分比
+  const dataUsagePercent = vehicleUsage
+    ? Math.min((vehicleUsage.bytesReceived / settings.maxDataLimit) * 100, 100)
+    : 0;
+
+  // 取得進度條顏色
+  const getProgressColor = (percent: number) => {
+    if (percent >= 90) return '#EF4444'; // 紅色
+    if (percent >= 70) return '#F59E0B'; // 橙色
+    return '#22C55E'; // 綠色
   };
-
-  const statsDisplay = useMemo(() => {
-    if (!dataUsage) return null;
-
-    const byteDisplay = formatBytes(dataUsage.bytesReceived);
-    const durationDisplay = formatDuration(dataUsage.duration);
-    const bitrateDisplay = formatBitrate(dataUsage.bitrate);
-
-    return { byteDisplay, durationDisplay, bitrateDisplay };
-  }, [dataUsage]);
 
   return (
     <Modal
@@ -113,132 +62,82 @@ export function VideoControlPanel({
       animationType="fade"
       onRequestClose={onClose}
     >
-      <Pressable style={styles.overlay} onPress={onClose}>
-        <Pressable style={styles.panel} onPress={e => e.stopPropagation()}>
+      <View style={styles.overlay}>
+        <View style={styles.panel}>
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>影片控制</Text>
+            <View style={styles.headerLeft}>
+              <Text style={styles.headerTitle}>流量設定</Text>
+              {plateNumber && (
+                <Text style={styles.headerSubtitle}>{plateNumber}</Text>
+              )}
+            </View>
             <Pressable onPress={onClose} style={styles.closeBtn}>
               <X size={20} color="#FFFFFF" />
             </Pressable>
           </View>
 
-          {/* Connection Status */}
-          {!isOnline && (
-            <View style={styles.offlineBanner}>
-              <WifiOff size={16} color="#FFFFFF" />
-              <Text style={styles.offlineText}>設備已離線</Text>
-            </View>
-          )}
-
-          {/* Watch Mode Selection */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>觀看模式</Text>
-            <View style={styles.modeGroup}>
-              {supportsLive && (
-                <Pressable
-                  style={[
-                    styles.modeBtn,
-                    mode === 'live' && styles.modeBtnActive,
-                  ]}
-                  onPress={() => handleModePress('live')}
-                >
-                  <Radio size={18} color={mode === 'live' ? '#FFFFFF' : colors.textSecondary} />
-                  <Text
-                    style={[
-                      styles.modeBtnText,
-                      mode === 'live' && styles.modeBtnTextActive,
-                    ]}
-                  >
-                    直播
-                  </Text>
-                </Pressable>
-              )}
-              {supportsPlayback && (
-                <Pressable
-                  style={[
-                    styles.modeBtn,
-                    mode === 'playback' && styles.modeBtnActive,
-                  ]}
-                  onPress={() => handleModePress('playback')}
-                >
-                  <Play size={18} color={mode === 'playback' ? '#FFFFFF' : colors.textSecondary} />
-                  <Text
-                    style={[
-                      styles.modeBtnText,
-                      mode === 'playback' && styles.modeBtnTextActive,
-                    ]}
-                  >
-                    回放
-                  </Text>
-                </Pressable>
-              )}
-            </View>
-          </View>
-
-          {/* Stream Quality Selection */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>畫質</Text>
-            <View style={styles.qualityGroup}>
-              <Pressable
-                style={[
-                  styles.qualityBtn,
-                  quality === 'sd' && styles.qualityBtnActive,
-                ]}
-                onPress={() => onQualityChange('sd')}
-              >
-                <Text
-                  style={[
-                    styles.qualityBtnText,
-                    quality === 'sd' && styles.qualityBtnTextActive,
-                  ]}
-                >
-                  標清
-                </Text>
-                <Text style={styles.qualityBtnSubtext}>節省流量</Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  styles.qualityBtn,
-                  quality === 'hd' && styles.qualityBtnActive,
-                ]}
-                onPress={() => onQualityChange('hd')}
-              >
-                <Text
-                  style={[
-                    styles.qualityBtnText,
-                    quality === 'hd' && styles.qualityBtnTextActive,
-                  ]}
-                >
-                  高清
-                </Text>
-                <Text style={styles.qualityBtnSubtext}>畫質優先</Text>
-              </Pressable>
-            </View>
-          </View>
-
-          {/* Data Usage Stats */}
-          {dataUsage && statsDisplay && (
+          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+            {/* 流量限額 Section */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>流量統計</Text>
-              <View style={styles.statsGrid}>
-                <View style={styles.statItem}>
-                  <Text style={styles.statValue}>{statsDisplay.byteDisplay}</Text>
-                  <Text style={styles.statLabel}>已傳輸</Text>
+              <View style={styles.limitHeader}>
+                <Database size={16} color="#FFFFFF" />
+                <Text style={styles.limitHeaderText}>流量限額（每車）</Text>
+              </View>
+
+              {/* Data Limit */}
+              <View style={styles.limitItem}>
+                <View style={styles.limitItemRow}>
+                  <Text style={styles.limitLabel}>已用 / 上限</Text>
+                  <Text style={styles.limitValue}>
+                    {formatBytes(vehicleUsage?.bytesReceived || 0)} / {formatBytes(settings.maxDataLimit)}
+                  </Text>
                 </View>
-                <View style={styles.statItem}>
-                  <Text style={styles.statValue}>{statsDisplay.durationDisplay}</Text>
-                  <Text style={styles.statLabel}>觀看時長</Text>
+                <View style={styles.progressBarBg}>
+                  <View
+                    style={[
+                      styles.progressBarFill,
+                      {
+                        width: `${dataUsagePercent}%`,
+                        backgroundColor: getProgressColor(dataUsagePercent),
+                      },
+                    ]}
+                  />
                 </View>
-                <View style={styles.statItem}>
-                  <Text style={styles.statValue}>{statsDisplay.bitrateDisplay}</Text>
-                  <Text style={styles.statLabel}>碼率</Text>
+                <View style={styles.limitItemRow}>
+                  <Text style={styles.limitPercentText}>
+                    {dataUsagePercent.toFixed(1)}%
+                  </Text>
+                  <Text style={styles.limitHintText}>
+                    最大 {formatBytes(settings.maxDataLimit)}
+                  </Text>
                 </View>
               </View>
             </View>
-          )}
-        </Pressable>
-      </Pressable>
+
+            {/* Warning/Alert Section */}
+            {dataUsagePercent >= 80 && dataUsagePercent < 100 && (
+              <View style={styles.warningSection}>
+                <AlertTriangle size={16} color="#F59E0B" />
+                <Text style={styles.warningText}>
+                  流量即將用盡
+                </Text>
+              </View>
+            )}
+
+            {dataUsagePercent >= 100 && (
+              <View style={styles.alertSection}>
+                <AlertTriangle size={16} color="#FFFFFF" />
+                <Text style={styles.alertText}>
+                  已達流量上限，播放將自動中斷
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.spacer} />
+          </ScrollView>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -246,28 +145,18 @@ export function VideoControlPanel({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
+    padding: spacing.lg,
   },
   panel: {
-    width: '90%',
-    maxWidth: 400,
-    backgroundColor: '#161A23',
+    width: '100%',
+    maxWidth: 360,
+    maxHeight: '80%',
+    backgroundColor: '#1E2530',
     borderRadius: borderRadius.xl,
     overflow: 'hidden',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 12,
-      },
-      android: {
-        elevation: 8,
-      },
-    }),
   },
   header: {
     flexDirection: 'row',
@@ -275,15 +164,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
-    backgroundColor: '#1E2530',
+    backgroundColor: '#2A3040',
     borderBottomWidth: 1,
-    borderBottomColor: '#2A3040',
+    borderBottomColor: '#3A4050',
+  },
+  headerLeft: {
+    flex: 1,
   },
   headerTitle: {
     fontSize: typography.fontSize.lg,
     fontWeight: '700',
     color: '#FFFFFF',
-    letterSpacing: 0.3,
+  },
+  headerSubtitle: {
+    fontSize: typography.fontSize.xs,
+    color: '#8B92A8',
+    marginTop: 2,
   },
   closeBtn: {
     width: 32,
@@ -293,109 +189,127 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  offlineBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.sm,
-    backgroundColor: '#EF4444',
-  },
-  offlineText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: '600',
-    color: '#FFFFFF',
+  content: {
+    flex: 1,
   },
   section: {
     padding: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: '#2A3040',
+    borderBottomColor: '#3A4050',
   },
   sectionTitle: {
     fontSize: typography.fontSize.sm,
     fontWeight: '600',
-    color: colors.textSecondary,
+    color: '#8B92A8',
     marginBottom: spacing.md,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  modeGroup: {
+  limitHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.sm,
+    marginBottom: spacing.md,
   },
-  modeBtn: {
+  limitHeaderText: {
+    fontSize: typography.fontSize.base,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  limitItem: {
+    marginBottom: spacing.md,
+  },
+  limitItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  limitLabel: {
+    fontSize: typography.fontSize.sm,
+    color: '#8B92A8',
+  },
+  limitValue: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  progressBarBg: {
+    height: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: spacing.xs,
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  limitPercentText: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  limitHintText: {
+    fontSize: typography.fontSize.xs,
+    color: '#8B92A8',
+  },
+  warningSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    padding: spacing.md,
+    backgroundColor: 'rgba(245, 158, 11, 0.2)',
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+  },
+  warningText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    color: '#F59E0B',
+    flex: 1,
+  },
+  alertSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    padding: spacing.md,
+    backgroundColor: '#EF4444',
+    borderRadius: borderRadius.md,
+  },
+  alertText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    flex: 1,
+  },
+  resetButtons: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  resetBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
-    backgroundColor: '#1a1a2e',
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderRadius: borderRadius.md,
     borderWidth: 1,
-    borderColor: '#2A3040',
+    borderColor: '#3A4050',
   },
-  modeBtnActive: {
-    backgroundColor: defaultColors.primary,
-    borderColor: defaultColors.primary,
-  },
-  modeBtnText: {
-    fontSize: typography.fontSize.base,
+  resetBtnText: {
+    fontSize: typography.fontSize.sm,
     fontWeight: '600',
-    color: colors.textSecondary,
-  },
-  modeBtnTextActive: {
     color: '#FFFFFF',
   },
-  qualityGroup: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  qualityBtn: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-    backgroundColor: '#1a1a2e',
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: '#2A3040',
-  },
-  qualityBtnActive: {
-    backgroundColor: defaultColors.primary,
-    borderColor: defaultColors.primary,
-  },
-  qualityBtnText: {
-    fontSize: typography.fontSize.base,
-    fontWeight: '700',
-    color: colors.textSecondary,
-    marginBottom: 2,
-  },
-  qualityBtnTextActive: {
-    color: '#FFFFFF',
-  },
-  qualityBtnSubtext: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textTertiary,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-    padding: spacing.md,
-    backgroundColor: '#1a1a2e',
-    borderRadius: borderRadius.md,
-  },
-  statValue: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: '700',
-    color: defaultColors.primary,
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textTertiary,
+  spacer: {
+    height: spacing.xl,
   },
 });

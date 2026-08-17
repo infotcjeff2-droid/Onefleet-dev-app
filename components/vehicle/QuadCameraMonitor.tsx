@@ -11,18 +11,22 @@ import {
   StatusBar,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { X, Maximize2, RefreshCw, WifiOff, Video, ChevronLeft, Play, Search, Download, Settings } from 'lucide-react-native';
+import { X, Maximize2, RefreshCw, WifiOff, Video, ChevronLeft, Play, Search, Download, Settings, AlertCircle } from 'lucide-react-native';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { VideoPlaybackSearch } from './VideoPlaybackSearch';
 import { VideoControlPanel, type WatchMode, type StreamQuality, type DataUsageStats } from './VideoControlPanel';
 import { useGps808Store } from '@/store/gps808Store';
 import { gps808Api } from '@/utils/gps808Api';
+import { useVideoStreamStore, formatBytes, formatDuration } from '@/store/videoStreamStore';
 import { colors, borderRadius, spacing, typography } from '@/constants/theme';
 import { useTranslation } from '@/i18n';
 import { defaultColors } from '@/store/themeStore';
 
 const IS_WEB = Platform.OS === 'web';
 const REFRESH_INTERVAL = 10_000;
+
+// 3 分鐘計時器常數
+const MAX_STREAMING_DURATION = 3 * 60; // 180 秒
 
 export interface CameraSource {
   id: string;
@@ -64,6 +68,16 @@ interface CameraSlotComponentProps {
   onPress: () => void;
   onRetry: () => void;
   quality?: StreamQuality;
+  /** 剩餘播放時間（秒） */
+  remainingTime?: number;
+  /** 已使用流量（bytes） */
+  dataUsed?: number;
+  /** 流量限額（bytes） */
+  dataLimit?: number;
+  /** 是否超限 */
+  isOverLimit?: boolean;
+  /** 流量限制警告訊息 */
+  limitWarning?: string;
 }
 
 function CameraSlotComponent({
@@ -72,8 +86,14 @@ function CameraSlotComponent({
   onPress,
   onRetry,
   quality = 'sd',
+  remainingTime = 0,
+  dataUsed = 0,
+  dataLimit = 0,
+  isOverLimit = false,
+  limitWarning,
 }: CameraSlotComponentProps) {
   const getStatusColor = () => {
+    if (isOverLimit) return '#EF4444';
     if (slot.resolvedUrl) return '#22C55E';
     if (slot.isLoading) return '#F59E0B';
     if (slot.isError) return '#EF4444';
@@ -90,14 +110,16 @@ function CameraSlotComponent({
       );
     }
 
-    if (slot.isError) {
+    if (slot.isError || isOverLimit) {
       return (
         <Pressable style={styles.slotPlaceholder} onPress={onRetry}>
           <WifiOff size={28} color="#EF4444" />
           <Text style={[styles.slotPlaceholderText, { color: '#EF4444' }]}>
-            {slot.errorMsg || '連線失敗'}
+            {isOverLimit ? (limitWarning || '流量/時長已達上限') : (slot.errorMsg || '連線失敗')}
           </Text>
-          <Text style={styles.slotRetryText}>點擊重試</Text>
+          <Text style={styles.slotRetryText}>
+            {isOverLimit ? '已自動斷開' : '點擊重試'}
+          </Text>
         </Pressable>
       );
     }
@@ -178,13 +200,49 @@ function CameraSlotComponent({
             {slot.label}
           </Text>
         </View>
-        {slot.resolvedUrl && (
-          <View style={styles.liveBadge}>
-            <View style={styles.liveDot} />
-            <Text style={styles.liveBadgeText}>LIVE</Text>
-          </View>
-        )}
+        <View style={styles.slotHeaderRight}>
+          {slot.resolvedUrl && !isOverLimit && (
+            <View style={styles.liveBadge}>
+              <View style={styles.liveDot} />
+              <Text style={styles.liveBadgeText}>LIVE</Text>
+            </View>
+          )}
+          {isOverLimit && (
+            <View style={[styles.liveBadge, { backgroundColor: '#EF4444' }]}>
+              <AlertCircle size={8} color="#FFFFFF" />
+              <Text style={styles.liveBadgeText}>超限</Text>
+            </View>
+          )}
+        </View>
       </View>
+
+      {/* Timer and Data Usage Bar */}
+      {slot.resolvedUrl && !isOverLimit && (remainingTime > 0 || dataUsed > 0) && (
+        <View style={styles.streamInfoBar}>
+          {remainingTime > 0 && (
+            <View style={styles.timerContainer}>
+              <Text style={styles.timerText}>
+                {Math.floor(remainingTime / 60)}:{String(remainingTime % 60).padStart(2, '0')}
+              </Text>
+            </View>
+          )}
+          {dataUsed > 0 && dataLimit > 0 && (
+            <View style={styles.dataUsageContainer}>
+              <Text style={styles.dataUsageText}>
+                {formatBytes(dataUsed)} / {formatBytes(dataLimit)}
+              </Text>
+              <View style={styles.dataUsageBar}>
+                <View
+                  style={[
+                    styles.dataUsageProgress,
+                    { width: `${Math.min((dataUsed / dataLimit) * 100, 100)}%` }
+                  ]}
+                />
+              </View>
+            </View>
+          )}
+        </View>
+      )}
 
       {/* Video Content */}
       <View style={styles.slotVideoArea}>{renderContent()}</View>
@@ -218,6 +276,137 @@ export function QuadCameraMonitor({
   const [streamQuality, setStreamQuality] = useState<StreamQuality>('sd');
   const [dataUsage, setDataUsage] = useState<DataUsageStats>({ bytesReceived: 0, duration: 0, bitrate: 0 });
   const retryTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  // 流量限制狀態
+  const videoStreamStore = useVideoStreamStore();
+  const [streamingStartTime, setStreamingStartTime] = useState<Record<string, number>>({});
+  const [remainingTimes, setRemainingTimes] = useState<Record<string, number>>({});
+  const [slotOverLimits, setSlotOverLimits] = useState<Record<string, { isOver: boolean; reason?: string }>>({});
+  const [slotDataUsage, setSlotDataUsage] = useState<Record<string, number>>({});
+
+  // 使用 ref 保存最新值以避免閉包問題
+  const slotsRef = useRef(slots);
+  const streamingStartTimeRef = useRef(streamingStartTime);
+  slotsRef.current = slots;
+  streamingStartTimeRef.current = streamingStartTime;
+
+  // 計時器：每秒更新一次剩餘時間並檢查超限
+  useEffect(() => {
+    if (!visible) return;
+
+    const timer = setInterval(() => {
+      const currentSlots = slotsRef.current;
+      const currentStartTimes = streamingStartTimeRef.current;
+      const now = Date.now();
+      const newRemaining: Record<string, number> = {};
+      const newOverLimits: Record<string, { isOver: boolean; reason?: string }> = {};
+      let hasChanges = false;
+
+      Object.entries(currentStartTimes).forEach(([slotId, startTime]) => {
+        const elapsedSeconds = Math.floor((now - startTime) / 1000);
+        const remaining = MAX_STREAMING_DURATION - elapsedSeconds;
+
+        // 從 store 獲取流量限制檢查
+        const slot = currentSlots.find(s => s.id === slotId);
+        const devIdno = slot?.devIdno;
+        const canContinue = devIdno ? videoStreamStore.canContinueStreaming(devIdno) : { canContinue: true };
+
+        if (remaining <= 0 || !canContinue.canContinue) {
+          newRemaining[slotId] = 0;
+          newOverLimits[slotId] = { isOver: true, reason: canContinue.reason };
+          hasChanges = true;
+
+          // 清除該 slot 的 URL 以斷開播放
+          setSlots(prev => {
+            const updated = [...prev];
+            const slotIndex = updated.findIndex(s => s.id === slotId);
+            if (slotIndex !== -1 && updated[slotIndex].resolvedUrl) {
+              updated[slotIndex] = { ...updated[slotIndex], resolvedUrl: null };
+              return updated;
+            }
+            return prev;
+          });
+        } else {
+          newRemaining[slotId] = remaining;
+          newOverLimits[slotId] = { isOver: false };
+        }
+      });
+
+      if (Object.keys(newRemaining).length > 0) {
+        setRemainingTimes(newRemaining);
+        setSlotOverLimits(newOverLimits);
+      }
+    }, 1000); // 每秒檢查一次
+
+    return () => clearInterval(timer);
+  }, [visible, videoStreamStore]);
+
+  // 追蹤每個 slot 的流量使用（模擬估算）
+  useEffect(() => {
+    if (!visible || slots.length === 0) return;
+
+    const dataTimer = setInterval(() => {
+      const currentSlots = slotsRef.current;
+      const newUsage: Record<string, number> = {};
+      let hasNewUsage = false;
+
+      currentSlots.forEach((slot) => {
+        if (slot.resolvedUrl && slot.devIdno) {
+          // 估算流量：SD 約 500KB/s，HD 約 1.5MB/s
+          const bytesPerSecond = streamQuality === 'hd' ? 1.5 * 1024 * 1024 : 500 * 1024;
+          const key = `${slot.id}-${slot.devIdno}`;
+          const currentUsage = slotDataUsage[key] || videoStreamStore.getVehicleUsage(slot.devIdno).bytesReceived;
+          const addedUsage = currentUsage + bytesPerSecond;
+          newUsage[key] = addedUsage;
+          hasNewUsage = true;
+
+          // 更新 store 中的流量統計
+          videoStreamStore.addDataUsage(slot.devIdno, bytesPerSecond);
+        }
+      });
+
+      if (hasNewUsage) {
+        setSlotDataUsage(prev => ({ ...prev, ...newUsage }));
+      }
+    }, 1000);
+
+    return () => clearInterval(dataTimer);
+  }, [visible, streamQuality, videoStreamStore]);
+
+  // 當 slot 開始播放時記錄開始時間
+  useEffect(() => {
+    if (!visible) return;
+
+    slots.forEach((slot) => {
+      if (slot.resolvedUrl) {
+        if (!streamingStartTime[slot.id]) {
+          // 新的播放開始
+          setStreamingStartTime(prev => ({
+            ...prev,
+            [slot.id]: Date.now()
+          }));
+          if (slot.devIdno) {
+            videoStreamStore.startStreaming(slot.devIdno);
+          }
+        }
+      } else {
+        // 播放已停止
+        if (streamingStartTime[slot.id]) {
+          const startTime = streamingStartTime[slot.id];
+          const duration = Math.floor((Date.now() - startTime) / 1000);
+          if (slot.devIdno) {
+            videoStreamStore.addDuration(slot.devIdno, duration);
+            videoStreamStore.stopStreaming();
+          }
+          setStreamingStartTime(prev => {
+            const updated = { ...prev };
+            delete updated[slot.id];
+            return updated;
+          });
+        }
+      }
+    });
+  }, [visible, slots, streamingStartTime, videoStreamStore]);
 
   // Get the first camera's devIdno for video search if not provided
   const devIdno = propDevIdno || cameras[0]?.devIdno || '';
@@ -481,6 +670,11 @@ export function QuadCameraMonitor({
                 onPress={() => handleSlotPress(0)}
                 onRetry={() => handleRetry(0)}
                 quality={streamQuality}
+                remainingTime={remainingTimes[slots[0]?.id] ?? 0}
+                dataUsed={slotDataUsage[`${slots[0]?.id}-${slots[0]?.devIdno}`] || videoStreamStore.getVehicleUsage(slots[0]?.devIdno || '').bytesReceived}
+                dataLimit={videoStreamStore.settings.maxDataLimit}
+                isOverLimit={slotOverLimits[slots[0]?.id]?.isOver ?? false}
+                limitWarning={slotOverLimits[slots[0]?.id]?.reason}
               />
             </View>
             <View style={styles.gridCell}>
@@ -490,6 +684,11 @@ export function QuadCameraMonitor({
                 onPress={() => handleSlotPress(1)}
                 onRetry={() => handleRetry(1)}
                 quality={streamQuality}
+                remainingTime={remainingTimes[slots[1]?.id] ?? 0}
+                dataUsed={slotDataUsage[`${slots[1]?.id}-${slots[1]?.devIdno}`] || videoStreamStore.getVehicleUsage(slots[1]?.devIdno || '').bytesReceived}
+                dataLimit={videoStreamStore.settings.maxDataLimit}
+                isOverLimit={slotOverLimits[slots[1]?.id]?.isOver ?? false}
+                limitWarning={slotOverLimits[slots[1]?.id]?.reason}
               />
             </View>
           </View>
@@ -503,6 +702,11 @@ export function QuadCameraMonitor({
                 onPress={() => handleSlotPress(2)}
                 onRetry={() => handleRetry(2)}
                 quality={streamQuality}
+                remainingTime={remainingTimes[slots[2]?.id] ?? 0}
+                dataUsed={slotDataUsage[`${slots[2]?.id}-${slots[2]?.devIdno}`] || videoStreamStore.getVehicleUsage(slots[2]?.devIdno || '').bytesReceived}
+                dataLimit={videoStreamStore.settings.maxDataLimit}
+                isOverLimit={slotOverLimits[slots[2]?.id]?.isOver ?? false}
+                limitWarning={slotOverLimits[slots[2]?.id]?.reason}
               />
             </View>
             <View style={styles.gridCell}>
@@ -512,6 +716,11 @@ export function QuadCameraMonitor({
                 onPress={() => handleSlotPress(3)}
                 onRetry={() => handleRetry(3)}
                 quality={streamQuality}
+                remainingTime={remainingTimes[slots[3]?.id] ?? 0}
+                dataUsed={slotDataUsage[`${slots[3]?.id}-${slots[3]?.devIdno}`] || videoStreamStore.getVehicleUsage(slots[3]?.devIdno || '').bytesReceived}
+                dataLimit={videoStreamStore.settings.maxDataLimit}
+                isOverLimit={slotOverLimits[slots[3]?.id]?.isOver ?? false}
+                limitWarning={slotOverLimits[slots[3]?.id]?.reason}
               />
             </View>
           </View>
@@ -558,6 +767,7 @@ export function QuadCameraMonitor({
         isOnline={isConnected}
         supportsLive={true}
         supportsPlayback={true}
+        devIdno={devIdno}
         onPlaybackPress={() => {
           setShowControlPanel(false);
           setShowVideoSearch(true);
@@ -727,6 +937,11 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
   },
+  slotHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
   slotHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -816,6 +1031,52 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Stream info bar (timer and data usage)
+  streamInfoBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  timerContainer: {
+    backgroundColor: 'rgba(239, 68, 68, 0.3)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+  },
+  timerText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    fontFamily: 'monospace',
+  },
+  dataUsageContainer: {
+    flex: 1,
+    marginLeft: spacing.sm,
+    alignItems: 'flex-end',
+  },
+  dataUsageText: {
+    fontSize: 9,
+    color: '#FFFFFF',
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  dataUsageBar: {
+    width: 60,
+    height: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  dataUsageProgress: {
+    height: '100%',
+    backgroundColor: '#22C55E',
+    borderRadius: 2,
   },
 
   // Bottom bar

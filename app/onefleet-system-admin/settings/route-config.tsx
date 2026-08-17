@@ -9,7 +9,17 @@ import {
   Image,
   Switch,
   TextInput,
+  Platform,
 } from 'react-native';
+
+// Web alert helper - 使用 window.alert 確保 Web 環境有視覺回饋
+const webAlert = (title: string, message: string) => {
+  if (Platform.OS === 'web') {
+    window.alert(`${title}\n${message}`);
+  } else {
+    Alert.alert(title, message);
+  }
+};
 import { useRouter } from 'expo-router';
 import {
   ChevronRight,
@@ -93,7 +103,7 @@ export default function RouteConfigScreen() {
   // 測試 API 連線
   const handleTestApi = async () => {
     if (!apiKey.trim() && selectedProvider !== 'osrm') {
-      Alert.alert(t('common.error'), '請輸入 API Key');
+      webAlert(t('common.error'), '請輸入 API Key');
       return;
     }
 
@@ -107,13 +117,13 @@ export default function RouteConfigScreen() {
       );
       setTestingResult(result);
       if (result) {
-        Alert.alert(t('common.success'), 'API 連線測試成功');
+        webAlert(t('common.success'), 'API 連線測試成功');
       } else {
-        Alert.alert(t('common.error'), 'API 連線測試失敗，請檢查 API Key 是否正確');
+        webAlert(t('common.error'), 'API 連線測試失敗，請檢查 API Key 是否正確');
       }
     } catch {
       setTestingResult(false);
-      Alert.alert(t('common.error'), 'API 連線測試失敗');
+      webAlert(t('common.error'), 'API 連線測試失敗');
     } finally {
       setTesting(false);
     }
@@ -124,18 +134,18 @@ export default function RouteConfigScreen() {
     if (selectedProvider === 'osrm') {
       // OSRM 不需要 API Key
       await saveApiKey('', selectedProvider);
-      Alert.alert(t('common.success'), 'API 設定已儲存');
+      webAlert(t('common.success'), 'API 設定已儲存');
       return;
     }
 
     if (!apiKey.trim()) {
-      Alert.alert(t('common.error'), '請輸入 API Key');
+      webAlert(t('common.error'), '請輸入 API Key');
       return;
     }
 
     await saveApiKey(apiKey.trim(), selectedProvider);
     setApiKey('');
-    Alert.alert(t('common.success'), 'API 設定已儲存');
+    webAlert(t('common.success'), 'API 設定已儲存');
   };
 
   // 儲存 TSP 設定
@@ -150,26 +160,34 @@ export default function RouteConfigScreen() {
       avoidHighways,
       considerTraffic,
     });
-    Alert.alert(t('common.success'), '路線最佳化設定已儲存');
+    webAlert(t('common.success'), '路線最佳化設定已儲存');
   };
 
   // 清除設定
   const handleClearConfig = () => {
-    Alert.alert(
-      '清除所有設定',
-      '確定要清除所有路線設定嗎？',
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('common.confirm'),
-          style: 'destructive',
-          onPress: async () => {
-            await clearConfig();
-            setApiKey('');
+    const handleConfirm = async () => {
+      await clearConfig();
+      setApiKey('');
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm('確定要清除所有路線設定嗎？')) {
+        handleConfirm();
+      }
+    } else {
+      Alert.alert(
+        '清除所有設定',
+        '確定要清除所有路線設定嗎？',
+        [
+          { text: t('common.cancel'), style: 'cancel' },
+          {
+            text: t('common.confirm'),
+            style: 'destructive',
+            onPress: handleConfirm,
           },
-        },
-      ]
-    );
+        ]
+      );
+    }
   };
 
   return (

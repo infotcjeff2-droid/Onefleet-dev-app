@@ -1,7 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
-const isWeb = Platform.OS === 'web';
+// 檢查是否在瀏覽器環境中（有 window/localStorage）
+const hasWindow = typeof window !== 'undefined';
+const isWebPlatform = Platform.OS === 'web' && hasWindow;
 
 interface StorageAdapter {
   setItem: (key: string, value: string) => Promise<void>;
@@ -20,6 +22,12 @@ class WebStorage implements StorageAdapter {
 
   private init() {
     if (this._init) return;
+    // 確保 localStorage 可用
+    if (typeof localStorage === 'undefined') {
+      console.log('[WebStorage] localStorage 不可用, 跳過初始化');
+      this._init = true;
+      return;
+    }
     try {
       const stored = localStorage.getItem(this._storageKey);
       if (stored) {
@@ -59,7 +67,7 @@ class WebStorage implements StorageAdapter {
   }
 
   async setItem(key: string, value: string): Promise<void> {
-    if (isWeb) {
+    if (isWebPlatform) {
       this.init();
       this._data[key] = value;
       console.log('[WebStorage] setItem, key:', key, 'value length:', value.length);
@@ -77,7 +85,12 @@ class WebStorage implements StorageAdapter {
   }
 
   async getItem(key: string): Promise<string | null> {
-    if (isWeb) {
+    if (isWebPlatform) {
+      // 確保 localStorage 可用
+      if (typeof localStorage === 'undefined') {
+        console.log('[WebStorage] localStorage 不可用, 使用 AsyncStorage');
+        return AsyncStorage.getItem(key);
+      }
       this.init();
       // 優先從獨立 localStorage 讀取（避免大 JSON 解析）
       try {
@@ -100,7 +113,7 @@ class WebStorage implements StorageAdapter {
   }
 
   async removeItem(key: string): Promise<void> {
-    if (isWeb) {
+    if (isWebPlatform) {
       this.init();
       delete this._data[key];
       try {
@@ -121,4 +134,4 @@ class WebStorage implements StorageAdapter {
 
 export const storage = new WebStorage('fleetpro_storage');
 
-export const isWebPlatform = isWeb;
+export { isWebPlatform };

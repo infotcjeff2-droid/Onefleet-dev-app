@@ -11,7 +11,11 @@ import { colors, spacing, typography } from '@/constants/theme';
 import { useTranslation } from '@/i18n';
 
 // 808GPS 設備的默認 4 通道配置（根據截圖：DSM, ADAS, 前鏡, 後鏡）
-const DEFAULT_CAMERA_LABELS = ['DSM 司機', 'ADAS 輔助', '前鏡頭', '後鏡頭'];
+const DEFAULT_CAMERA_LABELS = ['DSM鏡頭', 'ADAS鏡頭', '前鏡頭', '後鏡頭'];
+
+function getCameraLabel(devIdno: string, label: string): string {
+  return `${devIdno} ${label}`;
+}
 
 interface VehicleTrackingSectionProps {
   devIdno: string;
@@ -41,7 +45,7 @@ export function VehicleTrackingSection({
     devIdno,
     channel: index,
     plateNumber: plateNumber || devIdno,
-    vehicleName: label,
+    vehicleName: getCameraLabel(devIdno, label),
   }));
 
   // 使用傳入的自定義配置，否則使用默認配置

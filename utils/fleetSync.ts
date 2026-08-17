@@ -1370,14 +1370,15 @@ export async function getRouteConfigSync(): Promise<RouteConfigSync | null> {
       .eq('user_id', userId)
       .maybeSingle();
 
-    if (error) {
-      console.error('[fleetSync] getRouteConfigSync error:', error);
+    // 404 表示表不存在，忽略錯誤
+    if (error && error.code !== 'PGRST116') {
+      console.warn('[fleetSync] getRouteConfigSync error:', error.message || error);
       return null;
     }
 
     return data as RouteConfigSync | null;
   } catch (err) {
-    console.error('[fleetSync] getRouteConfigSync exception:', err);
+    console.warn('[fleetSync] getRouteConfigSync exception:', err);
     return null;
   }
 }

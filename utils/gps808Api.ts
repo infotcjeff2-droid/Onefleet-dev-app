@@ -76,7 +76,7 @@ function getWebBaseUrl(): string {
  *      避免 expo metro dev server 攔截 /api/gps 路由
  *   3. window.location.origin（其他部署環境）
  *
- * 呼叫端範例： `${getWebProxyBaseUrlSync()}/flv-stream?...`
+ * 呼叫端範例： `${getWebProxyBaseUrlSync()}/api/gps/flv-stream?...`
  *   → 本地時  http://localhost:3001
  *   → 雲端時  https://fleet-gps-proxy.xxx.workers.dev
  */
@@ -84,7 +84,7 @@ export function getWebProxyBaseUrlSync(): string {
   // 優先使用環境變數（Cloudflare Worker URL）
   const envUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL;
   if (envUrl) {
-    // 去掉 /api/gps 後綴，因為呼叫端會加上路徑
+    // 去掉 /api/gps 後綴，確保回傳一致格式
     return envUrl.replace(/\/api\/gps\/?$/, '').replace(/\/$/, '');
   }
 

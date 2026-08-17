@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState, memo, useCallback } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, Pressable, Platform } from 'react-native';
-import { WifiOff, Video } from 'lucide-react-native';
+import { WifiOff, Video, AlertCircle } from 'lucide-react-native';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { gps808Api, getWebProxyBaseUrlSync } from '@/utils/gps808Api';
 import { useGps808Store } from '@/store/gps808Store';
 import { FlvPlayer } from './FlvPlayer';
 import { HlsVideo } from './HlsVideo';
+import { useVideoStreamStore, formatBytes } from '@/store/videoStreamStore';
 import { colors, borderRadius, spacing, typography } from '@/constants/theme';
 import { defaultColors } from '@/store/themeStore';
 
@@ -42,6 +43,18 @@ interface CameraFeedProps {
   onQualityChange?: (quality: StreamQuality) => void;
   /** 顯示畫質控制按鈕 */
   showQualityControl?: boolean;
+  /** 剩餘播放時間（秒），0 或負數表示無限制 */
+  remainingTime?: number;
+  /** 已使用流量（bytes） */
+  dataUsed?: number;
+  /** 流量限額（bytes），0 表示無限制 */
+  dataLimit?: number;
+  /** 是否超限 */
+  isOverLimit?: boolean;
+  /** 流量限制警告訊息 */
+  limitWarning?: string;
+  /** 超限重置回調 */
+  onOverLimitReset?: () => void;
 }
 
 type FeedState = 'loading' | 'streaming' | 'streaming-hls' | 'streaming-pending' | 'device-offline' | 'offline' | 'error' | 'no-device';
@@ -53,6 +66,12 @@ function CameraFeedComponent({
   quality = 'sd',
   onQualityChange,
   showQualityControl = false,
+  remainingTime = 0,
+  dataUsed = 0,
+  dataLimit = 0,
+  isOverLimit = false,
+  limitWarning,
+  onOverLimitReset,
 }: CameraFeedProps) {
   const { plateNumber, vehicleName, streamUrl, devIdno, channel = 0 } = item;
   const [feedState, setFeedState] = useState<FeedState>(
@@ -62,8 +81,19 @@ function CameraFeedComponent({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isDeviceOnline, setIsDeviceOnline] = useState<boolean | null>(null);
   const { isConnected, loadConfig } = useGps808Store();
+  const videoStreamStore = useVideoStreamStore();
 
-  const displayLabel = plateNumber || vehicleName || item.id;
+  // 從 vehicleName 提取鏡頭類型（如 "DSM鏡頭"、"ADAS鏡頭"）
+  const getCameraTypeFromVehicleName = (vn?: string): string => {
+    if (!vn) return '';
+    // vehicleName 格式是 "設備ID 鏡頭類型"，提取鏡頭類型部分
+    const parts = vn.split(' ');
+    return parts.slice(1).join(' ') || vn; // 返回除了第一個設備ID外的其餘部分
+  };
+
+  // 顯示格式：車牌號 鏡頭類型
+  const cameraType = getCameraTypeFromVehicleName(vehicleName);
+  const displayLabel = cameraType ? `${plateNumber || devIdno} ${cameraType}` : (plateNumber || vehicleName || item.id);
 
   // 重試函式 - 提升到組件作用域以便在 JSX 中引用
   const resolveUrl = useCallback(async () => {
@@ -166,6 +196,7 @@ function CameraFeedComponent({
   // 如需切換畫質，可透過重新選擇設備來刷新
 
   const getStatusColor = () => {
+    if (isOverLimit) return '#EF4444';
     if (feedState === 'streaming' || feedState === 'streaming-hls') return '#22C55E';
     if (feedState === 'loading') return '#F59E0B';
     if (feedState === 'error') return '#EF4444';
@@ -224,13 +255,26 @@ function CameraFeedComponent({
         );
 
       case 'error':
+        if (isOverLimit) {
+          return (
+            <Pressable style={styles.placeholder} onPress={onOverLimitReset}>
+              <View style={styles.placeholderIcon}>
+                <AlertCircle size={28} color="#F59E0B" />
+              </View>
+              <Text style={[styles.placeholderLabel, { color: '#F59E0B' }]}>
+                {limitWarning || '已超時'}
+              </Text>
+              <Text style={styles.retryText}>點擊重新開始</Text>
+            </Pressable>
+          );
+        }
         return (
           <Pressable style={styles.placeholder} onPress={devIdno ? resolveUrl : undefined}>
             <View style={styles.placeholderIcon}>
               <WifiOff size={28} color="#EF4444" />
             </View>
             <Text style={[styles.placeholderLabel, { color: '#EF4444' }]}>
-              {errorMsg?.includes('404') ? '影像服務未開通' 
+              {errorMsg?.includes('404') ? '影像服務未開通'
                 : errorMsg?.includes('權限') || errorMsg?.includes('影像') ? '無影像查看權限'
                 : errorMsg?.includes('JSESSIONID') ? '連線驗證中...'
                 : errorMsg?.includes('過期') ? '正在重新連線...'
@@ -279,22 +323,28 @@ function CameraFeedComponent({
           </Text>
         </View>
         <View style={styles.headerRight}>
-          {(feedState === 'streaming' || feedState === 'streaming-hls') && (
+          {isOverLimit && (
+            <View style={[styles.streamBadge, { backgroundColor: '#F59E0B' }]}>
+              <AlertCircle size={8} color="#FFFFFF" />
+              <Text style={styles.streamBadgeText}>超限</Text>
+            </View>
+          )}
+          {(feedState === 'streaming' || feedState === 'streaming-hls') && !isOverLimit && (
             <View style={styles.streamBadge}>
               <Text style={styles.streamBadgeText}>LIVE</Text>
             </View>
           )}
-          {feedState === 'streaming-pending' && (
+          {feedState === 'streaming-pending' && !isOverLimit && (
             <View style={[styles.streamBadge, { backgroundColor: '#3B82F6' }]}>
               <Text style={styles.streamBadgeText}>就緒</Text>
             </View>
           )}
-          {feedState === 'loading' && (
+          {feedState === 'loading' && !isOverLimit && (
             <View style={[styles.streamBadge, { backgroundColor: '#F59E0B' }]}>
               <Text style={styles.streamBadgeText}>...</Text>
             </View>
           )}
-          {showQualityControl && (feedState === 'streaming' || feedState === 'streaming-hls' || feedState === 'streaming-pending') && (
+          {showQualityControl && (feedState === 'streaming' || feedState === 'streaming-hls' || feedState === 'streaming-pending') && !isOverLimit && (
             <Pressable
               style={styles.qualityBtn}
               onPress={() => {
@@ -310,6 +360,34 @@ function CameraFeedComponent({
           )}
         </View>
       </View>
+
+      {/* Timer and Data Usage Bar */}
+      {(feedState === 'streaming' || feedState === 'streaming-hls') && !isOverLimit && (remainingTime > 0 || dataUsed > 0) && (
+        <View style={styles.streamInfoBar}>
+          {remainingTime > 0 && (
+            <View style={styles.timerContainer}>
+              <Text style={styles.timerText}>
+                {Math.floor(remainingTime / 60)}:{String(remainingTime % 60).padStart(2, '0')}
+              </Text>
+            </View>
+          )}
+          {dataUsed > 0 && dataLimit > 0 && (
+            <View style={styles.dataUsageContainer}>
+              <Text style={styles.dataUsageText}>
+                {formatBytes(dataUsed)} / {formatBytes(dataLimit)}
+              </Text>
+              <View style={styles.dataUsageBar}>
+                <View
+                  style={[
+                    styles.dataUsageProgress,
+                    { width: `${Math.min((dataUsed / dataLimit) * 100, 100)}%` }
+                  ]}
+                />
+              </View>
+            </View>
+          )}
+        </View>
+      )}
 
       {/* Video / Placeholder Area — streaming 時禁用 pointerEvents 讓播放器可點擊 */}
       <View
@@ -465,5 +543,51 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     zIndex: 10,
+  },
+  // Stream info bar (timer and data usage)
+  streamInfoBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  timerContainer: {
+    backgroundColor: 'rgba(239, 68, 68, 0.3)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+  },
+  timerText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    fontFamily: 'monospace',
+  },
+  dataUsageContainer: {
+    flex: 1,
+    marginLeft: spacing.sm,
+    alignItems: 'flex-end',
+  },
+  dataUsageText: {
+    fontSize: 9,
+    color: '#FFFFFF',
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  dataUsageBar: {
+    width: 60,
+    height: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  dataUsageProgress: {
+    height: '100%',
+    backgroundColor: '#22C55E',
+    borderRadius: 2,
   },
 });

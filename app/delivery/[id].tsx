@@ -80,11 +80,11 @@ function buildStepConfig(t: (key: string) => string): Record<StepKey, { label: s
   return {
     pending: { label: t('delivery.stepPending'), color: colors.warning, bg: `${colors.warning}20` },
     assigned: { label: t('delivery.stepAssigned'), color: colors.secondary, bg: `${colors.secondary}20` },
-    picked_up: { label: t('delivery.stepPickedUp'), color: colors.accent, bg: `${colors.accent}20` },
+    picked_up: { label: t('delivery.stepPickedUp'), color: colors.primary, bg: `${colors.primary}20` },
     in_transit: { label: t('delivery.stepInTransit'), color: colors.primary, bg: `${colors.primary}20` },
-    delivered: { label: t('delivery.stepDelivered'), color: colors.success, bg: `${colors.success}20` },
+    delivered: { label: t('delivery.stepDelivered'), color: colors.primary, bg: `${colors.primary}20` },
     signed: { label: t('delivery.stepSigned'), color: colors.primary, bg: `${colors.primary}20` },
-    completed: { label: t('delivery.orderCompleted'), color: colors.success, bg: `${colors.success}20` },
+    completed: { label: t('delivery.orderCompleted'), color: colors.primary, bg: `${colors.primary}20` },
     expired: { label: t('delivery.stepExpired'), color: colors.danger, bg: `${colors.danger}20` },
   };
 }
@@ -712,8 +712,8 @@ function StepTabBar({
   const inTransitLabel = transportCompleted
     ? t('delivery.stepTransported')
     : t('delivery.stepInTransit');
-  const inTransitColor = transportCompleted ? colors.success : colors.primary;
-  const inTransitBg = transportCompleted ? `${colors.success}20` : `${colors.primary}20`;
+  const inTransitColor = colors.primary;
+  const inTransitBg = `${colors.primary}20`;
 
   // 動態調整 stepConfig
   const dynamicStepConfig = {
@@ -2237,7 +2237,7 @@ export default function DeliveryDetailScreen() {
 
   const currentIdx = getStepIndex(currentStep);
   const canGoNext = currentIdx < STEP_ORDER.length - 1 && currentStep !== 'expired';
-  const canGoPrev = currentIdx > 0 && !order.isCompleted;
+  const canGoPrev = currentIdx > 1 && !order.isCompleted;
 
   const showNextButton = () => {
     // 已完成配送後不顯示任何操作按鈕

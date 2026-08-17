@@ -1,8 +1,9 @@
-name = "onefleet-gps-v9"
-main = "dist/worker.mjs"
-compatibility_date = "2025-01-01"
+name = "fleet-gps-proxy"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
 
-# KV 命名空間用於持久化 session
-[[kv_namespaces]]
-binding = "GPS_SESSIONS"
-id = "0847d9563387484ebefd945fa3ff0f08"
+[vars]
+GPS_SERVER = "console.onefleet.hk"
+GPS_VIDEO_PORT = "6604"
+GPS_ADMIN_ACCOUNT = "admin"
+GPS_ADMIN_PASSWORD_MD5 = "4FF4C011268967DF32B6253CA0E7BDF0"

@@ -11,11 +11,13 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { X, RefreshCw, MapPin, Navigation, Gauge, Clock, AlertCircle, Maximize2, ChevronDown } from 'lucide-react-native';
+import { X, RefreshCw, MapPin, Navigation, Gauge, Clock, AlertCircle, Maximize2, ChevronDown, Settings } from 'lucide-react-native';
 import { CameraFeed, type CameraFeedItem } from './CameraFeed';
+import { VideoControlPanel, type WatchMode, type StreamQuality } from './VideoControlPanel';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useGps808Store } from '@/store/gps808Store';
 import { gps808Api } from '@/utils/gps808Api';
+import { useVideoStreamStore, formatBytes, formatDuration } from '@/store/videoStreamStore';
 import { colors, borderRadius, spacing, typography } from '@/constants/theme';
 import { useTranslation } from '@/i18n';
 import type { Gps808Vehicle } from '@/utils/gps808Api';
@@ -28,9 +30,23 @@ const IS_WEB = Platform.OS === 'web';
 const REFRESH_INTERVAL = 10_000;
 const DEFAULT_MAP_LAT = 22.3193;
 const DEFAULT_MAP_LNG = 114.1694;
+const MAX_STREAMING_DURATION = 3 * 60; // 3 分鐘（180 秒）
 
-// 808GPS 設備的默認通道標籤配置
-const DEFAULT_CHANNEL_LABELS = ['通道 1', '通道 2', '通道 3', '通道 4', '通道 5', '通道 6'];
+// 808GPS 設備的默認通道標籤配置 - 格式：{設備ID} {鏡頭類型}
+const DEFAULT_CHANNEL_LABELS_TEMPLATE = [
+  'DSM鏡頭',
+  'ADAS鏡頭',
+  '前鏡頭',
+  '後鏡頭',
+  '左鏡頭',
+  '右鏡頭',
+];
+
+// 根據設備 ID 生成完整通道標籤
+function getChannelLabel(devIdno: string, channelIndex: number): string {
+  const labelTemplate = DEFAULT_CHANNEL_LABELS_TEMPLATE[channelIndex] || `通道 ${channelIndex + 1}`;
+  return `${devIdno} ${labelTemplate}`;
+}
 
 interface GpsData {
   lat: number;
@@ -270,11 +286,57 @@ export function FullScreenMonitor({
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const webViewRef = useRef<WebView>(null);
 
+  // 流量限制相關狀態
+  const videoStreamStore = useVideoStreamStore();
+  const [streamingStartTime, setStreamingStartTime] = useState<Record<string, number>>({});
+  const [remainingTimes, setRemainingTimes] = useState<Record<string, number>>({});
+  const [slotOverLimits, setSlotOverLimits] = useState<Record<string, { isOver: boolean; reason?: string }>>({});
+  const [slotDataUsage, setSlotDataUsage] = useState<Record<string, number>>({});
+  const [showControlPanel, setShowControlPanel] = useState(false);
+  const [streamQuality, setStreamQuality] = useState<StreamQuality>('sd');
+
+  // 使用 ref 保存最新值以避免閉包問題
+  const streamingStartTimeRef = useRef(streamingStartTime);
+  streamingStartTimeRef.current = streamingStartTime;
+
+  // 計時器：每秒檢查一次超限
+  useEffect(() => {
+    if (!visible) return;
+
+    const timer = setInterval(() => {
+      const currentStartTimes = streamingStartTimeRef.current;
+      const now = Date.now();
+      const newRemaining: Record<string, number> = {};
+      const newOverLimits: Record<string, { isOver: boolean; reason?: string }> = {};
+
+      Object.entries(currentStartTimes).forEach(([feedId, startTime]) => {
+        const elapsedSeconds = Math.floor((now - startTime) / 1000);
+        const remaining = MAX_STREAMING_DURATION - elapsedSeconds;
+        const canContinue = videoStreamStore.canContinueStreaming(currentDevIdno);
+
+        if (remaining <= 0 || !canContinue.canContinue) {
+          newRemaining[feedId] = 0;
+          newOverLimits[feedId] = { isOver: true, reason: canContinue.reason };
+        } else {
+          newRemaining[feedId] = remaining;
+          newOverLimits[feedId] = { isOver: false };
+        }
+      });
+
+      if (Object.keys(newRemaining).length > 0) {
+        setRemainingTimes(newRemaining);
+        setSlotOverLimits(newOverLimits);
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [visible, currentDevIdno, videoStreamStore]);
+
   // 設備的總通道數（從設備狀態獲取，默認為 4）
   const deviceChannelCount = gpsData?.channelCount || 4;
   
-  // 用戶選擇要顯示的通道數（預設為 1）
-  const [visibleChannelCount, setVisibleChannelCount] = useState(1);
+  // 用戶選擇要顯示的通道數（預設為 0，表示未選擇）
+  const [visibleChannelCount, setVisibleChannelCount] = useState(0);
 
   // 當設備通道數變化時，更新 visibleChannelCount
   useEffect(() => {
@@ -289,7 +351,7 @@ export function FullScreenMonitor({
     devIdno: currentDevIdno,
     channel: index,
     plateNumber: currentPlateNumber || currentDevIdno,
-    vehicleName: DEFAULT_CHANNEL_LABELS[index] || `通道 ${index + 1}`,
+    vehicleName: getChannelLabel(currentDevIdno, index),
   }));
 
   // 使用傳入的 cameraFeeds 或默認配置
@@ -297,6 +359,42 @@ export function FullScreenMonitor({
   
   // 根據 visibleChannelCount 過濾要顯示的頻道
   const displayFeeds = allFeeds.slice(0, visibleChannelCount);
+
+  // 追蹤流量使用（放在 displayFeeds 定義之後以避免 TDZ 問題）
+  useEffect(() => {
+    if (!visible || displayFeeds.length === 0) return;
+
+    const dataTimer = setInterval(() => {
+      let hasUpdate = false;
+
+      displayFeeds.forEach((feed) => {
+        if (feed.devIdno && !feed.id.startsWith('empty-')) {
+          const bytesPerSecond = streamQuality === 'hd' ? 1.5 * 1024 * 1024 : 500 * 1024;
+          const key = `${feed.id}-${feed.devIdno}`;
+          const currentUsage = slotDataUsage[key] || videoStreamStore.getVehicleUsage(feed.devIdno).bytesReceived;
+          setSlotDataUsage(prev => ({ ...prev, [key]: currentUsage + bytesPerSecond }));
+          videoStreamStore.addDataUsage(feed.devIdno, bytesPerSecond);
+          hasUpdate = true;
+        }
+      });
+    }, 1000);
+
+    return () => clearInterval(dataTimer);
+  }, [visible, displayFeeds, streamQuality, videoStreamStore]);
+
+  // 追蹤播放開始時間（放在 displayFeeds 定義之後以避免 TDZ 問題）
+  useEffect(() => {
+    if (!visible) return;
+
+    displayFeeds.forEach((feed) => {
+      if (feed.devIdno && !feed.id.startsWith('empty-')) {
+        if (!streamingStartTime[feed.id]) {
+          setStreamingStartTime(prev => ({ ...prev, [feed.id]: Date.now() }));
+          videoStreamStore.startStreaming(feed.devIdno);
+        }
+      }
+    });
+  }, [visible, displayFeeds, videoStreamStore]);
 
   const hasValidGps = gpsData !== null && (gpsData.lat !== 0 || gpsData.lng !== 0);
   const isRealTimeGps = gpsData?.isRealTime ?? false;
@@ -459,11 +557,46 @@ export function FullScreenMonitor({
   // Reset state when modal opens with new devIdno
   useEffect(() => {
     if (visible) {
+      // 重置所有狀態
       setGpsData(null);
       setError(null);
       setSelectedFeedIndex(0);
+      setStreamingStartTime({});
+      setRemainingTimes({});
+      setSlotOverLimits({});
+      setSlotDataUsage({});
+      setVisibleChannelCount(0); // 重置為未選擇
+      // 重新獲取 GPS 數據
+      if (isConnected) {
+        fetchGps();
+      }
     }
-  }, [visible, currentDevIdno]);
+  }, [visible, currentDevIdno, isConnected]);
+
+  // 超限重置函數
+  const handleOverLimitReset = (feed: CameraFeedItem) => {
+    if (!feed.devIdno) return;
+    
+    // 重置該通道的超限狀態
+    setSlotOverLimits(prev => {
+      const updated = { ...prev };
+      delete updated[feed.id];
+      return updated;
+    });
+    setRemainingTimes(prev => {
+      const updated = { ...prev };
+      delete updated[feed.id];
+      return updated;
+    });
+    // 重置該設備的流量統計
+    videoStreamStore.resetUsage(feed.devIdno);
+    setSlotDataUsage(prev => {
+      const updated = { ...prev };
+      const key = `${feed.id}-${feed.devIdno}`;
+      delete updated[key];
+      return updated;
+    });
+  };
 
   const renderCameraCell = (feed: CameraFeedItem, index: number) => {
     if (!feed.devIdno || feed.id.startsWith('empty-')) {
@@ -478,6 +611,13 @@ export function FullScreenMonitor({
         item={feed}
         isSelected={selectedFeedIndex === index}
         onPress={() => setSelectedFeedIndex(index)}
+        quality={streamQuality}
+        remainingTime={remainingTimes[feed.id] ?? 0}
+        dataUsed={slotDataUsage[`${feed.id}-${feed.devIdno}`] || videoStreamStore.getVehicleUsage(feed.devIdno).bytesReceived}
+        dataLimit={videoStreamStore.settings.maxDataLimit}
+        isOverLimit={slotOverLimits[feed.id]?.isOver ?? false}
+        limitWarning={slotOverLimits[feed.id]?.reason}
+        onOverLimitReset={() => handleOverLimitReset(feed)}
       />
     );
   };
@@ -487,23 +627,7 @@ export function FullScreenMonitor({
       {/* Map Header */}
       <View style={styles.mapHeader}>
         <View style={styles.mapHeaderLeft}>
-          <MapPin size={14} color={defaultColors.primary} />
-          <Text style={styles.mapHeaderLabel}>
-            {currentPlateNumber || currentDevIdno}
-          </Text>
-          <View
-            style={[
-              styles.mapStatusDot,
-              { backgroundColor: isRealTimeGps ? '#22C55E' : (hasValidGps ? '#F59E0B' : '#EF4444') },
-            ]}
-          />
-          <Text style={styles.mapStatusText}>
-            {isRealTimeGps
-              ? t('vehicles.live')
-              : hasValidGps
-                ? t('vehicles.noGpsSignalLastKnown')
-                : t('vehicles.noSignal')}
-          </Text>
+          <Text style={styles.mapHeaderLabel}>GPS 位置</Text>
         </View>
         <View style={styles.mapHeaderRight}>
           <TouchableOpacity onPress={fetchGps} style={styles.refreshBtn} disabled={isLoading}>
@@ -595,6 +719,38 @@ export function FullScreenMonitor({
   );
 
   const renderCameraArea = () => {
+    // 渲染頻道選擇器 - 直接顯示數字按鈕 (1 2 3 4)
+    // 定義在前面以避免 TDZ 問題
+    const renderChannelSelector = () => {
+      if (allFeeds.length <= 1) return null;
+
+      return (
+        <View style={styles.channelSelectorContainer}>
+          {allFeeds.slice(0, Math.min(allFeeds.length, 8)).map((_, index) => {
+            const count = index + 1;
+            const isActive = visibleChannelCount === count;
+            return (
+              <TouchableOpacity
+                key={`ch-${count}`}
+                style={[
+                  styles.channelNumBtn,
+                  isActive && styles.channelNumBtnActive,
+                ]}
+                onPress={() => setVisibleChannelCount(count)}
+              >
+                <Text style={[
+                  styles.channelNumText,
+                  isActive && styles.channelNumTextActive,
+                ]}>
+                  {count}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      );
+    };
+
     // 如果沒有影像饋送，顯示提示
     if (allFeeds.length === 0) {
       return (
@@ -604,6 +760,30 @@ export function FullScreenMonitor({
           </View>
           <View style={styles.noCameraContainer}>
             <Text style={styles.noCameraText}>此車輛無影像設備</Text>
+          </View>
+        </View>
+      );
+    }
+
+    // 當未選擇任何通道時，顯示提示
+    if (visibleChannelCount === 0) {
+      return (
+        <View style={styles.cameraSection}>
+          {/* Camera Header */}
+          <View style={styles.cameraHeader}>
+            <Text style={styles.cameraHeaderTitle}>實時錄像</Text>
+            <View style={styles.cameraHeaderRight}>
+              <Text style={styles.cameraCountText}>
+                {allFeeds.length} 通道
+              </Text>
+              {renderChannelSelector()}
+            </View>
+          </View>
+
+          {/* Empty State - No channel selected */}
+          <View style={styles.noChannelContainer}>
+            <Text style={styles.noChannelText}>請選擇要觀看的通道</Text>
+            <Text style={styles.noChannelHint}>點擊上方數字選擇 1-{Math.min(allFeeds.length, 8)} 通道</Text>
           </View>
         </View>
       );
@@ -648,37 +828,6 @@ export function FullScreenMonitor({
       return rows;
     };
 
-    // 渲染頻道選擇器 - 直接顯示數字按鈕 (1 2 3 4)
-    const renderChannelSelector = () => {
-      if (allFeeds.length <= 1) return null;
-
-      return (
-        <View style={styles.channelSelectorContainer}>
-          {allFeeds.slice(0, Math.min(allFeeds.length, 8)).map((_, index) => {
-            const count = index + 1;
-            const isActive = visibleChannelCount === count;
-            return (
-              <TouchableOpacity
-                key={`ch-${count}`}
-                style={[
-                  styles.channelNumBtn,
-                  isActive && styles.channelNumBtnActive,
-                ]}
-                onPress={() => setVisibleChannelCount(count)}
-              >
-                <Text style={[
-                  styles.channelNumText,
-                  isActive && styles.channelNumTextActive,
-                ]}>
-                  {count}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      );
-    };
-
     return (
       <View style={styles.cameraSection}>
         {/* Camera Header */}
@@ -712,13 +861,27 @@ export function FullScreenMonitor({
         <View style={styles.topBar}>
           <View style={styles.topBarLeft}>
             <MapPin size={16} color={defaultColors.primary} />
-            <Text style={styles.topBarTitle}>
-              {t('vehicles.trackingSectionTitle')}
+            <Text style={styles.topBarTitle} numberOfLines={1}>
+              {currentPlateNumber || currentDevIdno}
             </Text>
+            <Text style={styles.topBarDivider}>|</Text>
+            <Text style={styles.topBarSubtitle}>實時監控</Text>
+            <View style={styles.streamingBadge}>
+              <View style={styles.streamingDot} />
+              <Text style={styles.streamingBadgeText}>即時</Text>
+            </View>
           </View>
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-            <X size={20} color="#FFFFFF" />
-          </TouchableOpacity>
+          <View style={styles.topBarRight}>
+            <TouchableOpacity
+              onPress={() => setShowControlPanel(true)}
+              style={styles.settingsBtn}
+            >
+              <Settings size={16} color="#FFFFFF" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+              <X size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Content */}
@@ -730,6 +893,14 @@ export function FullScreenMonitor({
           {renderCameraArea()}
         </View>
       </View>
+
+      {/* Video Control Panel Modal */}
+      <VideoControlPanel
+        visible={showControlPanel}
+        onClose={() => setShowControlPanel(false)}
+        devIdno={currentDevIdno}
+        plateNumber={currentPlateNumber}
+      />
     </Modal>
   );
 }
@@ -752,13 +923,57 @@ const styles = StyleSheet.create({
   topBarLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.xs,
+    flex: 1,
   },
   topBarTitle: {
     fontSize: typography.fontSize.lg,
     fontWeight: '700',
     color: '#FFFFFF',
     letterSpacing: 0.3,
+  },
+  topBarDivider: {
+    fontSize: typography.fontSize.base,
+    color: '#4A5568',
+    marginHorizontal: spacing.xs,
+  },
+  topBarSubtitle: {
+    fontSize: typography.fontSize.sm,
+    color: '#8B92A8',
+    fontWeight: '500',
+  },
+  streamingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(34, 197, 94, 0.2)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  streamingDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#22C55E',
+  },
+  streamingBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#22C55E',
+  },
+  topBarRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  settingsBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(59, 130, 246, 0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   closeBtn: {
     width: 36,
@@ -948,6 +1163,25 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.md,
     color: colors.textTertiary,
     fontWeight: '600',
+    textAlign: 'center',
+  },
+  // No channel selected state
+  noChannelContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+  },
+  noChannelText: {
+    fontSize: typography.fontSize.lg,
+    color: '#8B92A8',
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  noChannelHint: {
+    fontSize: typography.fontSize.sm,
+    color: '#4A5568',
     textAlign: 'center',
   },
 

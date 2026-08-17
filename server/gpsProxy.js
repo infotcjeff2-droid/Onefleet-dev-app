@@ -16,6 +16,27 @@ const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+
+// 重要：必須先載入 .env，再 require sessionCrypto
+const envPath = path.join(__dirname, '..', '.env');
+if (fs.existsSync(envPath)) {
+  const envContent = fs.readFileSync(envPath, 'utf-8');
+  envContent.split('\n').forEach(line => {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith('#')) {
+      const eqIndex = trimmed.indexOf('=');
+      if (eqIndex > 0) {
+        const key = trimmed.substring(0, eqIndex).trim();
+        const value = trimmed.substring(eqIndex + 1).trim();
+        if (!process.env[key]) {
+          process.env[key] = value;
+        }
+      }
+    }
+  });
+  console.log('[Proxy] .env loaded');
+}
+
 const cryptoUtil = require('./sessionCrypto');
 
 const GPS_SERVER = process.env.GPS_SERVER || 'console.onefleet.hk';

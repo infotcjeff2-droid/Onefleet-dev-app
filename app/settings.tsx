@@ -1,17 +1,18 @@
 import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Image, ActivityIndicator } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
-import { ChevronRight, Globe, Check, Database, Type, Users, RefreshCw } from 'lucide-react-native';
+import { ChevronRight, Globe, Check, Database, Type, Users, RefreshCw, Video, Gauge, Trash2 } from 'lucide-react-native';
 import { Card } from '@/components/ui/Card';
 import { Header } from '@/components/ui/Header';
-import { useThemeStore } from '@/store/themeStore';
+import { useThemeStore, defaultColors } from '@/store/themeStore';
 import { useTranslation } from '@/i18n';
-import { spacing, typography } from '@/constants/theme';
+import { spacing, typography, borderRadius } from '@/constants/theme';
 import { useVehicleStore } from '@/store/vehicleStore';
 import { useDeliveryStore } from '@/store/deliveryStore';
 import { useUserManagementStore } from '@/store/userManagementStore';
 import { hasSupabaseEnv, supabaseSetupSql } from '@/utils/fleetSync';
 import { useFontScale, FontScale } from '@/contexts/FontScaleContext';
+import { useVideoStreamStore, formatBytes, formatDuration, DEFAULT_STREAM_SETTINGS } from '@/store/videoStreamStore';
 
 type Locale = 'zh-TW' | 'en';
 
@@ -38,10 +39,32 @@ export default function SettingsScreen() {
 
   const [syncingUsers, setSyncingUsers] = useState(false);
 
+  // 視頻流量設定
+  const videoStreamStore = useVideoStreamStore();
+  const { settings, vehicleUsage, updateSettings, resetAllUsage } = videoStreamStore;
+
   const FONT_SCALES: { scale: FontScale; label: string; labelEn: string }[] = [
     { scale: 'normal', label: '標準', labelEn: 'Normal' },
     { scale: 'large', label: '放大', labelEn: 'Large' },
     { scale: 'larger', label: '更大', labelEn: 'Larger' },
+  ];
+
+  // 流量限制選項（GB）
+  const DATA_LIMIT_OPTIONS = [
+    { value: 1 * 1024 * 1024 * 1024, label: '1 GB' },
+    { value: 2 * 1024 * 1024 * 1024, label: '2 GB' },
+    { value: 3 * 1024 * 1024 * 1024, label: '3 GB' },
+    { value: 5 * 1024 * 1024 * 1024, label: '5 GB' },
+    { value: 10 * 1024 * 1024 * 1024, label: '10 GB' },
+  ];
+
+  // 時長限制選項（分鐘）
+  const DURATION_OPTIONS = [
+    { value: 60, label: '1 分鐘' },
+    { value: 2 * 60, label: '2 分鐘' },
+    { value: 3 * 60, label: '3 分鐘' },
+    { value: 5 * 60, label: '5 分鐘' },
+    { value: 10 * 60, label: '10 分鐘' },
   ];
 
   const handleCopySql = async () => {
@@ -306,6 +329,172 @@ export default function SettingsScreen() {
           </Card>
         </View>
 
+        {/* 視頻流量限制設定 */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
+            {locale === 'zh-TW' ? '視頻流量限制' : 'Video Data Limit'}
+          </Text>
+          <Card style={styles.settingsCard}>
+            {/* 流量上限設定 */}
+            <View style={styles.settingItem}>
+              <View style={styles.settingLeft}>
+                <View style={[styles.settingIconWrap, { backgroundColor: `${colors.primary}15` }]}>
+                  <Database size={18} color={colors.primary} />
+                </View>
+                <View>
+                  <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>
+                    {locale === 'zh-TW' ? '最大流量限制（每車）' : 'Max Data Limit (per vehicle)'}
+                  </Text>
+                  <Text style={[styles.settingSub, { color: colors.textTertiary }]}>
+                    {formatBytes(settings.maxDataLimit)}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.optionGrid}>
+              {DATA_LIMIT_OPTIONS.map((option) => (
+                <Pressable
+                  key={option.value}
+                  style={[
+                    styles.optionBtn,
+                    settings.maxDataLimit === option.value && styles.optionBtnActive,
+                  ]}
+                  onPress={() => updateSettings({ maxDataLimit: option.value })}
+                >
+                  <Text
+                    style={[
+                      styles.optionBtnText,
+                      settings.maxDataLimit === option.value && styles.optionBtnTextActive,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+            {/* 時長上限設定 */}
+            <View style={styles.settingItem}>
+              <View style={styles.settingLeft}>
+                <View style={[styles.settingIconWrap, { backgroundColor: `${colors.primary}15` }]}>
+                  <Gauge size={18} color={colors.primary} />
+                </View>
+                <View>
+                  <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>
+                    {locale === 'zh-TW' ? '最大播放時長' : 'Max Streaming Duration'}
+                  </Text>
+                  <Text style={[styles.settingSub, { color: colors.textTertiary }]}>
+                    {formatDuration(settings.maxStreamingDuration)}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.optionGrid}>
+              {DURATION_OPTIONS.map((option) => (
+                <Pressable
+                  key={option.value}
+                  style={[
+                    styles.optionBtn,
+                    settings.maxStreamingDuration === option.value && styles.optionBtnActive,
+                  ]}
+                  onPress={() => updateSettings({ maxStreamingDuration: option.value })}
+                >
+                  <Text
+                    style={[
+                      styles.optionBtnText,
+                      settings.maxStreamingDuration === option.value && styles.optionBtnTextActive,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+            {/* 流量限制開關 */}
+            <View style={styles.settingItem}>
+              <View style={styles.settingLeft}>
+                <View style={[styles.settingIconWrap, { backgroundColor: `${colors.warning}15` }]}>
+                  <Video size={18} color={colors.warning} />
+                </View>
+                <View>
+                  <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>
+                    {locale === 'zh-TW' ? '啟用流量限制' : 'Enable Data Limit'}
+                  </Text>
+                  <Text style={[styles.settingSub, { color: colors.textTertiary }]}>
+                    {locale === 'zh-TW'
+                      ? '達到限制後自動斷開播放'
+                      : 'Auto disconnect when limit reached'}
+                  </Text>
+                </View>
+              </View>
+              <Pressable
+                style={[
+                  styles.toggle,
+                  settings.enableDataLimit && styles.toggleActive,
+                ]}
+                onPress={() => updateSettings({ enableDataLimit: !settings.enableDataLimit })}
+              >
+                <View
+                  style={[
+                    styles.toggleThumb,
+                    settings.enableDataLimit && styles.toggleThumbActive,
+                  ]}
+                />
+              </Pressable>
+            </View>
+
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+            {/* 重置所有流量統計 */}
+            <Pressable
+              style={({ pressed }) => [
+                styles.settingItem,
+                { backgroundColor: pressed ? colors.cardHover : 'transparent' },
+              ]}
+              onPress={() => {
+                Alert.alert(
+                  locale === 'zh-TW' ? '確認重置' : 'Confirm Reset',
+                  locale === 'zh-TW'
+                    ? '確定要重置所有車輛的流量統計嗎？'
+                    : 'Are you sure you want to reset all vehicle data usage?',
+                  [
+                    { text: locale === 'zh-TW' ? '取消' : 'Cancel', style: 'cancel' },
+                    {
+                      text: locale === 'zh-TW' ? '確認重置' : 'Reset',
+                      style: 'destructive',
+                      onPress: () => resetAllUsage(),
+                    },
+                  ]
+                );
+              }}
+            >
+              <View style={styles.settingLeft}>
+                <View style={[styles.settingIconWrap, { backgroundColor: `${colors.danger}15` }]}>
+                  <Trash2 size={18} color={colors.danger} />
+                </View>
+                <View>
+                  <Text style={[styles.settingLabel, { color: colors.danger }]}>
+                    {locale === 'zh-TW' ? '重置流量統計' : 'Reset All Data Usage'}
+                  </Text>
+                  <Text style={[styles.settingSub, { color: colors.textTertiary }]}>
+                    {locale === 'zh-TW'
+                      ? `已記錄 ${Object.keys(vehicleUsage).length} 輛車的流量`
+                      : `${Object.keys(vehicleUsage).length} vehicles tracked`}
+                  </Text>
+                </View>
+              </View>
+              <ChevronRight size={16} color={colors.textTertiary} />
+            </Pressable>
+          </Card>
+        </View>
+
         <View style={styles.spacer} />
       </ScrollView>
     </View>
@@ -373,4 +562,52 @@ const styles = StyleSheet.create({
     marginLeft: spacing.lg + 36 + spacing.md,
   },
   spacer: { height: 80 },
+  // Video stream settings styles
+  optionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+  },
+  optionBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: defaultColors.surface,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: defaultColors.border,
+  },
+  optionBtnActive: {
+    backgroundColor: defaultColors.primary,
+    borderColor: defaultColors.primary,
+  },
+  optionBtnText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    color: defaultColors.textSecondary,
+  },
+  optionBtnTextActive: {
+    color: '#FFFFFF',
+  },
+  toggle: {
+    width: 48,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: defaultColors.surface,
+    padding: 2,
+    justifyContent: 'center',
+  },
+  toggleActive: {
+    backgroundColor: defaultColors.primary,
+  },
+  toggleThumb: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+  },
+  toggleThumbActive: {
+    alignSelf: 'flex-end',
+  },
 });
