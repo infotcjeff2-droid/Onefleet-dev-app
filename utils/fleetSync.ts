@@ -1,4 +1,4 @@
-﻿import { Vehicle, User, DeliveryOrder, DeliveryStatus, SignatureStroke, DeliveryPhoto, DeliveryCargoItem } from '@/types';
+import { Vehicle, User, DeliveryOrder, DeliveryStatus, SignatureStroke, DeliveryPhoto, DeliveryCargoItem } from '@/types';
 import { supabase, hasSupabaseEnv as hasSupabaseEnvConfigured } from './supabase';
 
 const VEHICLES_TABLE = 'vehicles';
@@ -729,6 +729,10 @@ interface DbUserProfile {
   created_at: string;
   updated_at: string;
   is_deleted: boolean;
+  /** 使用者來源：clerk = Clerk OAuth，managed = 網頁新增 */
+  source: string | null;
+  /** 使用者來源：clerk = Clerk OAuth，managed = 網頁新增 */
+  source: string | null;
 }
 
 /**
@@ -748,6 +752,7 @@ function mapUserToDbProfile(user: User & { password?: string }): DbUserProfile {
     company_id: user.companyId ?? null,
     password: user.password ?? null,
     created_at: new Date().toISOString(),
+    source: user.source ?? null,
     updated_at: new Date().toISOString(),
     is_deleted: false,
   };
@@ -767,6 +772,7 @@ function mapDbProfileToUser(db: DbUserProfile): User & { password?: string } {
     avatar: db.avatar ?? undefined,
     address: db.address ?? undefined,
     role: db.role as User['role'],
+    source: (db.source as User['source']) ?? undefined,
     companyId: db.company_id ?? undefined,
     password: db.password ?? undefined,
   };

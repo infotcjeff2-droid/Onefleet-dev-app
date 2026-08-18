@@ -16,19 +16,21 @@ import { colors } from '@/constants/theme';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const FLOATING_ORBS = [
-  { x: 15, y: 20, size: 120, duration: 4000, delay: 0 },
-  { x: 75, y: 60, size: 80, duration: 5000, delay: 500 },
-  { x: 85, y: 15, size: 100, duration: 4500, delay: 1000 },
-  { x: 10, y: 70, size: 90, duration: 5500, delay: 250 },
-  { x: 60, y: 85, size: 70, duration: 4800, delay: 750 },
-  { x: 40, y: 40, size: 60, duration: 4200, delay: 1250 },
+  { x: 15, y: 20, size: 120, duration: 8000, delay: 0, moveX: 60, moveY: 40 },
+  { x: 75, y: 60, size: 80, duration: 10000, delay: 500, moveX: -50, moveY: 50 },
+  { x: 85, y: 15, size: 100, duration: 9000, delay: 1000, moveX: -40, moveY: 60 },
+  { x: 10, y: 70, size: 90, duration: 11000, delay: 250, moveX: 70, moveY: -45 },
+  { x: 60, y: 85, size: 70, duration: 8500, delay: 750, moveX: -55, moveY: -35 },
+  { x: 40, y: 40, size: 60, duration: 9500, delay: 1250, moveX: 45, moveY: 55 },
+  { x: 25, y: 55, size: 50, duration: 7500, delay: 2000, moveX: -35, moveY: -50 },
+  { x: 70, y: 30, size: 65, duration: 10500, delay: 1500, moveX: 50, moveY: 40 },
 ];
 
 interface LoginBackgroundProps {
   children: React.ReactNode;
 }
 
-function FloatingOrb({ x, y, size, duration, delay }: typeof FLOATING_ORBS[0]) {
+function FloatingOrb({ x, y, size, duration, delay, moveX, moveY }: typeof FLOATING_ORBS[0]) {
   const progress = useSharedValue(0);
 
   useEffect(() => {
@@ -46,10 +48,10 @@ function FloatingOrb({ x, y, size, duration, delay }: typeof FLOATING_ORBS[0]) {
   }, [duration, delay]);
 
   const animatedStyle = useAnimatedStyle(() => {
-    const translateX = interpolate(progress.value, [0, 0.5, 1], [0, 30, 0]);
-    const translateY = interpolate(progress.value, [0, 0.5, 1], [0, -20, 0]);
-    const scale = interpolate(progress.value, [0, 0.5, 1], [0.8, 1.2, 0.8]);
-    const opacity = interpolate(progress.value, [0, 0.5, 1], [0.2, 0.5, 0.2]);
+    const translateX = interpolate(progress.value, [0, 0.5, 1], [0, moveX, 0]);
+    const translateY = interpolate(progress.value, [0, 0.5, 1], [0, moveY, 0]);
+    const scale = interpolate(progress.value, [0, 0.5, 1], [0.6, 1.0, 0.6]);
+    const opacity = interpolate(progress.value, [0, 0.5, 1], [0.08, 0.2, 0.08]);
 
     return {
       transform: [

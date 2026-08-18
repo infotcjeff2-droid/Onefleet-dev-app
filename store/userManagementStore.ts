@@ -271,6 +271,8 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
       avatar,
       address,
       companyId,
+      // ★ 網頁新增的使用者預設為 managed，不會同步到 Clerk
+      source: 'managed',
     };
 
     const updated = sanitizeUsers([...get().users, newUser]);
@@ -334,6 +336,22 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
 
     // 雲端處理（不影響本地已刪的事實）
     if (hasSupabaseEnv) {
+      // ★ 依 source 決定雲端刪除策略
+      // - 'clerk'：帳號已在 Clerk 建立，須同步刪除 Clerk 帳號
+      // - 'managed'：純 App 內建帳號，只刪除 Supabase user_profile 表
+      const source = (target as { source?: 'managed' | 'clerk' }).source ?? 'managed';
+
+      if (source === 'clerk' && target.email) {
+        // Clerk 帳號：先用 Edge Function 刪除 Clerk，再刪除 Supabase
+        try {
+          const { deleteClerkUserByEmail } = await import('@/utils/clerkSync');
+          await deleteClerkUserByEmail(target.email);
+          console.log(`[userManagement] deleted Clerk user: ${target.email}`);
+        } catch (clerkErr) {
+          console.warn('[userManagement] Clerk delete failed, proceeding with Supabase delete:', clerkErr);
+        }
+      }
+
       try {
         // 真硬刪除（DELETE FROM）— 確保 syncUsers() 後不會再被拉回來
         await hardDeleteUserProfile(id);

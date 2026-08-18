@@ -16,6 +16,7 @@ import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useInventoryStore } from '@/store/inventoryStore';
 import { useThemeStore } from '@/store/themeStore';
+import { useAuthStore } from '@/store/authStore';
 import { useTranslation } from '@/i18n';
 import { InventoryItem } from '@/types';
 import { uploadImage } from '@/utils/supabaseStorage';
@@ -83,6 +84,7 @@ export default function InventoryManagement() {
   const router = useRouter();
   const { t } = useTranslation();
   const { colors } = useThemeStore();
+  const userRole = useAuthStore((s) => s.user?.role);
   const {
     items,
     warehouses,
@@ -109,10 +111,15 @@ export default function InventoryManagement() {
 
   const [form, setForm] = useState<ItemFormData>(EMPTY_FORM);
 
+  const isAdmin = userRole === 'admin' || userRole === 'superadmin';
+
   useEffect(() => {
-    loadItems();
-    loadWarehouses();
-    loadStocks();
+    // 初始載入：先同步雲端確保拿到最新資料
+    useInventoryStore.getState().syncFromCloud();
+    // admin 已從 syncFromCloud 獲取所有資料，普通用戶需要載入本地緩存
+    if (!isAdmin) {
+      Promise.all([loadItems(), loadWarehouses(), loadStocks()]);
+    }
   }, []);
 
   // 開啟「新增」modal 時，自動補上下一個 SKU 與預設分類，確保欄位一打開就有值
@@ -140,7 +147,11 @@ export default function InventoryManagement() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([loadItems(), loadWarehouses(), loadStocks()]);
+    await useInventoryStore.getState().syncFromCloud();
+    // 普通用戶需要重新載入本地緩存過濾後的資料
+    if (!isAdmin) {
+      await Promise.all([loadItems(), loadWarehouses(), loadStocks()]);
+    }
     setRefreshing(false);
   };
 

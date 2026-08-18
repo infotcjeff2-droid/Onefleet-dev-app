@@ -563,9 +563,11 @@ function AccountEditModal({
 function AddUserModal({ visible, onClose, onAdded }: { visible: boolean; onClose: () => void; onAdded: () => void }) {
   const colors = useThemeStore((state) => state.colors);
   const addUser = useUserManagementStore((state) => state.addUser);
-  const addDriver = useDriverStore((state) => state.addDriver);
   const { getCompanies } = useUserManagementStore();
+  const addDriver = useDriverStore((state) => state.addDriver);
+  const loadDrivers = useDriverStore((state) => state.loadDrivers);
   const { t, locale } = useTranslation();
+
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -600,6 +602,7 @@ function AddUserModal({ visible, onClose, onAdded }: { visible: boolean; onClose
     if (result.success) {
       if (role === 'driver') {
         await addDriver(name.trim(), phone.trim(), email.trim().toLowerCase(), undefined, normalizedAvatar, companyId || undefined);
+        await loadDrivers();
       }
       reset();
       onClose();
@@ -1350,6 +1353,8 @@ export default function ProfileScreen() {
           await useDriverStore.getState().deleteDriver(managedUser.id);
         }
         await useDriverStore.getState().loadDrivers();
+        // ★ 重新載入垃圾桶，確保 UI 顯示最新刪除的項目
+        await loadTrash();
         setRefreshKey((value) => value + 1);
         if (isWeb) {
           window.alert(`✅ 已移到垃圾桶\n\n「${managedUser.name}」已移至垃圾桶，30 天內可在垃圾桶頁面還原。`);
@@ -1624,7 +1629,19 @@ export default function ProfileScreen() {
                             backgroundColor={managedUser.role === 'driver' ? colors.accentSecondary : colors.secondary}
                           />
                           <View style={styles.userInfo}>
-                            <Text style={[styles.userNameSmall, { color: colors.textPrimary }]}>{managedUser.name}</Text>
+                            <View style={styles.userNameRow}>
+                              <Text style={[styles.userNameSmall, { color: colors.textPrimary }]}>{managedUser.name}</Text>
+                              {managedUser.source === 'clerk' && (
+                                <View style={[styles.sourceBadge, { backgroundColor: `${colors.primary}20` }]}>
+                                  <Text style={[styles.sourceBadgeText, { color: colors.primary }]}>Clerk</Text>
+                                </View>
+                              )}
+                              {managedUser.source === 'managed' && (
+                                <View style={[styles.sourceBadge, { backgroundColor: `${colors.textTertiary}20` }]}>
+                                  <Text style={[styles.sourceBadgeText, { color: colors.textTertiary }]}>網頁</Text>
+                                </View>
+                              )}
+                            </View>
                             <Text style={[styles.userEmailSmall, { color: colors.textTertiary }]}>{managedUser.email}</Text>
                           </View>
                           <View style={[styles.userRoleTag, { backgroundColor: managedUser.role === 'driver' ? `${colors.accentSecondary}20` : `${colors.secondary}20` }]}>
@@ -2031,9 +2048,23 @@ const styles = StyleSheet.create({
   userInfo: {
     flex: 1,
   },
+  userNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
   userNameSmall: {
     fontSize: typography.fontSize.sm,
     fontWeight: '600',
+  },
+  sourceBadge: {
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  sourceBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
   },
   userEmailSmall: {
     fontSize: typography.fontSize.xs,

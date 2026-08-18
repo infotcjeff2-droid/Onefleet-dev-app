@@ -11,9 +11,13 @@ import {
   X,
   Database,
   AlertTriangle,
+  Monitor,
 } from 'lucide-react-native';
 import { borderRadius, spacing, typography } from '@/constants/theme';
 import { useVideoStreamStore, formatBytes } from '@/store/videoStreamStore';
+import { useTranslation } from '@/i18n';
+
+const IS_WEB = Platform.OS === 'web';
 
 export type WatchMode = 'live' | 'playback';
 export type StreamQuality = 'sd' | 'hd';
@@ -42,10 +46,12 @@ export function VideoControlPanel({
   const videoStreamStore = useVideoStreamStore();
   const vehicleUsage = devIdno ? videoStreamStore.getVehicleUsage(devIdno) : null;
   const settings = videoStreamStore.settings;
+  const { locale, t } = useTranslation();
+  const tVideo = (key: string) => t(`videoSettings.${key}`);
 
   // 計算流量使用百分比
-  const dataUsagePercent = vehicleUsage
-    ? Math.min((vehicleUsage.bytesReceived / settings.maxDataLimit) * 100, 100)
+  const monthlyDataUsagePercent = vehicleUsage
+    ? Math.min((vehicleUsage.monthlyBytes / settings.maxDataLimit) * 100, 100)
     : 0;
 
   // 取得進度條顏色
@@ -53,6 +59,47 @@ export function VideoControlPanel({
     if (percent >= 90) return '#EF4444'; // 紅色
     if (percent >= 70) return '#F59E0B'; // 橙色
     return '#22C55E'; // 綠色
+  };
+
+  // 處理畫質選擇
+  const handleQualityChange = (quality: 'sd' | 'hd') => {
+    if (quality === 'hd') {
+      const alertMessage = tVideo('highDefinitionAlert');
+      const alertTitle = tVideo('highDefinitionConfirm') || tVideo('highDefinition');
+      
+      if (IS_WEB) {
+        // Web: 使用原生 window.alert
+        window.alert(`${alertTitle}\n\n${alertMessage}`);
+        // 自動切換到 HD
+        videoStreamStore.updateSettings({ streamQuality: 'hd' });
+      } else {
+        // Native: 使用 React Native Alert
+        const { Alert } = require('react-native');
+        Alert.alert(
+          alertTitle,
+          alertMessage,
+          [
+            {
+              text: t('common.cancel'),
+              style: 'cancel',
+            },
+            {
+              text: t('common.confirm'),
+              onPress: () => videoStreamStore.updateSettings({ streamQuality: 'hd' }),
+            },
+          ]
+        );
+      }
+    } else {
+      videoStreamStore.updateSettings({ streamQuality: 'sd' });
+    }
+  };
+
+  // 處理重置本次使用
+  const handleResetSession = () => {
+    if (devIdno) {
+      videoStreamStore.resetSessionUsage(devIdno);
+    }
   };
 
   return (
@@ -78,19 +125,76 @@ export function VideoControlPanel({
           </View>
 
           <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+            {/* 畫質選擇 Section */}
+            <View style={styles.section}>
+              <View style={styles.qualityHeader}>
+                <Monitor size={16} color="#FFFFFF" />
+                <Text style={styles.qualityHeaderText}>{tVideo('videoQuality')}</Text>
+              </View>
+
+              <View style={styles.qualityOptions}>
+                <Pressable
+                  style={[
+                    styles.qualityOption,
+                    settings.streamQuality === 'sd' && styles.qualityOptionSelected,
+                  ]}
+                  onPress={() => handleQualityChange('sd')}
+                >
+                  <Text
+                    style={[
+                      styles.qualityOptionText,
+                      settings.streamQuality === 'sd' && styles.qualityOptionTextSelected,
+                    ]}
+                  >
+                    {tVideo('standard')}
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={[
+                    styles.qualityOption,
+                    settings.streamQuality === 'hd' && styles.qualityOptionSelected,
+                  ]}
+                  onPress={() => handleQualityChange('hd')}
+                >
+                  <Text
+                    style={[
+                      styles.qualityOptionText,
+                      settings.streamQuality === 'hd' && styles.qualityOptionTextSelected,
+                    ]}
+                  >
+                    {tVideo('highDefinition')}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+
             {/* 流量限額 Section */}
             <View style={styles.section}>
               <View style={styles.limitHeader}>
                 <Database size={16} color="#FFFFFF" />
-                <Text style={styles.limitHeaderText}>流量限額（每車）</Text>
+                <Text style={styles.limitHeaderText}>{tVideo('dataLimitPerVehicle')}</Text>
               </View>
 
-              {/* Data Limit */}
+              {/* 本次使用 */}
               <View style={styles.limitItem}>
                 <View style={styles.limitItemRow}>
-                  <Text style={styles.limitLabel}>已用 / 上限</Text>
+                  <Text style={styles.limitLabel}>{tVideo('currentSession')}</Text>
                   <Text style={styles.limitValue}>
-                    {formatBytes(vehicleUsage?.bytesReceived || 0)} / {formatBytes(settings.maxDataLimit)}
+                    {formatBytes(vehicleUsage?.sessionBytes || 0)}
+                  </Text>
+                </View>
+                <Pressable style={styles.resetSessionBtn} onPress={handleResetSession}>
+                  <Text style={styles.resetSessionBtnText}>{tVideo('resetSessionUsage')}</Text>
+                </Pressable>
+              </View>
+
+              {/* 本月使用 */}
+              <View style={styles.limitItem}>
+                <View style={styles.limitItemRow}>
+                  <Text style={styles.limitLabel}>{tVideo('monthlyUsage')}</Text>
+                  <Text style={styles.limitValue}>
+                    {formatBytes(vehicleUsage?.monthlyBytes || 0)} / {formatBytes(settings.maxDataLimit)}
                   </Text>
                 </View>
                 <View style={styles.progressBarBg}>
@@ -98,38 +202,38 @@ export function VideoControlPanel({
                     style={[
                       styles.progressBarFill,
                       {
-                        width: `${dataUsagePercent}%`,
-                        backgroundColor: getProgressColor(dataUsagePercent),
+                        width: `${monthlyDataUsagePercent}%`,
+                        backgroundColor: getProgressColor(monthlyDataUsagePercent),
                       },
                     ]}
                   />
                 </View>
                 <View style={styles.limitItemRow}>
                   <Text style={styles.limitPercentText}>
-                    {dataUsagePercent.toFixed(1)}%
+                    {monthlyDataUsagePercent.toFixed(1)}%
                   </Text>
                   <Text style={styles.limitHintText}>
-                    最大 {formatBytes(settings.maxDataLimit)}
+                    {tVideo('monthlyLimit')}: {formatBytes(settings.maxDataLimit)}
                   </Text>
                 </View>
               </View>
             </View>
 
             {/* Warning/Alert Section */}
-            {dataUsagePercent >= 80 && dataUsagePercent < 100 && (
+            {monthlyDataUsagePercent >= 80 && monthlyDataUsagePercent < 100 && (
               <View style={styles.warningSection}>
                 <AlertTriangle size={16} color="#F59E0B" />
                 <Text style={styles.warningText}>
-                  流量即將用盡
+                  {tVideo('reachingLimit')}
                 </Text>
               </View>
             )}
 
-            {dataUsagePercent >= 100 && (
+            {monthlyDataUsagePercent >= 100 && (
               <View style={styles.alertSection}>
                 <AlertTriangle size={16} color="#FFFFFF" />
                 <Text style={styles.alertText}>
-                  已達流量上限，播放將自動中斷
+                  {tVideo('reachedLimit')}
                 </Text>
               </View>
             )}
@@ -197,6 +301,43 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#3A4050',
   },
+  qualityHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  qualityHeaderText: {
+    fontSize: typography.fontSize.base,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  qualityOptions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  qualityOption: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#3A4050',
+  },
+  qualityOptionSelected: {
+    backgroundColor: '#3B82F6',
+    borderColor: '#3B82F6',
+  },
+  qualityOptionText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    color: '#8B92A8',
+  },
+  qualityOptionTextSelected: {
+    color: '#FFFFFF',
+  },
   sectionTitle: {
     fontSize: typography.fontSize.sm,
     fontWeight: '600',
@@ -251,6 +392,18 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   limitHintText: {
+    fontSize: typography.fontSize.xs,
+    color: '#8B92A8',
+  },
+  resetSessionBtn: {
+    alignSelf: 'flex-end',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: borderRadius.sm,
+    marginTop: spacing.xs,
+  },
+  resetSessionBtnText: {
     fontSize: typography.fontSize.xs,
     color: '#8B92A8',
   },

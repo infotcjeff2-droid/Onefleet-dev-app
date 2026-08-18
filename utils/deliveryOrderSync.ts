@@ -272,7 +272,7 @@ export async function fetchDeliveriesByRole(
   try {
     let url = `/rest/v1/${TABLE_NAME}?is_deleted=eq.false`;
 
-    if (role === 'admin') {
+    if (role === 'admin' || role === 'superadmin') {
       url += '&order=created_at.desc';
     } else if (role === 'company' && companyId) {
       url += `&company_id=eq.${encodeURIComponent(companyId)}&order=created_at.desc`;

@@ -35,6 +35,9 @@ export interface Vehicle {
 
 export type UserRole = 'admin' | 'company' | 'driver' | 'user';
 
+/** 使用者來源：區分 Clerk OAuth 與網頁註冊 */
+export type UserSource = 'clerk' | 'managed';
+
 /** 公司管理相關 - 擴展 User 介面 */
 export interface User {
   id: string;
@@ -53,6 +56,8 @@ export interface User {
   address?: string;
   /** 所屬公司 ID（司機角色使用） */
   companyId?: string;
+  /** 使用者來源：clerk = Clerk OAuth 登入，managed = 網頁新增 */
+  source?: UserSource;
 }
 
 /** 駕駛員擴展介面 */

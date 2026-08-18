@@ -11,7 +11,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { X, RefreshCw, MapPin, Navigation, Gauge, Clock, AlertCircle, Maximize2, ChevronDown, Settings } from 'lucide-react-native';
+import { X, RefreshCw, MapPin, Navigation, Gauge, Clock, AlertCircle, Maximize2, ChevronDown, Settings, Square, Play } from 'lucide-react-native';
 import { CameraFeed, type CameraFeedItem } from './CameraFeed';
 import { VideoControlPanel, type WatchMode, type StreamQuality } from './VideoControlPanel';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
@@ -294,6 +294,10 @@ export function FullScreenMonitor({
   const [slotDataUsage, setSlotDataUsage] = useState<Record<string, number>>({});
   const [showControlPanel, setShowControlPanel] = useState(false);
   const [streamQuality, setStreamQuality] = useState<StreamQuality>('sd');
+  const [isPlaybackPaused, setIsPlaybackPaused] = useState(false); // 是否已暫停播放
+  const [hasSessionExpired, setHasSessionExpired] = useState(false); // 是否已過期
+  // 修改為使用 Set 來追蹤選中的通道索引
+  const [selectedChannels, setSelectedChannels] = useState<Set<number>>(new Set());
 
   // 使用 ref 保存最新值以避免閉包問題
   const streamingStartTimeRef = useRef(streamingStartTime);
@@ -308,6 +312,7 @@ export function FullScreenMonitor({
       const now = Date.now();
       const newRemaining: Record<string, number> = {};
       const newOverLimits: Record<string, { isOver: boolean; reason?: string }> = {};
+      let anyExpired = false;
 
       Object.entries(currentStartTimes).forEach(([feedId, startTime]) => {
         const elapsedSeconds = Math.floor((now - startTime) / 1000);
@@ -317,6 +322,7 @@ export function FullScreenMonitor({
         if (remaining <= 0 || !canContinue.canContinue) {
           newRemaining[feedId] = 0;
           newOverLimits[feedId] = { isOver: true, reason: canContinue.reason };
+          anyExpired = true;
         } else {
           newRemaining[feedId] = remaining;
           newOverLimits[feedId] = { isOver: false };
@@ -327,10 +333,15 @@ export function FullScreenMonitor({
         setRemainingTimes(newRemaining);
         setSlotOverLimits(newOverLimits);
       }
+
+      // 如果有任何計時器過期，設置 hasSessionExpired
+      if (anyExpired && !hasSessionExpired) {
+        setHasSessionExpired(true);
+      }
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [visible, currentDevIdno, videoStreamStore]);
+  }, [visible, currentDevIdno, videoStreamStore, hasSessionExpired]);
 
   // 設備的總通道數（從設備狀態獲取，默認為 4）
   const deviceChannelCount = gpsData?.channelCount || 4;
@@ -357,8 +368,39 @@ export function FullScreenMonitor({
   // 使用傳入的 cameraFeeds 或默認配置
   const allFeeds = cameraFeeds && cameraFeeds.length > 0 ? cameraFeeds : defaultCameraFeeds;
   
-  // 根據 visibleChannelCount 過濾要顯示的頻道
-  const displayFeeds = allFeeds.slice(0, visibleChannelCount);
+  // 根據 selectedChannels 過濾要顯示的頻道
+  const displayFeeds = allFeeds.filter((_, index) => selectedChannels.has(index));
+
+  // 處理通道選擇
+  const handleChannelToggle = (channelIndex: number) => {
+    setSelectedChannels(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(channelIndex)) {
+        newSet.delete(channelIndex);
+      } else {
+        newSet.add(channelIndex);
+      }
+      return newSet;
+    });
+    // 重置播放狀態
+    setIsPlaybackPaused(false);
+    setHasSessionExpired(false);
+    setStreamingStartTime({});
+    setRemainingTimes({});
+    setSlotOverLimits({});
+    setSlotDataUsage({});
+  };
+
+  // 清除所有通道選擇
+  const handleClearChannels = () => {
+    setSelectedChannels(new Set());
+    setIsPlaybackPaused(false);
+    setHasSessionExpired(false);
+    setStreamingStartTime({});
+    setRemainingTimes({});
+    setSlotOverLimits({});
+    setSlotDataUsage({});
+  };
 
   // 追蹤流量使用（放在 displayFeeds 定義之後以避免 TDZ 問題）
   useEffect(() => {
@@ -371,7 +413,7 @@ export function FullScreenMonitor({
         if (feed.devIdno && !feed.id.startsWith('empty-')) {
           const bytesPerSecond = streamQuality === 'hd' ? 1.5 * 1024 * 1024 : 500 * 1024;
           const key = `${feed.id}-${feed.devIdno}`;
-          const currentUsage = slotDataUsage[key] || videoStreamStore.getVehicleUsage(feed.devIdno).bytesReceived;
+          const currentUsage = slotDataUsage[key] || videoStreamStore.getVehicleUsage(feed.devIdno).monthlyBytes;
           setSlotDataUsage(prev => ({ ...prev, [key]: currentUsage + bytesPerSecond }));
           videoStreamStore.addDataUsage(feed.devIdno, bytesPerSecond);
           hasUpdate = true;
@@ -606,19 +648,57 @@ export function FullScreenMonitor({
         </View>
       );
     }
+    
+    // 渲染恢復播放按鈕
+    const renderResumeButton = () => (
+      <View style={styles.pauseOverlay}>
+        <View style={styles.pauseOverlayContent}>
+          <Text style={styles.pauseOverlayText}>實時監控已暫停</Text>
+          <TouchableOpacity
+            style={styles.resumeBtn}
+            onPress={() => {
+              // 重置所有播放狀態並重新開始
+              setIsPlaybackPaused(false);
+              setHasSessionExpired(false);
+              setStreamingStartTime({});
+              setRemainingTimes({});
+              setSlotOverLimits({});
+              setSlotDataUsage({});
+              // 重新開始播放
+              setTimeout(() => {
+                const selectedFeeds = allFeeds.filter((_, idx) => selectedChannels.has(idx));
+                selectedFeeds.forEach((f) => {
+                  if (f.devIdno && !f.id.startsWith('empty-')) {
+                    setStreamingStartTime(prev => ({ ...prev, [f.id]: Date.now() }));
+                    videoStreamStore.startStreaming(f.devIdno);
+                  }
+                });
+              }, 100);
+            }}
+          >
+            <Text style={styles.resumeBtnText}>恢復實時監控</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+
     return (
-      <CameraFeed
-        item={feed}
-        isSelected={selectedFeedIndex === index}
-        onPress={() => setSelectedFeedIndex(index)}
-        quality={streamQuality}
-        remainingTime={remainingTimes[feed.id] ?? 0}
-        dataUsed={slotDataUsage[`${feed.id}-${feed.devIdno}`] || videoStreamStore.getVehicleUsage(feed.devIdno).bytesReceived}
-        dataLimit={videoStreamStore.settings.maxDataLimit}
-        isOverLimit={slotOverLimits[feed.id]?.isOver ?? false}
-        limitWarning={slotOverLimits[feed.id]?.reason}
-        onOverLimitReset={() => handleOverLimitReset(feed)}
-      />
+      <View style={styles.cameraCellContent}>
+        <CameraFeed
+          item={feed}
+          isSelected={selectedFeedIndex === index}
+          onPress={() => setSelectedFeedIndex(index)}
+          quality={streamQuality}
+          remainingTime={remainingTimes[feed.id] ?? 0}
+          dataUsed={slotDataUsage[`${feed.id}-${feed.devIdno}`] || videoStreamStore.getVehicleUsage(feed.devIdno).monthlyBytes}
+          dataLimit={videoStreamStore.settings.maxDataLimit}
+          isOverLimit={slotOverLimits[feed.id]?.isOver ?? false}
+          limitWarning={slotOverLimits[feed.id]?.reason}
+          onOverLimitReset={() => handleOverLimitReset(feed)}
+          isPaused={isPlaybackPaused}
+        />
+        {isPlaybackPaused && renderResumeButton()}
+      </View>
     );
   };
 
@@ -719,7 +799,125 @@ export function FullScreenMonitor({
   );
 
   const renderCameraArea = () => {
-    // 渲染頻道選擇器 - 直接顯示數字按鈕 (1 2 3 4)
+    // 渲染停止/恢復播放按鈕（開關模式）
+    const renderStopResumeButton = () => {
+      // 只有在有計時器運行或已過期時才顯示
+      const hasTimerRunning = Object.values(remainingTimes).some(t => t > 0);
+      if (!hasTimerRunning && !isPlaybackPaused && !hasSessionExpired) {
+        return null;
+      }
+
+      return (
+        <TouchableOpacity
+          style={styles.stopResumeBtn}
+          onPress={() => {
+            if (isPlaybackPaused || hasSessionExpired) {
+              // 恢復播放：重新載入並開始播放
+              setIsPlaybackPaused(false);
+              setHasSessionExpired(false);
+              setStreamingStartTime({});
+              setRemainingTimes({});
+              setSlotOverLimits({});
+              setSlotDataUsage({});
+              // 重新開始播放
+              setTimeout(() => {
+                const selectedFeeds = allFeeds.filter((_, idx) => selectedChannels.has(idx));
+                selectedFeeds.forEach((feed) => {
+                  if (feed.devIdno && !feed.id.startsWith('empty-')) {
+                    setStreamingStartTime(prev => ({ ...prev, [feed.id]: Date.now() }));
+                    videoStreamStore.startStreaming(feed.devIdno);
+                  }
+                });
+              }, 100);
+            } else {
+              // 停止播放（顯示 overlay，不停止視頻）
+              setIsPlaybackPaused(true);
+            }
+          }}
+        >
+          {isPlaybackPaused || hasSessionExpired ? (
+            <Play size={14} color="#FFFFFF" />
+          ) : (
+            <Square size={14} color="#FFFFFF" />
+          )}
+        </TouchableOpacity>
+      );
+    };
+
+    // 渲染自動停止計時器（可點擊切換）
+    const renderAutoStopTimer = () => {
+      const hasTimerRunning = Object.values(remainingTimes).some(t => t > 0);
+      
+      // 渲染計時器內容（可點擊切換開關）
+      const renderTimerContent = () => {
+        if (hasSessionExpired) {
+          return (
+            <TouchableOpacity 
+              style={styles.autoStopTimerTouchable}
+              onPress={() => {
+                // 切換：恢復播放
+                setIsPlaybackPaused(false);
+                setHasSessionExpired(false);
+                setStreamingStartTime({});
+                setRemainingTimes({});
+                setSlotOverLimits({});
+                setSlotDataUsage({});
+                setTimeout(() => {
+                  const selectedFeeds = allFeeds.filter((_, idx) => selectedChannels.has(idx));
+                  selectedFeeds.forEach((feed) => {
+                    if (feed.devIdno && !feed.id.startsWith('empty-')) {
+                      setStreamingStartTime(prev => ({ ...prev, [feed.id]: Date.now() }));
+                      videoStreamStore.startStreaming(feed.devIdno);
+                    }
+                  });
+                }, 100);
+              }}
+            >
+              <Text style={styles.autoStopTimerLabel}>自動停止計時器</Text>
+              <Text style={styles.sessionExpiredText}>Session Expired</Text>
+            </TouchableOpacity>
+          );
+        }
+
+        if (hasTimerRunning) {
+          const minRemaining = Math.min(...Object.values(remainingTimes).filter(t => t > 0));
+          const minutes = Math.floor(minRemaining / 60);
+          const seconds = minRemaining % 60;
+
+          return (
+            <TouchableOpacity 
+              style={styles.autoStopTimerTouchable}
+              onPress={() => {
+                // 切換：停止播放
+                setIsPlaybackPaused(true);
+              }}
+            >
+              <Text style={styles.autoStopTimerLabel}>自動停止計時器</Text>
+              <Text style={styles.autoStopTimerValue}>
+                {minutes}:{String(seconds).padStart(2, '0')}
+              </Text>
+            </TouchableOpacity>
+          );
+        }
+
+        // 無計時器運行
+        return (
+          <View style={styles.autoStopTimerTouchable}>
+            <Text style={styles.autoStopTimerLabel}>自動停止計時器</Text>
+            <Text style={styles.autoStopTimerInactive}>--:--</Text>
+          </View>
+        );
+      };
+
+      return (
+        <View style={styles.autoStopTimerContainer}>
+          {renderTimerContent()}
+          {renderStopResumeButton()}
+        </View>
+      );
+    };
+
+    // 渲染頻道選擇器 - 直接顯示數字按鈕 (1 2 3 4)，支援多選
     // 定義在前面以避免 TDZ 問題
     const renderChannelSelector = () => {
       if (allFeeds.length <= 1) return null;
@@ -728,7 +926,7 @@ export function FullScreenMonitor({
         <View style={styles.channelSelectorContainer}>
           {allFeeds.slice(0, Math.min(allFeeds.length, 8)).map((_, index) => {
             const count = index + 1;
-            const isActive = visibleChannelCount === count;
+            const isActive = selectedChannels.has(index);
             return (
               <TouchableOpacity
                 key={`ch-${count}`}
@@ -736,7 +934,7 @@ export function FullScreenMonitor({
                   styles.channelNumBtn,
                   isActive && styles.channelNumBtnActive,
                 ]}
-                onPress={() => setVisibleChannelCount(count)}
+                onPress={() => handleChannelToggle(index)}
               >
                 <Text style={[
                   styles.channelNumText,
@@ -766,7 +964,7 @@ export function FullScreenMonitor({
     }
 
     // 當未選擇任何通道時，顯示提示
-    if (visibleChannelCount === 0) {
+    if (selectedChannels.size === 0) {
       return (
         <View style={styles.cameraSection}>
           {/* Camera Header */}
@@ -777,6 +975,7 @@ export function FullScreenMonitor({
                 {allFeeds.length} 通道
               </Text>
               {renderChannelSelector()}
+              {renderAutoStopTimer()}
             </View>
           </View>
 
@@ -792,18 +991,20 @@ export function FullScreenMonitor({
     // 根據網格佈局動態生成行
     const renderGrid = () => {
       const rows: React.ReactNode[] = [];
+      const selectedFeeds = allFeeds.filter((_, index) => selectedChannels.has(index));
+      const layout = getGridLayout(selectedFeeds.length);
 
-      for (let row = 0; row < gridLayout.rows; row++) {
+      for (let row = 0; row < layout.rows; row++) {
         const cells: React.ReactNode[] = [];
 
-        for (let col = 0; col < gridLayout.cols; col++) {
-          const index = row * gridLayout.cols + col;
-          const feed = displayFeeds[index];
+        for (let col = 0; col < layout.cols; col++) {
+          const feedIndex = row * layout.cols + col;
+          const feed = selectedFeeds[feedIndex];
 
-          if (index >= displayFeeds.length) {
+          if (!feed) {
             // 超出實際通道數的格子顯示為空
             cells.push(
-              <View key={`empty-${index}`} style={styles.cameraCell}>
+              <View key={`empty-${row}-${col}`} style={styles.cameraCell}>
                 <View style={styles.emptyCameraCell}>
                   <Text style={styles.emptyCameraText}>-</Text>
                 </View>
@@ -811,8 +1012,8 @@ export function FullScreenMonitor({
             );
           } else {
             cells.push(
-              <View key={feed.id || index} style={styles.cameraCell}>
-                {renderCameraCell(feed, index)}
+              <View key={feed.id || feedIndex} style={styles.cameraCell}>
+                {renderCameraCell(feed, feedIndex)}
               </View>
             );
           }
@@ -838,6 +1039,7 @@ export function FullScreenMonitor({
               {allFeeds.length} 通道
             </Text>
             {renderChannelSelector()}
+            {renderAutoStopTimer()}
           </View>
         </View>
 
@@ -1125,6 +1327,38 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     fontWeight: '600',
   },
+  autoStopTimerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.sm,
+    gap: spacing.xs,
+  },
+  autoStopTimerLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#F59E0B',
+  },
+  autoStopTimerValue: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '700',
+    color: '#EF4444',
+  },
+  sessionExpiredText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '700',
+    color: '#EF4444',
+  },
+  stopResumeBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(59, 130, 246, 0.8)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   cameraGrid: {
     flex: 1,
     gap: spacing.sm,
@@ -1137,6 +1371,10 @@ const styles = StyleSheet.create({
   cameraCell: {
     flex: 1,
     minHeight: 80,
+  },
+  cameraCellContent: {
+    flex: 1,
+    position: 'relative',
   },
   emptyCameraCell: {
     flex: 1,
@@ -1184,6 +1422,34 @@ const styles = StyleSheet.create({
     color: '#4A5568',
     textAlign: 'center',
   },
+  // Pause overlay
+  pauseOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  pauseOverlayContent: {
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  pauseOverlayText: {
+    fontSize: typography.fontSize.md,
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  resumeBtn: {
+    backgroundColor: '#3B82F6',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+  },
+  resumeBtnText: {
+    fontSize: typography.fontSize.sm,
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
 
   // --- Channel Selector (数字按钮) ---
   channelSelectorContainer: {
@@ -1213,6 +1479,17 @@ const styles = StyleSheet.create({
   channelNumTextActive: {
     color: '#FFFFFF',
     fontWeight: '700',
+  },
+  // 可點擊的計時器內容
+  autoStopTimerTouchable: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  autoStopTimerInactive: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '700',
+    color: '#6B7280',
   },
 
   // --- 旧的 dropdown 样式保留备用 ---

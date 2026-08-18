@@ -355,7 +355,7 @@ export function QuadCameraMonitor({
           // 估算流量：SD 約 500KB/s，HD 約 1.5MB/s
           const bytesPerSecond = streamQuality === 'hd' ? 1.5 * 1024 * 1024 : 500 * 1024;
           const key = `${slot.id}-${slot.devIdno}`;
-          const currentUsage = slotDataUsage[key] || videoStreamStore.getVehicleUsage(slot.devIdno).bytesReceived;
+          const currentUsage = slotDataUsage[key] || videoStreamStore.getVehicleUsage(slot.devIdno).monthlyBytes;
           const addedUsage = currentUsage + bytesPerSecond;
           newUsage[key] = addedUsage;
           hasNewUsage = true;
@@ -671,7 +671,7 @@ export function QuadCameraMonitor({
                 onRetry={() => handleRetry(0)}
                 quality={streamQuality}
                 remainingTime={remainingTimes[slots[0]?.id] ?? 0}
-                dataUsed={slotDataUsage[`${slots[0]?.id}-${slots[0]?.devIdno}`] || videoStreamStore.getVehicleUsage(slots[0]?.devIdno || '').bytesReceived}
+                dataUsed={slotDataUsage[`${slots[0]?.id}-${slots[0]?.devIdno}`] || videoStreamStore.getVehicleUsage(slots[0]?.devIdno || '').monthlyBytes}
                 dataLimit={videoStreamStore.settings.maxDataLimit}
                 isOverLimit={slotOverLimits[slots[0]?.id]?.isOver ?? false}
                 limitWarning={slotOverLimits[slots[0]?.id]?.reason}
@@ -685,7 +685,7 @@ export function QuadCameraMonitor({
                 onRetry={() => handleRetry(1)}
                 quality={streamQuality}
                 remainingTime={remainingTimes[slots[1]?.id] ?? 0}
-                dataUsed={slotDataUsage[`${slots[1]?.id}-${slots[1]?.devIdno}`] || videoStreamStore.getVehicleUsage(slots[1]?.devIdno || '').bytesReceived}
+                dataUsed={slotDataUsage[`${slots[1]?.id}-${slots[1]?.devIdno}`] || videoStreamStore.getVehicleUsage(slots[1]?.devIdno || '').monthlyBytes}
                 dataLimit={videoStreamStore.settings.maxDataLimit}
                 isOverLimit={slotOverLimits[slots[1]?.id]?.isOver ?? false}
                 limitWarning={slotOverLimits[slots[1]?.id]?.reason}
@@ -703,7 +703,7 @@ export function QuadCameraMonitor({
                 onRetry={() => handleRetry(2)}
                 quality={streamQuality}
                 remainingTime={remainingTimes[slots[2]?.id] ?? 0}
-                dataUsed={slotDataUsage[`${slots[2]?.id}-${slots[2]?.devIdno}`] || videoStreamStore.getVehicleUsage(slots[2]?.devIdno || '').bytesReceived}
+                dataUsed={slotDataUsage[`${slots[2]?.id}-${slots[2]?.devIdno}`] || videoStreamStore.getVehicleUsage(slots[2]?.devIdno || '').monthlyBytes}
                 dataLimit={videoStreamStore.settings.maxDataLimit}
                 isOverLimit={slotOverLimits[slots[2]?.id]?.isOver ?? false}
                 limitWarning={slotOverLimits[slots[2]?.id]?.reason}
@@ -717,7 +717,7 @@ export function QuadCameraMonitor({
                 onRetry={() => handleRetry(3)}
                 quality={streamQuality}
                 remainingTime={remainingTimes[slots[3]?.id] ?? 0}
-                dataUsed={slotDataUsage[`${slots[3]?.id}-${slots[3]?.devIdno}`] || videoStreamStore.getVehicleUsage(slots[3]?.devIdno || '').bytesReceived}
+                dataUsed={slotDataUsage[`${slots[3]?.id}-${slots[3]?.devIdno}`] || videoStreamStore.getVehicleUsage(slots[3]?.devIdno || '').monthlyBytes}
                 dataLimit={videoStreamStore.settings.maxDataLimit}
                 isOverLimit={slotOverLimits[slots[3]?.id]?.isOver ?? false}
                 limitWarning={slotOverLimits[slots[3]?.id]?.reason}

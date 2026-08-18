@@ -71,6 +71,8 @@ export function useEnsureUserProfile() {
             name,
             role,
             avatar: user.imageUrl || null,
+            // ★ Clerk OAuth 使用者標記為 'clerk'，區分網頁新增的 'managed' 使用者
+            source: 'clerk',
           });
 
         if (insertError) {

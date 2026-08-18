@@ -13,6 +13,11 @@ import {
 } from 'react-native';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
+import Animated, {
+  useSharedValue,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 import {
   ChevronRight,
   MapPin,
@@ -40,8 +45,9 @@ import { Badge } from '@/components/ui/Badge';
 import { useThemeStore } from '@/store/themeStore';
 import { useRouteConfigStore } from '@/store/routeConfigStore';
 import { useDeliveryStore } from '@/store/deliveryStore';
+import { useAuthStore } from '@/store/authStore';
 import { useTranslation } from '@/i18n';
-import { spacing, typography } from '@/constants/theme';
+import { spacing, typography, borderRadius } from '@/constants/theme';
 import type { RouteWaypoint, RouteOption, DeliveryOrderRoute } from '@/types';
 import {
   optimizeDeliverySequence,
@@ -60,6 +66,42 @@ import {
 import { getWarehouseCoords } from '@/utils/warehouseCoords';
 import { RoutePlannerMap } from '@/components/delivery/RoutePlannerMap';
 
+function DevelopmentNotice({ onDismiss }: { onDismiss: () => void }) {
+  const opacity = useSharedValue(0);
+  const router = useRouter();
+  const { locale } = useTranslation();
+
+  useEffect(() => {
+    // 淡入 300ms → 顯示 1500ms，總共 1800ms 後開始淡出並跳轉
+    opacity.value = withSequence(
+      withTiming(1, { duration: 300 }),
+      withTiming(1, { duration: 1500 }),
+      withTiming(0, { duration: 300 })
+    );
+
+    // 在淡出開始時（1800ms後）執行跳轉
+    const timeout = setTimeout(() => {
+      onDismiss();
+      router.replace('/(tabs)');
+    }, 1800);
+
+    return () => clearTimeout(timeout);
+  }, []);
+
+  return (
+    <Animated.View style={[styles.devNoticeOverlay, { opacity }]}>
+      <View style={styles.devNoticeContent}>
+        <Text style={styles.devNoticeIcon}>🚧</Text>
+        <Text style={styles.devNoticeTitle}>路線規劃</Text>
+        <Text style={styles.devNoticeText}>此功能僅限管理員使用</Text>
+        <Text style={styles.devNoticeSubtext}>
+          {locale === 'zh-TW' ? '其他角色功能開發中，即將返回...' : 'Feature under development, returning...'}
+        </Text>
+      </View>
+    </Animated.View>
+  );
+}
+
 interface RouteStop {
   id: string;
   type: 'pickup' | 'dropoff';
@@ -74,10 +116,14 @@ interface RouteStop {
 
 export default function RoutePlannerScreen() {
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const { colors } = useThemeStore();
   const { config, isConfigured, loadConfig } = useRouteConfigStore();
   const { deliveries, loadDeliveries, getDeliveriesForDriver, isLoading } = useDeliveryStore();
+  const role = useAuthStore((s) => s.role);
+
+  // 檢查是否為管理員
+  const isAdmin = role === 'admin';
 
   // 狀態
   const [refreshing, setRefreshing] = useState(false);
@@ -378,6 +424,9 @@ export default function RoutePlannerScreen() {
         title="路線規劃"
         showBack
       />
+
+      {/* 非管理員顯示開發中提示 */}
+      {!isAdmin && <DevelopmentNotice onDismiss={() => {}} />}
 
       <ScrollView
         style={styles.scrollView}
@@ -743,6 +792,37 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollView: { flex: 1 },
   scrollContent: { padding: spacing.lg, paddingBottom: 100 },
+  // Development Notice styles
+  devNoticeOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.92)',
+    zIndex: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  devNoticeContent: {
+    alignItems: 'center',
+    padding: spacing['3xl'],
+  },
+  devNoticeIcon: {
+    fontSize: 64,
+    marginBottom: spacing.lg,
+  },
+  devNoticeTitle: {
+    fontSize: typography.fontSize['2xl'],
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: spacing.md,
+  },
+  devNoticeText: {
+    fontSize: typography.fontSize.lg,
+    color: '#FFFFFF',
+    marginBottom: spacing.sm,
+  },
+  devNoticeSubtext: {
+    fontSize: typography.fontSize.base,
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
   card: { marginBottom: spacing.lg, padding: spacing.lg },
   section: { marginBottom: spacing.lg },
   sectionHeader: {

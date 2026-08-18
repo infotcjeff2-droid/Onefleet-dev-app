@@ -78,6 +78,9 @@ export function CompanyList() {
 
     const doDelete = async () => {
       await softDeleteUser(company.id);
+      // 重新載入使用者資料，確保 UI 同步更新
+      const { loadUsers } = useUserManagementStore.getState();
+      await loadUsers();
       if (isWeb) {
         window.alert(`✅ ${t('company.companyDeleted')}`);
       } else {

@@ -110,9 +110,12 @@ export default function InventoryManagement() {
   const [form, setForm] = useState<ItemFormData>(EMPTY_FORM);
 
   useEffect(() => {
-    loadItems();
-    loadWarehouses();
-    loadStocks();
+    // 初始載入：先同步雲端確保拿到最新資料，再載入本地緩存
+    const init = async () => {
+      await useInventoryStore.getState().syncFromCloud();
+      await Promise.all([loadItems(), loadWarehouses(), loadStocks()]);
+    };
+    init();
   }, []);
 
   // 開啟「新增」modal 時，自動補上下一個 SKU 與預設分類，確保欄位一打開就有值

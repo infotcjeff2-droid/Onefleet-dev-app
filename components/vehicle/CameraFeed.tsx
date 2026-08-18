@@ -55,6 +55,8 @@ interface CameraFeedProps {
   limitWarning?: string;
   /** 超限重置回調 */
   onOverLimitReset?: () => void;
+  /** 是否已暫停播放 */
+  isPaused?: boolean;
 }
 
 type FeedState = 'loading' | 'streaming' | 'streaming-hls' | 'streaming-pending' | 'device-offline' | 'offline' | 'error' | 'no-device';
@@ -72,6 +74,7 @@ function CameraFeedComponent({
   isOverLimit = false,
   limitWarning,
   onOverLimitReset,
+  isPaused = false,
 }: CameraFeedProps) {
   const { plateNumber, vehicleName, streamUrl, devIdno, channel = 0 } = item;
   const [feedState, setFeedState] = useState<FeedState>(
@@ -80,6 +83,7 @@ function CameraFeedComponent({
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isDeviceOnline, setIsDeviceOnline] = useState<boolean | null>(null);
+  const [isMuted, setIsMuted] = useState(true); // 預設靜音
   const { isConnected, loadConfig } = useGps808Store();
   const videoStreamStore = useVideoStreamStore();
 
@@ -217,30 +221,56 @@ function CameraFeedComponent({
       case 'streaming':
       case 'streaming-pending':
         if (!resolvedUrl) return null;
+        // 如果已暫停，不渲染視頻
+        if (isPaused) return null;
         return (
-          <FlvPlayer
-            src={resolvedUrl}
-            mode="live"
-            autoplay
-            muted={true}
-            controls={true}
-            aspectRatio="full"
-            onError={(err) => {
-              setFeedState('error');
-              setErrorMsg(err);
-            }}
-          />
+          <View style={styles.videoContainer}>
+            <FlvPlayer
+              src={resolvedUrl}
+              mode="live"
+              autoplay
+              muted={isMuted}
+              controls={false}
+              aspectRatio="full"
+              onError={(err) => {
+                setFeedState('error');
+                setErrorMsg(err);
+              }}
+            />
+            {/* 自訂聲音開關按鈕 */}
+            <Pressable
+              style={styles.muteBtn}
+              onPress={() => setIsMuted(!isMuted)}
+            >
+              <Text style={styles.muteBtnText}>
+                {isMuted ? '🔇' : '🔊'}
+              </Text>
+            </Pressable>
+          </View>
         );
 
       case 'streaming-hls':
         if (!resolvedUrl) return null;
+        // 如果已暫停，不渲染視頻
+        if (isPaused) return null;
         return (
-          <HlsVideo
-            url={resolvedUrl}
-            autoPlay
-            muted={true}
-            controls={true}
-          />
+          <View style={styles.videoContainer}>
+            <HlsVideo
+              url={resolvedUrl}
+              autoPlay
+              muted={isMuted}
+              controls={false}
+            />
+            {/* 自訂聲音開關按鈕 */}
+            <Pressable
+              style={styles.muteBtn}
+              onPress={() => setIsMuted(!isMuted)}
+            >
+              <Text style={styles.muteBtnText}>
+                {isMuted ? '🔇' : '🔊'}
+              </Text>
+            </Pressable>
+          </View>
         );
 
       case 'device-offline':
@@ -360,34 +390,6 @@ function CameraFeedComponent({
           )}
         </View>
       </View>
-
-      {/* Timer and Data Usage Bar */}
-      {(feedState === 'streaming' || feedState === 'streaming-hls') && !isOverLimit && (remainingTime > 0 || dataUsed > 0) && (
-        <View style={styles.streamInfoBar}>
-          {remainingTime > 0 && (
-            <View style={styles.timerContainer}>
-              <Text style={styles.timerText}>
-                {Math.floor(remainingTime / 60)}:{String(remainingTime % 60).padStart(2, '0')}
-              </Text>
-            </View>
-          )}
-          {dataUsed > 0 && dataLimit > 0 && (
-            <View style={styles.dataUsageContainer}>
-              <Text style={styles.dataUsageText}>
-                {formatBytes(dataUsed)} / {formatBytes(dataLimit)}
-              </Text>
-              <View style={styles.dataUsageBar}>
-                <View
-                  style={[
-                    styles.dataUsageProgress,
-                    { width: `${Math.min((dataUsed / dataLimit) * 100, 100)}%` }
-                  ]}
-                />
-              </View>
-            </View>
-          )}
-        </View>
-      )}
 
       {/* Video / Placeholder Area — streaming 時禁用 pointerEvents 讓播放器可點擊 */}
       <View
@@ -532,6 +534,24 @@ const styles = StyleSheet.create({
     color: defaultColors.primary,
     marginTop: spacing.xs,
     textAlign: 'center',
+  },
+  videoContainer: {
+    flex: 1,
+    position: 'relative',
+  },
+  muteBtn: {
+    position: 'absolute',
+    bottom: spacing.sm,
+    right: spacing.sm,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  muteBtnText: {
+    fontSize: 18,
   },
   webView: {
     flex: 1,

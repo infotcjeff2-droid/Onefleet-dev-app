@@ -490,9 +490,12 @@ export async function pullInventoryFromSupabase(): Promise<InventorySnapshot> {
   const client = ensureClient();
   const user = getCurrentUser();
   const companyId = user?.companyId;
+  const userRole = user?.role;
 
-  // 沒登入就回空（不是 admin）
-  const baseFilters = companyId ? { column: 'company_id', value: companyId } : null;
+  // admin 可以查看所有資料，普通用戶只查看自己公司的資料
+  const baseFilters = (userRole === 'admin' || userRole === 'superadmin')
+    ? null
+    : (companyId ? { column: 'company_id', value: companyId } : null);
 
   try {
     const whQ = client.from(TABLE_WAREHOUSES).select('*').eq('is_deleted', false);
@@ -512,6 +515,10 @@ export async function pullInventoryFromSupabase(): Promise<InventorySnapshot> {
       baseFilters ? alQ.eq(baseFilters.column, baseFilters.value) : alQ,
       baseFilters ? dpQ.eq(baseFilters.column, baseFilters.value) : dpQ,
     ]);
+
+    console.log(
+      `[inventorySync] pulled (role: ${userRole}) ${wh.data?.length ?? 0} warehouses, ${it.data?.length ?? 0} items, ${st.data?.length ?? 0} stocks, ${tr.data?.length ?? 0} trucks`,
+    );
 
     const warehouses = (wh.data || []).map((r) => dbToWarehouse(r as DbWarehouse));
     const items = (it.data || []).map((r) => dbToItem(r as DbItem));

@@ -85,7 +85,12 @@ export default function WarehouseManagement() {
   const [form, setForm] = useState<WarehouseFormData>(EMPTY_FORM);
 
   useEffect(() => {
-    loadWarehouses();
+    // 初始載入：先同步雲端確保拿到最新資料，再載入本地緩存
+    const init = async () => {
+      await useInventoryStore.getState().syncFromCloud();
+      await loadWarehouses();
+    };
+    init();
   }, []);
 
   const onRefresh = async () => {

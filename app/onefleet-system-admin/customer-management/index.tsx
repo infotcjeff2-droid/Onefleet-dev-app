@@ -66,7 +66,12 @@ export default function CustomerManagement() {
   const [form, setForm] = useState<CustomerFormData>(EMPTY_FORM);
 
   useEffect(() => {
-    loadCustomers();
+    // 初始載入：先同步雲端確保拿到最新資料，再載入本地緩存
+    const init = async () => {
+      await syncCustomers();
+      await loadCustomers();
+    };
+    init();
   }, []);
 
   const onRefresh = async () => {

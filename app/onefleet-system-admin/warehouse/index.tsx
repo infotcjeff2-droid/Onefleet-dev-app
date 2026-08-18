@@ -14,6 +14,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useInventoryStore } from '@/store/inventoryStore';
 import { useThemeStore } from '@/store/themeStore';
+import { useAuthStore } from '@/store/authStore';
 import { Warehouse } from '@/types';
 import {
   Warehouse as WarehouseIcon,
@@ -67,6 +68,7 @@ const EMPTY_FORM: WarehouseFormData = {
 export default function WarehouseManagement() {
   const router = useRouter();
   const { colors } = useThemeStore();
+  const userRole = useAuthStore((s) => s.user?.role);
   const {
     warehouses,
     isLoading,
@@ -84,13 +86,24 @@ export default function WarehouseManagement() {
 
   const [form, setForm] = useState<WarehouseFormData>(EMPTY_FORM);
 
+  const isAdmin = userRole === 'admin' || userRole === 'superadmin';
+
   useEffect(() => {
-    loadWarehouses();
+    // 初始載入：先同步雲端確保拿到最新資料
+    useInventoryStore.getState().syncFromCloud();
+    // admin 已從 syncFromCloud 獲取所有資料，普通用戶需要載入本地緩存
+    if (!isAdmin) {
+      loadWarehouses();
+    }
   }, []);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadWarehouses();
+    await useInventoryStore.getState().syncFromCloud();
+    // 普通用戶需要重新載入本地緩存過濾後的資料
+    if (!isAdmin) {
+      await loadWarehouses();
+    }
     setRefreshing(false);
   };
 

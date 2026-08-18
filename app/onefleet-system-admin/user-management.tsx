@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Alert, TextInput as RNTextInput,
   Modal, Platform,
@@ -35,7 +35,7 @@ export default function UserManagementScreen() {
   const router = useRouter();
   const { colors } = useThemeStore();
   const { t, locale } = useTranslation();
-  const { users, addUser, deleteUser, updateUserPassword, updateUser, getCompanies } = useUserManagementStore();
+  const { users, addUser, deleteUser, updateUserPassword, updateUser, getCompanies, loadUsers } = useUserManagementStore();
 
   const companies = getCompanies();
 
@@ -54,6 +54,20 @@ export default function UserManagementScreen() {
   // Sync state
   const [syncing, setSyncing] = useState(false);
   const [syncDone, setSyncDone] = useState(false);
+
+  // 載入使用者資料並同步到 Supabase
+  useEffect(() => {
+    const loadAndSync = async () => {
+      // 先載入本地資料
+      await loadUsers();
+      // 確保資料同步到 Supabase（讓子使用戶能看到公司清單）
+      const { syncUsers } = useUserManagementStore.getState();
+      await syncUsers();
+      // 再次載入以確保取得最新資料
+      await loadUsers();
+    };
+    loadAndSync();
+  }, []);
 
   const isZh = locale === 'zh-TW';
 
@@ -90,6 +104,7 @@ export default function UserManagementScreen() {
       setModalVisible(false);
       setForm({ name: '', email: '', password: '', role: 'driver' });
       setFormErrors({});
+      await loadUsers();
       if (isWeb) {
         window.alert(`${isZh ? '✅ 新增成功' : '✅ Added'}\n\n${isZh ? '使用者已新增至系統。' : 'User has been added to the system.'}`);
       } else {
@@ -220,29 +235,50 @@ export default function UserManagementScreen() {
   // ── Delete ─────────────────────────────────────────────────────────────────
 
   const handleDelete = (user: { id: string; email: string; name: string }) => {
-    Alert.alert(
-      isZh ? '確認刪除' : 'Confirm Delete',
-      isZh
-        ? `刪除使用者「${user.name}」(${user.email})？此操作不可逆。`
-        : `Delete user "${user.name}" (${user.email})? This cannot be undone.`,
-      [
-        { text: isZh ? '取消' : 'Cancel', style: 'cancel' },
-        {
-          text: isZh ? '刪除' : 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteUser(user.id);
-            } catch {
-              Alert.alert(
-                isZh ? '刪除失敗' : 'Delete failed',
-                isZh ? '無法刪除使用者。' : 'Could not delete user.'
-              );
-            }
+    if (isWeb) {
+      if (!window.confirm(
+        isZh
+          ? `刪除使用者「${user.name}」(${user.email})？此操作不可逆。`
+          : `Delete user "${user.name}" (${user.email})? This cannot be undone.`
+      )) {
+        return;
+      }
+      doDeleteUser(user.id);
+    } else {
+      Alert.alert(
+        isZh ? '確認刪除' : 'Confirm Delete',
+        isZh
+          ? `刪除使用者「${user.name}」(${user.email})？此操作不可逆。`
+          : `Delete user "${user.name}" (${user.email})? This cannot be undone.`,
+        [
+          { text: isZh ? '取消' : 'Cancel', style: 'cancel' },
+          {
+            text: isZh ? '刪除' : 'Delete',
+            style: 'destructive',
+            onPress: () => doDeleteUser(user.id),
           },
-        },
-      ]
-    );
+        ]
+      );
+    }
+  };
+
+  const doDeleteUser = async (userId: string) => {
+    try {
+      await deleteUser(userId);
+      await loadUsers();
+      if (isWeb) {
+        window.alert(isZh ? '✅ 刪除成功' : '✅ Deleted successfully');
+      }
+    } catch {
+      if (isWeb) {
+        window.alert(isZh ? '❌ 刪除失敗' : '❌ Delete failed');
+      } else {
+        Alert.alert(
+          isZh ? '刪除失敗' : 'Delete failed',
+          isZh ? '無法刪除使用者。' : 'Could not delete user.'
+        );
+      }
+    }
   };
 
   // ── Edit handlers ──────────────────────────────────────────────────────────
@@ -258,6 +294,7 @@ export default function UserManagementScreen() {
   const handleDriverSaved = async (updates: any) => {
     if (driverModal.driver) {
       await updateUser(driverModal.driver.id, updates);
+      await loadUsers();
       if (isZh) {
         Alert.alert('成功', '司機已更新');
       } else {
@@ -270,6 +307,7 @@ export default function UserManagementScreen() {
   const handleCompanySaved = async (updates: any) => {
     if (companyModal.company) {
       await updateUser(companyModal.company.id, updates);
+      await loadUsers();
       if (isZh) {
         Alert.alert('成功', '公司已更新');
       } else {

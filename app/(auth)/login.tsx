@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Pressable, Image, LayoutChangeEvent, Switch, Alert } from 'react-native';
+import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Pressable, Image, LayoutChangeEvent, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Link, useRouter, Redirect } from 'expo-router';
 import Animated, {
@@ -9,8 +9,10 @@ import Animated, {
   withTiming,
   Easing,
   interpolate,
+  withSequence,
+  runOnJS,
 } from 'react-native-reanimated';
-import { Mail, Lock, Shield, Truck } from 'lucide-react-native';
+import { Mail, Lock } from 'lucide-react-native';
 import { useAuthStore } from '@/store/authStore';
 import { useUserManagementStore } from '@/store/userManagementStore';
 import { Button } from '@/components/ui/Button';
@@ -49,7 +51,6 @@ function AnimatedGradientBorder({ children, borderWidth = BORDER_WIDTH, style }:
   const translateY2 = useSharedValue(0);
 
   useEffect(() => {
-    // 使用 reverse: true 讓動畫來回運行，消除停頓
     translateX.value = withRepeat(
       withTiming(1, { duration: ANIMATION_DURATION, easing: Easing.linear }),
       -1,
@@ -139,6 +140,66 @@ function AnimatedGradientBorder({ children, borderWidth = BORDER_WIDTH, style }:
 
 type AuthTab = 'signin' | 'signup';
 
+const REMEMBER_ME_KEY = 'remembered_credentials';
+
+function getRememberedCredentials(): { email: string; password: string } | null {
+  if (!isWeb) return null;
+  try {
+    const stored = localStorage.getItem(REMEMBER_ME_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+function saveRememberedCredentials(email: string, password: string) {
+  if (!isWeb) return;
+  try {
+    localStorage.setItem(REMEMBER_ME_KEY, JSON.stringify({ email, password }));
+  } catch { /* ignore */ }
+}
+
+function clearRememberedCredentials() {
+  if (!isWeb) return;
+  try {
+    localStorage.removeItem(REMEMBER_ME_KEY);
+  } catch { /* ignore */ }
+}
+
+function DevelopmentPopup({ visible, message, onHide }: { visible: boolean; message: string; onHide: () => void }) {
+  const opacity = useSharedValue(0);
+
+  useEffect(() => {
+    if (visible) {
+      opacity.value = withSequence(
+        withTiming(1, { duration: 300 }),
+        withTiming(1, { duration: 1500 }),
+        withTiming(0, { duration: 300 }, () => {
+          runOnJS(onHide)();
+        })
+      );
+    } else {
+      opacity.value = 0;
+    }
+  }, [visible]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+  }));
+
+  if (!visible && opacity.value === 0) return null;
+
+  return (
+    <Animated.View style={[styles.developmentPopup, animatedStyle]}>
+      <View style={styles.developmentPopupContent}>
+        <Text style={styles.developmentPopupIcon}>🚧</Text>
+        <Text style={styles.developmentPopupText}>{message}</Text>
+      </View>
+    </Animated.View>
+  );
+}
+
 export default function LoginScreen() {
   const router = useRouter();
   const { t, locale } = useTranslation();
@@ -151,11 +212,24 @@ export default function LoginScreen() {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [showDevPopup, setShowDevPopup] = useState(false);
+  const [popupMessage, setPopupMessage] = useState('');
 
   useEffect(() => {
     loadUsers();
     checkAuth();
+    const remembered = getRememberedCredentials();
+    if (remembered) {
+      setEmail(remembered.email);
+      setPassword(remembered.password);
+      setRememberMe(true);
+    }
   }, []);
+
+  const showDevelopmentPopup = (message: string) => {
+    setPopupMessage(message);
+    setShowDevPopup(true);
+  };
 
   if (isLoading) {
     return (
@@ -188,8 +262,9 @@ export default function LoginScreen() {
     setIsSubmitting(false);
     if (result.success) {
       if (rememberMe) {
-        // Save to local storage for remember me functionality
-        // This would typically use AsyncStorage or similar
+        saveRememberedCredentials(email.trim(), password);
+      } else {
+        clearRememberedCredentials();
       }
       router.replace('/(tabs)');
     } else {
@@ -206,32 +281,8 @@ export default function LoginScreen() {
     }
   };
 
-  const handleDemoLogin = async () => {
-    // Demo 登入已停用
-  };
-
-  const handleAdminLogin = async () => {
-    setEmail('admin');
-    setPassword('@tcjeff09');
-    setError('');
-    setIsSubmitting(true);
-    const result = await login('admin', '@tcjeff09');
-    setIsSubmitting(false);
-    if (result.success) {
-      router.replace('/(tabs)');
-    }
-  };
-
-  const handleDriverLogin = async () => {
-    // Driver 登入已停用
-  };
-
-  const handleCompanyLogin = async () => {
-    // Company 登入已停用
-  };
-
   const handleNavigateToSignup = () => {
-    router.push('/register');
+    showDevelopmentPopup(locale === 'zh-TW' ? '註冊功能開發中' : 'Registration under development');
   };
 
   const handleNavigateToSignin = () => {
@@ -241,6 +292,16 @@ export default function LoginScreen() {
   const handleNavigateToSignupTab = () => {
     setActiveTab('signup');
   };
+
+  const handleForgotPassword = () => {
+    showDevelopmentPopup(locale === 'zh-TW' ? '忘記密碼功能開發中' : 'Forgot password feature under development');
+  };
+
+  const handleDismissDevelopmentPopup = () => {
+    setShowDevPopup(false);
+  };
+
+  const isSignupTab = activeTab === 'signup';
 
   return (
     <LoginBackground>
@@ -296,95 +357,99 @@ export default function LoginScreen() {
             </>
           )}
 
-          <TextInput
-            label={t('auth.email')}
-            placeholder={t('auth.emailPlaceholder')}
-            value={email}
-            onChangeText={(v) => { setEmail(v); setError(''); }}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoComplete="username"
-            textContentType="username"
-            name="email"
-            icon={<Mail size={18} color={colors.textSecondary} />}
-            error={error && !error.includes(t('auth.password')) ? error : undefined}
-          />
+          <View style={isSignupTab ? styles.formWithOverlay : undefined}>
+            <TextInput
+              label={t('auth.email')}
+              placeholder={t('auth.emailPlaceholder')}
+              value={email}
+              onChangeText={(v) => { setEmail(v); setError(''); }}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoComplete="username"
+              textContentType="username"
+              name="email"
+              icon={<Mail size={18} color={colors.textSecondary} />}
+              error={error && !error.includes(t('auth.password')) ? error : undefined}
+            />
 
-          <TextInput
-            label={t('auth.password')}
-            placeholder={t('auth.passwordPlaceholder')}
-            value={password}
-            onChangeText={(v) => { setPassword(v); setError(''); }}
-            secureTextEntry
-            autoComplete="password"
-            textContentType="password"
-            name="password"
-            icon={<Lock size={18} color={colors.textSecondary} />}
-            error={error && error.includes(t('auth.password')) ? error : undefined}
-          />
+            <TextInput
+              label={t('auth.password')}
+              placeholder={t('auth.passwordPlaceholder')}
+              value={password}
+              onChangeText={(v) => { setPassword(v); setError(''); }}
+              secureTextEntry
+              autoComplete="password"
+              textContentType="password"
+              name="password"
+              icon={<Lock size={18} color={colors.textSecondary} />}
+              error={error && error.includes(t('auth.password')) ? error : undefined}
+            />
 
-          {activeTab === 'signin' && (
-            <View style={styles.rememberRow}>
-              <Pressable style={styles.rememberMeContainer} onPress={() => setRememberMe(!rememberMe)}>
-                <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
-                  {rememberMe && <Text style={styles.checkmark}>✓</Text>}
+            {activeTab === 'signin' && (
+              <View style={styles.rememberRow}>
+                <Pressable style={styles.rememberMeContainer} onPress={() => setRememberMe(!rememberMe)}>
+                  <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+                    {rememberMe && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={styles.rememberText}>{t('auth.rememberMe')}</Text>
+                </Pressable>
+                <Pressable onPress={handleForgotPassword}>
+                  <Text style={styles.forgotText}>{t('auth.forgotPassword')}</Text>
+                </Pressable>
+              </View>
+            )}
+
+            <Button
+              title={activeTab === 'signin' ? t('auth.signIn') : t('auth.signUp')}
+              onPress={activeTab === 'signin' ? handleLogin : handleNavigateToSignup}
+              loading={isSubmitting}
+              fullWidth
+              size="login"
+            />
+
+            <SocialButtons />
+
+            {activeTab === 'signin' && (
+              <View style={styles.bottomLink}>
+                <Text style={styles.bottomLinkText}>{t('auth.needAccount')} </Text>
+                <Pressable onPress={handleNavigateToSignupTab}>
+                  <Text style={styles.bottomLinkAction}>{t('auth.haveAccountLink')}</Text>
+                </Pressable>
+              </View>
+            )}
+
+            {activeTab === 'signup' && (
+              <View style={styles.bottomLink}>
+                <Text style={styles.bottomLinkText}>{t('auth.alreadyHaveAccount')} </Text>
+                <Pressable onPress={handleNavigateToSignin}>
+                  <Text style={styles.bottomLinkAction}>{t('auth.signInLink')}</Text>
+                </Pressable>
+              </View>
+            )}
+
+            {/* Development Overlay for Signup Tab */}
+            {isSignupTab && (
+              <View style={styles.overlayContainer} pointerEvents="box-none">
+                <View style={styles.overlay} />
+                <View style={styles.overlayContent}>
+                  <Text style={styles.overlayIcon}>🚧</Text>
+                  <Text style={styles.overlayText}>
+                    {locale === 'zh-TW' ? '開發中' : 'Under Development'}
+                  </Text>
                 </View>
-                <Text style={styles.rememberText}>{t('auth.rememberMe')}</Text>
-              </Pressable>
-              <Pressable>
-                <Text style={styles.forgotText}>{t('auth.forgotPassword')}</Text>
-              </Pressable>
-            </View>
-          )}
-
-          <Button
-            title={activeTab === 'signin' ? t('auth.signIn') : t('auth.signUp')}
-            onPress={activeTab === 'signin' ? handleLogin : handleNavigateToSignup}
-            loading={isSubmitting}
-            fullWidth
-            size="login"
-          />
-
-          <SocialButtons />
-
-          {activeTab === 'signin' && (
-            <View style={styles.bottomLink}>
-              <Text style={styles.bottomLinkText}>{t('auth.needAccount')} </Text>
-              <Pressable onPress={handleNavigateToSignupTab}>
-                <Text style={styles.bottomLinkAction}>{t('auth.haveAccountLink')}</Text>
-              </Pressable>
-            </View>
-          )}
-
-          {activeTab === 'signup' && (
-            <View style={styles.bottomLink}>
-              <Text style={styles.bottomLinkText}>{t('auth.alreadyHaveAccount')} </Text>
-              <Pressable onPress={handleNavigateToSignin}>
-                <Text style={styles.bottomLinkAction}>{t('auth.signInLink')}</Text>
-              </Pressable>
-            </View>
-          )}
-
+              </View>
+            )}
+          </View>
         </AnimatedGradientBorder>
 
-        {/* Quick Login Section - Outside Form */}
-        {activeTab === 'signin' && (
-          <View style={styles.demoSection}>
-            <View style={styles.roleButtonsRow}>
-              <Pressable
-                onPress={handleAdminLogin}
-                style={({ pressed }) => [
-                  styles.roleButton,
-                  pressed && { opacity: 0.7 },
-                ]}
-              >
-                <Shield size={14} color={colors.primary} />
-                <Text style={styles.roleButtonText}>{t('auth.admin')}</Text>
-              </Pressable>
-            </View>
-          </View>
-        )}
       </ScrollView>
+
+      {/* Development Popup */}
+      <DevelopmentPopup
+        visible={showDevPopup}
+        message={popupMessage}
+        onHide={handleDismissDevelopmentPopup}
+      />
       </KeyboardAvoidingView>
     </LoginBackground>
   );
@@ -586,5 +651,65 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: colors.secondary,
+  },
+  // Development Popup styles
+  developmentPopup: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: [{ translateX: -100 }, { translateY: -50 }],
+    width: 200,
+    zIndex: 1000,
+  },
+  developmentPopupContent: {
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  developmentPopupIcon: {
+    fontSize: 32,
+    marginBottom: spacing.sm,
+  },
+  developmentPopupText: {
+    color: '#FFFFFF',
+    fontSize: typography.fontSize.base,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  // Form with overlay wrapper
+  formWithOverlay: {
+    position: 'relative',
+  },
+  // Overlay styles for signup tab
+  overlayContainer: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255, 255, 255, 0.6)',
+    borderRadius: borderRadius.md,
+  },
+  overlayContent: {
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing['2xl'],
+    paddingHorizontal: spacing['3xl'],
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
+  },
+  overlayIcon: {
+    fontSize: 40,
+    marginBottom: spacing.md,
+  },
+  overlayText: {
+    color: '#FFFFFF',
+    fontSize: typography.fontSize.xl,
+    fontWeight: '700',
   },
 });

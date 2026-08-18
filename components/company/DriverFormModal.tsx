@@ -18,6 +18,7 @@ import { TextInput } from '@/components/ui/TextInput';
 import { Button } from '@/components/ui/Button';
 import { SelectField } from '@/components/ui/SelectField';
 import { useUserManagementStore } from '@/store/userManagementStore';
+import { useDriverStore } from '@/store/driverStore';
 import { useTranslation } from '@/i18n';
 import { colors, spacing, borderRadius, typography } from '@/constants/theme';
 import type { User as UserType } from '@/types';
@@ -84,6 +85,7 @@ export function DriverFormModal({ visible, onClose, driver, onSave }: DriverForm
   const { t } = useTranslation();
   const { colors: themeColors } = useThemeStore();
   const { addUser, updateUser, users, loadUsers, syncUsers } = useUserManagementStore();
+  const { addDriver, loadDrivers } = useDriverStore();
   const isEditing = !!driver;
   const companies = users.filter((u) => u.role === 'company');
 
@@ -110,27 +112,48 @@ export function DriverFormModal({ visible, onClose, driver, onSave }: DriverForm
       console.log('[DriverFormModal] querying user_profile table...');
       const { data, error } = await supabase
         .from('user_profile')
-        .select('id, name, name_zh')
+        .select('id, name, name_zh, email, phone, avatar')
         .eq('role', 'company')
         .eq('is_deleted', false)
         .order('created_at', { ascending: true });
 
-      console.log('[DriverFormModal] query result - data:', data?.length, 'error:', error);
+      console.log('[DriverFormModal] query result - data count:', data?.length, 'error:', error);
+      console.log('[DriverFormModal] query data:', JSON.stringify(data, null, 2));
 
       if (error) {
         console.error('[DriverFormModal] fetchCompanies error:', error);
-        setSupabaseCompanies([]);
+        // 如果查詢失敗，fallback 到 userManagementStore 的資料
+        const storeCompanies = users.filter((u) => u.role === 'company');
+        console.log('[DriverFormModal] fallback to store companies:', storeCompanies.length);
+        setSupabaseCompanies(storeCompanies.map((c) => ({
+          id: c.id,
+          name: c.nameZh || c.name || c.email,
+        })));
+      } else if (!data || data.length === 0) {
+        console.log('[DriverFormModal] No companies found in Supabase, using store data');
+        // 如果沒有資料，fallback 到 userManagementStore 的資料
+        const storeCompanies = users.filter((u) => u.role === 'company');
+        setSupabaseCompanies(storeCompanies.map((c) => ({
+          id: c.id,
+          name: c.nameZh || c.name || c.email,
+        })));
       } else {
         const mapped = (data || []).map((c: any) => ({
           id: c.id,
-          name: c.name_zh || c.name || c.id,
+          name: c.name_zh || c.name || c.email || c.id,
         }));
         console.log('[DriverFormModal] Companies from Supabase:', mapped.length, mapped);
         setSupabaseCompanies(mapped);
       }
     } catch (err) {
       console.error('[DriverFormModal] fetchCompanies exception:', err);
-      setSupabaseCompanies([]);
+      // 如果發生例外，fallback 到 userManagementStore 的資料
+      const storeCompanies = users.filter((u) => u.role === 'company');
+      console.log('[DriverFormModal] exception fallback to store companies:', storeCompanies.length);
+      setSupabaseCompanies(storeCompanies.map((c) => ({
+        id: c.id,
+        name: c.nameZh || c.name || c.email,
+      })));
     } finally {
       setLoadingCompanies(false);
     }
@@ -227,6 +250,16 @@ export function DriverFormModal({ visible, onClose, driver, onSave }: DriverForm
           companyId || undefined
         );
         if (result.success) {
+          // 同步更新 driverStore，確保司機資料在所有地方都能顯示
+          await addDriver(
+            name,
+            phone || '',
+            email,
+            undefined, // vehiclePlate
+            avatar || undefined,
+            companyId || undefined
+          );
+          await loadDrivers();
           Alert.alert(t('common.success'), t('company.driverCreated') || '司機已建立');
         } else {
           Alert.alert(t('common.error'), result.error);

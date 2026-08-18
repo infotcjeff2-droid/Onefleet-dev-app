@@ -70,9 +70,15 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
 
       let queryUrl = `${url}/rest/v1/customers?is_deleted=eq.false`;
 
+      // admin（超級管理員）可以查看所有客戶，company 用戶只能查看自己公司的客戶
       if (userRole === 'company' && companyId) {
         queryUrl += `&company_id=eq.${encodeURIComponent(companyId)}`;
       }
+      // driver 或其他角色只查看自己的客戶
+      else if (userRole === 'driver' || userRole === 'user') {
+        queryUrl += `&user_id=eq.${encodeURIComponent(userId)}`;
+      }
+      // 如果沒有特定角色限制，查詢所有客戶（留空則為 admin 預設行為）
       queryUrl += '&order=created_at.desc';
 
       console.log('[customerStore] Fetching from:', queryUrl);
