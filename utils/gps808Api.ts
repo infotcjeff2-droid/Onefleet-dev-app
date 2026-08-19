@@ -42,9 +42,32 @@ export function getRuntimeServerUrl(): string | null {
 /** 記憶體快取：避免每次 API 呼叫都做字串處理 */
 function getWebBaseUrl(): string {
   if (runtimeServerUrl) return runtimeServerUrl;
-  // Web 端：直接連 GPS server（不再需要 proxy）
-  // 808GPS server 自帶 CORS * header，jsession 從 JSON body 讀取
-  runtimeServerUrl = 'https://console.onefleet.hk';
+  // 1. 雲端 URL（Vercel 部署）
+  const envUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL;
+  if (envUrl) {
+    runtimeServerUrl = envUrl.replace(/\/$/, '');
+    return runtimeServerUrl;
+  }
+
+  // 2. 動態 origin：LAN 訪問時把 port 換成 PROXY_PORT
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    const host = window.location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
+      runtimeServerUrl = `http://localhost:${PROXY_PORT}/api/gps`;
+      return runtimeServerUrl;
+    }
+    // LAN 訪問：把 port 從 metro dev server 換成 GPS proxy port
+    if (window.location?.port) {
+      runtimeServerUrl = `${window.location.protocol}//${host}:${PROXY_PORT}/api/gps`;
+      return runtimeServerUrl;
+    }
+    // 同源部署（reverse proxy）：origin 已經對應 proxy
+    runtimeServerUrl = `${window.location.origin}/api/gps`;
+    return runtimeServerUrl;
+  }
+
+  // 3. Fallback：localhost:3001
+  runtimeServerUrl = `http://localhost:${PROXY_PORT}/api/gps`;
   return runtimeServerUrl;
 }
 
@@ -63,8 +86,26 @@ function getWebBaseUrl(): string {
  *   → 雲端時  https://fleet-gps-proxy.xxx.workers.dev
  */
 export function getWebProxyBaseUrlSync(): string {
-  // Web 端：直接連 GPS server（不需要 proxy）
-  return 'https://console.onefleet.hk';
+  // 優先使用環境變數（Cloudflare Worker URL）
+  const envUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL;
+  if (envUrl) {
+    // 去掉 /api/gps 後綴，確保回傳一致格式
+    return envUrl.replace(/\/api\/gps\/?$/, '').replace(/\/$/, '');
+  }
+
+  if (typeof window !== 'undefined' && (window as any).location?.hostname) {
+    const host = (window as any).location.hostname;
+
+    // localhost 開發環境：使用本機 proxy
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
+      return `http://localhost:${PROXY_PORT}`;
+    }
+
+    // 其他部署環境：使用當前頁面的 origin
+    return (window as any).location.origin;
+  }
+
+  return `http://localhost:${PROXY_PORT}`;
 }
 
 /** 清除 runtime cache — 切換 user 或 reload 之後使用 */
@@ -80,16 +121,35 @@ async function getWebStoredServerUrl(): Promise<string | null> {
   }
 }
 
-/** Returns the effective base URL: direct GPS server for web, proxy for native. */
+/** Returns the effective base URL: env/proxy URL > stored URL > default. */
 async function getEffectiveBaseUrl(): Promise<string> {
   if (!IS_WEB) {
     return 'https://console.onefleet.hk';
   }
 
-  // Web 端：直接連 GPS server，繞過有問題的 Cloudflare Worker proxy
-  // 808GPS server 自帶 CORS * header，且 jsession 從 JSON body 讀取（不靠 Cookie），
-  // 所以不需要任何 proxy 轉發。
-  return 'https://console.onefleet.hk';
+  // 優先使用環境變數（Cloudflare Worker URL）
+  const envProxyUrl = process.env.EXPO_PUBLIC_GPS_PROXY_URL;
+  if (envProxyUrl) {
+    // 確保格式一致
+    const baseUrl = envProxyUrl.replace(/\/$/, '');
+    return baseUrl.endsWith('/api/gps') ? baseUrl : `${baseUrl}/api/gps`;
+  }
+
+  // Web 端：若當前頁面是 localhost / 127.0.0.1，強制走本機 proxy port，
+  // 避免 expo metro dev server 攔截 /api/gps 路由造成 400/404。
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    const host = window.location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
+      return `http://localhost:${PROXY_PORT}/api/gps`;
+    }
+  }
+
+  // 其他 host（LAN，無 env）：使用 storage 或 origin 拼接
+  const stored = await getWebStoredServerUrl();
+  if (stored) {
+    return stored.replace(/\/$/, '');
+  }
+  return getWebBaseUrl();
 }
 
 export async function setServerUrl(url: string): Promise<void> {
