@@ -267,7 +267,8 @@ export async function fetchAllDeliveries(): Promise<DeliveryOrder[]> {
 export async function fetchDeliveriesByRole(
   role: string,
   userId: string,
-  companyId?: string
+  companyId?: string,
+  userName?: string
 ): Promise<DeliveryOrder[]> {
   try {
     let url = `/rest/v1/${TABLE_NAME}?is_deleted=eq.false`;
@@ -280,7 +281,12 @@ export async function fetchDeliveriesByRole(
       console.warn('[deliveryOrderSync] company role without companyId; returning empty list');
       return [];
     } else if (role === 'driver' && userId) {
-      url += `&assigned_driver_id=eq.${encodeURIComponent(userId)}&order=pickup_time.asc`;
+      // ★ 支援雙重匹配：用 assigned_driver_id 或 assigned_driver_name 查詢
+      if (userName) {
+        url += `&or=(assigned_driver_id.eq.${encodeURIComponent(userId)},assigned_driver_name.eq.${encodeURIComponent(userName)})&order=pickup_time.asc`;
+      } else {
+        url += `&assigned_driver_id=eq.${encodeURIComponent(userId)}&order=pickup_time.asc`;
+      }
     } else {
       url += `&assigned_driver_id=eq.${encodeURIComponent(userId)}&order=pickup_time.asc`;
     }
@@ -297,13 +303,21 @@ export async function fetchDeliveriesByRole(
 
 /**
  * 獲取指派給特定司機的配送單
+ * ★ 支援雙重匹配：用 assigned_driver_id 或 assigned_driver_name 查詢
  */
-export async function fetchDeliveriesForDriver(driverId: string): Promise<DeliveryOrder[]> {
+export async function fetchDeliveriesForDriver(driverId: string, driverName?: string): Promise<DeliveryOrder[]> {
   try {
-    const data = await supabaseRequest<{ data: DbDeliveryOrder[] }>(
-      'GET',
-      `/rest/v1/${TABLE_NAME}?is_deleted=eq.false&assigned_driver_id=eq.${encodeURIComponent(driverId)}&order=pickup_time.asc`,
-    );
+    let url = `/rest/v1/${TABLE_NAME}?is_deleted=eq.false`;
+    
+    if (driverName) {
+      // 雙重匹配：ID 或名稱
+      url += `&or=(assigned_driver_id.eq.${encodeURIComponent(driverId)},assigned_driver_name.eq.${encodeURIComponent(driverName)})`;
+    } else {
+      url += `&assigned_driver_id=eq.${encodeURIComponent(driverId)}`;
+    }
+    url += '&order=pickup_time.asc';
+    
+    const data = await supabaseRequest<{ data: DbDeliveryOrder[] }>('GET', url);
 
     return (data?.data || []).map(mapDbToDelivery);
   } catch (err) {

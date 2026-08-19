@@ -11,8 +11,6 @@ import {
 import { ChevronDown, Check } from 'lucide-react-native';
 import { colors, borderRadius, spacing, typography } from '@/constants/theme';
 
-const isWeb = Platform.OS === 'web';
-
 interface SelectOption<T extends string> {
   value: T;
   label: string;
@@ -49,61 +47,6 @@ export function SelectField<T extends string>({
     ? colors.primary
     : colors.border;
 
-  // Web: 使用原生 select 元素
-  if (isWeb) {
-    return (
-      <View style={styles.container}>
-        {label && <Text style={styles.label}>{label}</Text>}
-        <View style={styles.webSelectWrapper}>
-          <select
-            value={value || ''}
-            onChange={(e) => {
-              const newValue = (e.target as HTMLSelectElement).value as T;
-              onValueChange(newValue);
-            }}
-            disabled={disabled}
-            style={{
-              width: '100%',
-              height: 48,
-              borderRadius: 8,
-              borderWidth: 1.5,
-              borderColor: error ? colors.danger : colors.border,
-              backgroundColor: colors.card,
-              color: value ? colors.textPrimary : colors.textTertiary,
-              fontSize: 16,
-              paddingLeft: 16,
-              paddingRight: 40,
-              cursor: disabled ? 'not-allowed' : 'pointer',
-              opacity: disabled ? 0.5 : 1,
-              appearance: 'none',
-              WebkitAppearance: 'none',
-              MozAppearance: 'none',
-              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%236B7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
-              backgroundRepeat: 'no-repeat',
-              backgroundPosition: 'right 12px center',
-              backgroundSize: 18,
-              outline: 'none',
-            }}
-          >
-            <option value="" disabled>
-              {placeholder}
-            </option>
-            {options.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </View>
-        {error && <Text style={styles.error}>{error}</Text>}
-        {description && !error && (
-          <Text style={styles.description}>{description}</Text>
-        )}
-      </View>
-    );
-  }
-
-  // Native Mobile: 使用 Modal
   return (
     <View style={styles.container}>
       {label && <Text style={styles.label}>{label}</Text>}
@@ -261,22 +204,26 @@ const styles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.5)',
+    flex: 1,
   },
   dropdownWrapper: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: spacing.lg,
+    pointerEvents: 'box-none',
   },
   dropdown: {
     width: '100%',
-    maxHeight: '60%',
+    maxWidth: 400,
+    maxHeight: '70%',
     borderRadius: borderRadius.xl,
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
   },
   dropdownHeader: {
     flexDirection: 'row',

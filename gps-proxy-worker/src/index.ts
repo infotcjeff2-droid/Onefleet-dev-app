@@ -407,6 +407,14 @@ async function handleVideoUrl(request: Request, url: URL, env: Env): Promise<Res
 }
 
 // ============ JSON API 處理 ============
+// 需要 admin session 的視頻 API 列表
+const VIDEO_API_PATHS = [
+  'getVideoHistoryFile',
+  'getVideoFileInfo',
+  'addDownloadTask',
+  'queryDownloadTask',
+];
+
 async function handleJsonApi(request: Request, url: URL, env: Env): Promise<Response> {
   const gpsServer = env.GPS_SERVER || DEFAULT_GPS_SERVER;
   try {
@@ -420,10 +428,29 @@ async function handleJsonApi(request: Request, url: URL, env: Env): Promise<Resp
 
     const targetUrl = new URL(`https://${gpsServer}/${apiPath}${url.search}`);
     console.log('[GPS Proxy] JSON API:', targetUrl.toString());
+    
+    // 檢查是否需要添加 admin session
+    const needsAdminSession = VIDEO_API_PATHS.some(path => 
+      targetUrl.pathname.includes(path)
+    );
+    
     const headers = new Headers();
     for (const [key, value] of request.headers.entries()) {
       if (!['host', 'cf-connecting-ip', 'cf-ray'].includes(key.toLowerCase())) {
         headers.set(key, value);
+      }
+    }
+
+    // 對於視頻 API，始終使用 admin session
+    if (needsAdminSession) {
+      try {
+        const adminSession = await getAdminSession(env);
+        // 添加 jsession 到 URL 參數
+        targetUrl.searchParams.set('jsession', adminSession);
+        console.log('[GPS Proxy] Added admin session for video API');
+      } catch (err) {
+        console.error('[GPS Proxy] Failed to get admin session:', err);
+        return errorResponse('Failed to obtain admin session: ' + String(err), 502);
       }
     }
 

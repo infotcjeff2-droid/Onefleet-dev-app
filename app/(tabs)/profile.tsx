@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
-import { LogOut, Shield, Settings, ChevronRight, User, Mail, Award, Truck, Plus, X, Users, Globe, Upload, Cpu, Link2, Warehouse, Package, Zap, RefreshCw, Trash2, RotateCcw, AlertCircle, Building2, Lock, Camera } from 'lucide-react-native';
+import { LogOut, Shield, Settings, ChevronRight, User, Mail, Award, Truck, Plus, X, Users, Globe, Upload, Cpu, Link2, Warehouse, Package, Zap, RefreshCw, Trash2, RotateCcw, AlertCircle, Building2, Lock, Camera, Wifi, Activity, Copy, Check } from 'lucide-react-native';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { SelectField } from '@/components/ui/SelectField';
@@ -21,6 +21,13 @@ import { Header } from '@/components/ui/Header';
 import { CompanyList } from '@/components/company/CompanyList';
 import { useState, useEffect } from 'react';
 import { User as AppUser } from '@/types';
+import {
+  diagnoseGpsConnection,
+  clearGpsConnectionCache,
+  resetGpsConnection,
+  GpsDiagnosticInfo,
+  GpsClearResult,
+} from '@/utils/gpsDiagnostics';
 
 const isWeb = Platform.OS === 'web';
 
@@ -1062,6 +1069,7 @@ function DriverEditModal({
   const [companyId, setCompanyId] = useState(driver.companyId || '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [companyModalVisible, setCompanyModalVisible] = useState(false);
 
   const companies = getCompanies();
 
@@ -1206,19 +1214,7 @@ function DriverEditModal({
                   </View>
                 </View>
                 <TouchableOpacity
-                  onPress={() => {
-                    Alert.alert(
-                      t('company.selectCompany'),
-                      '',
-                      [
-                        { text: t('company.noCompany'), onPress: () => setCompanyId('') },
-                        ...companies.map((c) => ({
-                          text: c.nameZh || c.name || c.email,
-                          onPress: () => setCompanyId(c.id),
-                        })),
-                      ]
-                    );
-                  }}
+                  onPress={() => setCompanyModalVisible(true)}
                   style={[styles.formInputWrap, { backgroundColor: colors.background, borderColor: colors.border }]}
                   activeOpacity={0.7}
                 >
@@ -1232,6 +1228,44 @@ function DriverEditModal({
                 </TouchableOpacity>
               </View>
             )}
+
+            {/* 公司選擇 Modal */}
+            <Modal visible={companyModalVisible} transparent animationType="fade" onRequestClose={() => setCompanyModalVisible(false)}>
+              <View style={styles.companyModalOverlay}>
+                <Pressable style={styles.companyModalBackdrop} onPress={() => setCompanyModalVisible(false)} />
+                <Animated.View entering={FadeInDown.springify()} style={[styles.companyModalContent, { backgroundColor: colors.card }]}>
+                  <View style={[styles.companyModalHeader, { borderBottomColor: colors.border }]}>
+                    <Text style={[styles.companyModalTitle, { color: colors.textPrimary }]}>{t('company.selectCompany')}</Text>
+                    <Pressable onPress={() => setCompanyModalVisible(false)} hitSlop={8}>
+                      <X size={20} color={colors.textSecondary} />
+                    </Pressable>
+                  </View>
+                  <ScrollView style={styles.companyModalScroll} showsVerticalScrollIndicator={false}>
+                    <TouchableOpacity
+                      onPress={() => { setCompanyId(''); setCompanyModalVisible(false); }}
+                      style={[styles.companyModalOption, { borderBottomColor: colors.border }]}
+                    >
+                      <Text style={[styles.companyModalOptionText, { color: !companyId ? colors.primary : colors.textPrimary }]}>
+                        {t('company.noCompany')}
+                      </Text>
+                      {companyId === '' && <ChevronRight size={16} color={colors.primary} />}
+                    </TouchableOpacity>
+                    {companies.map((c) => (
+                      <TouchableOpacity
+                        key={c.id}
+                        onPress={() => { setCompanyId(c.id); setCompanyModalVisible(false); }}
+                        style={[styles.companyModalOption, { borderBottomColor: colors.border }]}
+                      >
+                        <Text style={[styles.companyModalOptionText, { color: companyId === c.id ? colors.primary : colors.textPrimary }]}>
+                          {c.nameZh || c.name || c.email}
+                        </Text>
+                        {companyId === c.id && <ChevronRight size={16} color={colors.primary} />}
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </Animated.View>
+              </View>
+            </Modal>
 
             {error ? (
               <View style={[styles.errorBanner, { backgroundColor: `${colors.danger}15`, borderColor: colors.danger }]}>
@@ -1248,6 +1282,242 @@ function DriverEditModal({
         </Animated.View>
       </View>
     </Modal>
+  );
+}
+
+function GpsDiagnosticsCard() {
+  const { t } = useTranslation();
+  const colors = useThemeStore((s) => s.colors);
+  const { isConnected, loadConfig } = useGps808Store();
+  const [expanded, setExpanded] = useState(false);
+  const [diag, setDiag] = useState<GpsDiagnosticInfo | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetResult, setResetResult] = useState<{
+    cleared: GpsClearResult;
+    reconnected: boolean;
+    error?: string;
+  } | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const isWeb = Platform.OS === 'web';
+
+  const runDiagnose = async () => {
+    setLoading(true);
+    setResetResult(null);
+    try {
+      const info = await diagnoseGpsConnection();
+      setDiag(info);
+    } catch (e) {
+      console.warn('[GPS Diagnostics] Diagnose failed:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReset = async () => {
+    setResetting(true);
+    setResetResult(null);
+    try {
+      const result = await resetGpsConnection();
+      setResetResult(result);
+      // 重新診斷
+      await runDiagnose();
+      // 重新載入 GPS config（會自動重新登入）
+      await loadConfig();
+    } catch (e) {
+      console.warn('[GPS Diagnostics] Reset failed:', e);
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  const handleCopy = async (key: string, value: string) => {
+    if (!isWeb || typeof navigator === 'undefined' || !navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(null), 1500);
+    } catch {
+      // ignore
+    }
+  };
+
+  // 自動診斷（首次展開時）
+  useEffect(() => {
+    if (expanded && !diag && !loading) {
+      void runDiagnose();
+    }
+  }, [expanded]);
+
+  const renderRow = (label: string, value: string | null | undefined, key: string) => {
+    if (value === null || value === undefined || value === '') return null;
+    return (
+      <View key={key} style={styles.diagRow}>
+        <Text style={[styles.diagLabel, { color: colors.textTertiary }]}>{label}</Text>
+        <Pressable
+          style={styles.diagValueWrap}
+          onPress={() => handleCopy(key, value)}
+          hitSlop={4}
+        >
+          <Text
+            style={[styles.diagValue, { color: colors.textPrimary }]}
+            numberOfLines={2}
+          >
+            {value}
+          </Text>
+          {copiedKey === key ? (
+            <Check size={12} color={colors.success} />
+          ) : (
+            <Copy size={12} color={colors.textTertiary} />
+          )}
+        </Pressable>
+      </View>
+    );
+  };
+
+  const renderBool = (label: string, value: boolean, key: string) => {
+    return (
+      <View key={key} style={styles.diagRow}>
+        <Text style={[styles.diagLabel, { color: colors.textTertiary }]}>{label}</Text>
+        <View style={[
+          styles.boolBadge,
+          { backgroundColor: value ? `${colors.success}20` : `${colors.danger}20` },
+        ]}>
+          <Text style={[
+            styles.boolBadgeText,
+            { color: value ? colors.success : colors.danger },
+          ]}>
+            {value ? '✓ 是' : '✗ 否'}
+          </Text>
+        </View>
+      </View>
+    );
+  };
+
+  return (
+    <View style={styles.section}>
+      <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
+        {t('profile.gpsDiagnostics')}
+      </Text>
+      <Card style={styles.settingsCard}>
+        <Pressable
+          style={({ pressed }) => [
+            styles.settingItem,
+            { backgroundColor: pressed ? colors.cardHover : 'transparent' },
+          ]}
+          onPress={() => setExpanded(!expanded)}
+        >
+          <View style={styles.settingLeft}>
+            <View style={styles.settingIcon}>
+              <Wifi size={18} color={isConnected ? colors.success : colors.danger} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>
+                {t('profile.gpsDiagnostics')}
+              </Text>
+              <Text style={[styles.diagSubtitle, { color: colors.textTertiary }]}>
+                {isConnected
+                  ? t('profile.gpsConnected')
+                  : t('profile.gpsDisconnected')}
+                {diag?.serviceWorkerCount ? ` · SW: ${diag.serviceWorkerCount}` : ''}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.settingRight}>
+            <ChevronRight
+              size={16}
+              color={colors.textTertiary}
+              style={{
+                transform: [{ rotate: expanded ? '90deg' : '0deg' }],
+              }}
+            />
+          </View>
+        </Pressable>
+
+        {expanded && (
+          <View style={[styles.diagPanel, { borderTopColor: colors.border }]}>
+            {/* 動作按鈕 */}
+            <View style={styles.diagActions}>
+              <Button
+                title={loading ? t('common.loading') : t('profile.gpsDiagnose')}
+                variant="secondary"
+                size="sm"
+                onPress={runDiagnose}
+                loading={loading}
+                icon={<Activity size={14} color={colors.primary} />}
+                style={{ flex: 1 }}
+              />
+              <Button
+                title={resetting ? t('common.loading') : t('profile.gpsReset')}
+                variant="danger"
+                size="sm"
+                onPress={handleReset}
+                loading={resetting}
+                icon={<RotateCcw size={14} color="#fff" />}
+                style={{ flex: 1 }}
+              />
+            </View>
+
+            <Text style={[styles.diagHint, { color: colors.textTertiary }]}>
+              {t('profile.gpsResetHint')}
+            </Text>
+
+            {/* 診斷結果 */}
+            {diag && (
+              <View style={[styles.diagResult, { backgroundColor: colors.surface }]}>
+                <Text style={[styles.diagResultTitle, { color: colors.textSecondary }]}>
+                  {t('profile.gpsCurrentStatus')}
+                </Text>
+                {renderRow(t('profile.diagEffectiveUrl'), diag.effectiveProxyUrl, 'effective')}
+                {renderRow(t('profile.diagStoredUrl'), diag.storedServerUrl, 'stored')}
+                {renderBool(t('profile.diagHasJsession'), diag.hasJsession, 'jsession')}
+                {renderRow(t('profile.diagJsessionPreview'), diag.jsessionPreview, 'jsessionPreview')}
+                {renderBool(t('profile.diagOnline'), diag.isOnline, 'online')}
+                {isWeb && (
+                  <>
+                    {renderRow(t('profile.diagServiceWorker'), String(diag.serviceWorkerCount), 'sw')}
+                    {renderRow(t('profile.diagCacheStorage'), diag.cacheStorageNames.join(', ') || '(none)', 'caches')}
+                    {renderRow(t('profile.diagLocalStorageKeys'),
+                      diag.relatedLocalStorageKeys.length === 0
+                        ? '(none)'
+                        : diag.relatedLocalStorageKeys.join(', '),
+                      'lsKeys')}
+                  </>
+                )}
+              </View>
+            )}
+
+            {/* 重置結果 */}
+            {resetResult && (
+              <View style={[styles.diagResult, {
+                backgroundColor: resetResult.reconnected ? `${colors.success}15` : `${colors.warning}15`,
+                borderColor: resetResult.reconnected ? colors.success : colors.warning,
+                marginTop: spacing.sm,
+              }]}>
+                <Text style={[styles.diagResultTitle, {
+                  color: resetResult.reconnected ? colors.success : colors.warning,
+                }]}>
+                  {resetResult.reconnected
+                    ? `✅ ${t('profile.gpsResetSuccess')}`
+                    : `⚠️ ${t('profile.gpsResetPartial')}`}
+                </Text>
+                {resetResult.cleared.clearedItems.map((item, idx) => (
+                  <Text key={idx} style={[styles.diagClearedItem, { color: colors.textSecondary }]}>
+                    • {item}
+                  </Text>
+                ))}
+                {resetResult.error && (
+                  <Text style={[styles.diagClearedItem, { color: colors.danger }]}>
+                    {t('common.error')}: {resetResult.error}
+                  </Text>
+                )}
+              </View>
+            )}
+          </View>
+        )}
+      </Card>
+    </View>
   );
 }
 
@@ -1772,6 +2042,9 @@ export default function ProfileScreen() {
           </View>
         )}
 
+        {/* GPS 連線診斷 */}
+        <GpsDiagnosticsCard />
+
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>{t('profile.account')}</Text>
           <Card style={styles.settingsCard}>
@@ -2207,6 +2480,76 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     textAlign: 'center',
   },
+  // GPS 診斷卡樣式
+  diagSubtitle: {
+    fontSize: typography.fontSize.xs,
+    marginTop: 2,
+  },
+  diagPanel: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderTopWidth: 1,
+  },
+  diagActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  diagHint: {
+    fontSize: typography.fontSize.xs,
+    lineHeight: 16,
+    marginBottom: spacing.md,
+  },
+  diagResult: {
+    padding: spacing.md,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  diagResultTitle: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: spacing.sm,
+  },
+  diagRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.xs,
+    gap: spacing.sm,
+  },
+  diagLabel: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: '600',
+    flex: 1,
+  },
+  diagValueWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flex: 1.4,
+  },
+  diagValue: {
+    fontSize: 11,
+    fontFamily: 'monospace',
+    flex: 1,
+  },
+  boolBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.full,
+  },
+  boolBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  diagClearedItem: {
+    fontSize: typography.fontSize.xs,
+    lineHeight: 18,
+    marginLeft: spacing.xs,
+  },
   uploadButton: {
     height: 48,
     borderWidth: 1,
@@ -2358,5 +2701,52 @@ const styles = StyleSheet.create({
   },
   modalCloseBtn: {
     padding: spacing.xs,
+  },
+  // 公司選擇 Modal 樣式
+  companyModalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  companyModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+  },
+  companyModalContent: {
+    width: '85%',
+    maxWidth: 360,
+    maxHeight: '60%',
+    borderRadius: borderRadius.xl,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  companyModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+  },
+  companyModalTitle: {
+    fontSize: typography.fontSize.lg,
+    fontWeight: '600',
+  },
+  companyModalScroll: {
+    maxHeight: 300,
+  },
+  companyModalOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md + 2,
+  },
+  companyModalOptionText: {
+    fontSize: typography.fontSize.base,
   },
 });

@@ -24,6 +24,11 @@ export const SERVER_URL_KEY = 'gps808_server_url';
 // 注意：必須在 getWebBaseUrl 之前宣告，因為函式宣告會被 hoisting 而 let 不會
 let runtimeServerUrl: string | null = null;
 
+/** 對外暴露目前 module-level cache 的 server URL（診斷工具使用）。 */
+export function getRuntimeServerUrl(): string | null {
+  return runtimeServerUrl;
+}
+
 /**
  * 動態讀取 base URL（每次呼叫皆重新計算，避免 reload/route 切換後使用過期值）。
  * 優先順序：
@@ -292,7 +297,15 @@ export interface Gps808Pagination {
 export interface Gps808ApiResponse<T> {
   result: number;
   infos?: T[];
+  /** 某些 API（如視頻查詢）返回的視頻列表欄位 */
+  videoFiles?: T[];
+  /** 某些 API（如視頻查詢）返回的視頻列表欄位 (設備端 STORE=1/2 查詢時使用) */
+  files?: T[];
   pagination?: Gps808Pagination;
+  /** 設備端查詢時，GPS 服務器會將命令轉發到 cms 子服務器 (1 = 已轉發到 cms) */
+  cmsserver?: number;
+  /** 某些視頻 API 返回的 JSON 結果包裝 (內含 videoFiles 等) */
+  jsonresult?: any;
   error?: string;
 }
 
@@ -951,8 +964,12 @@ export const gps808Api = {
     videoFiles?: VideoFileInfo[];
     error?: string;
   }> {
+    // LOC 參數：0=全部, 1=設備, 2=服務器
+    const loc = options.store === 1 ? 1 : 2;
+    
     const params: Record<string, string | number> = {
       DevIDNO: devIdno,
+      LOC: loc,  // 必需的參數！
       CHN: options.channel,
       YEAR: options.year,
       MON: options.month,
@@ -971,9 +988,50 @@ export const gps808Api = {
       STORE: options.store ?? 2,
     };
 
+    console.log('[GPS808] queryVideoHistoryFile 參數:', params);
+
     return apiCall<VideoFileInfo>('/StandardApiAction_getVideoHistoryFile.action', params).then((res) => {
+      console.log('[GPS808] getVideoHistoryFile 原始返回:', JSON.stringify(res, null, 2));
+      
       if (res.result === 0) {
-        return { result: 0, videoFiles: res.infos ?? [] };
+        // 808GPS API 返回的視頻列表欄位可能是以下之一：
+        //   - infos (舊版)
+        //   - videoFiles (新版)
+        //   - files (實際使用最多的欄位名)
+        //   - jsonresult.videoFiles (某些包裝結構)
+        //   - jsonresult.infos (某些包裝結構)
+        //   - jsonresult.files (某些包裝結構)
+        let infos = res.infos || res.videoFiles || res.files;
+        if (!infos && res.jsonresult) {
+          infos = res.jsonresult.videoFiles || res.jsonresult.infos || res.jsonresult.files;
+          // jsonresult.encoding 通常為 null/空，不影響數據
+        }
+        
+        if (!infos || !Array.isArray(infos) || infos.length === 0) {
+          console.log('[GPS808] 查無錄像檔案，infos 為空');
+          return { result: 0, videoFiles: [] };
+        }
+        
+        // 映射 API 返回的欄位到 VideoFileInfo 格式
+        const videoFiles: VideoFileInfo[] = infos.map((item: any) => ({
+          name: item.name || item.fileName || item.filename,
+          filePath: item.filePath || item.fp || item.path,
+          chn: item.chn ?? item.channel ?? item.CH ?? item.Chn ?? options.channel,
+          beginTime: item.beginTime || item.bt || item.startTime || item.start_time,
+          endTime: item.endTime || item.et || item.endTime || item.end_time,
+          fileSize: item.fileSize || item.len || item.size || item.fs,
+          recType: item.recType ?? item.type ?? item.rec_type,
+          store: item.store ?? item.STORE ?? options.store,
+          devId: item.devId || item.did || item.devIdno,
+          fileId: item.id || item.fileId,
+          downUrl: item.downUrl || item.downloadUrl || item.url || item.DownUrl || item.DownTaskUrl,
+          playUrl: item.playUrl || item.playerUrl || item.PlaybackUrlWs || item.PlaybackUrl,
+          isRecording: item.isRecording ?? false,
+          mediaType: item.mediaType ?? item.type,
+        }));
+        
+        console.log('[GPS808] 映射後的 videoFiles:', videoFiles);
+        return { result: 0, videoFiles };
       }
       return { result: res.result, error: res.error };
     });
@@ -1032,11 +1090,13 @@ export const gps808Api = {
       '/StandardApiAction_addDownloadTask.action',
       params,
     ).then((res) => {
-      if (res.result === 0 && res.infos && res.infos.length > 0) {
+      // API 返回的任務列表可能在不同欄位：infos、files、videoFiles
+      const items = (res as any).infos || (res as any).files || (res as any).videoFiles;
+      if (res.result === 0 && items && items.length > 0) {
         return {
           result: 0,
-          taskId: res.infos[0].TaskID,
-          downloadUrl: res.infos[0].DownUrl,
+          taskId: items[0].TaskID,
+          downloadUrl: items[0].DownUrl,
         };
       }
       return { result: res.result, error: res.error };
@@ -1053,7 +1113,8 @@ export const gps808Api = {
   }> {
     return apiCall<DownloadTask>('/StandardApiAction_downloadTasklist.action', {}).then((res) => {
       if (res.result === 0) {
-        return { result: 0, tasks: res.infos ?? [] };
+        const items = (res as any).infos || (res as any).files || (res as any).videoFiles;
+        return { result: 0, tasks: items ?? [] };
       }
       return { result: res.result, error: res.error };
     });

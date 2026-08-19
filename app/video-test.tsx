@@ -8,11 +8,13 @@
 import { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, Pressable, ScrollView, Platform } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeft, Video, Wifi, WifiOff, RefreshCw, Settings, X, Camera } from 'lucide-react-native';
+import { ChevronLeft, Video, Wifi, WifiOff, RefreshCw, Settings, X, Camera, Monitor } from 'lucide-react-native';
 import { FlvPlayer } from '@/components/vehicle/FlvPlayer';
 import { HlsVideo } from '@/components/vehicle/HlsVideo';
+import { VideoPlaybackCard } from '@/components/vehicle/VideoPlaybackCard';
 import { gps808Api, getWebProxyBaseUrlSync } from '@/utils/gps808Api';
 import { useGps808Store } from '@/store/gps808Store';
+import { useTranslation } from '@/i18n';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 import { defaultColors } from '@/store/themeStore';
 
@@ -22,7 +24,11 @@ const USE_HLS = IS_WEB && /Mobi|Android|iPhone|iPad/i.test(
   typeof navigator !== 'undefined' ? navigator.userAgent : '',
 );
 
+/** 分頁類型 */
+type TabType = 'live' | 'playback';
+
 export default function VideoTestScreen() {
+  const { t } = useTranslation();
   const { devIdno: queryDevIdno } = useLocalSearchParams<{ devIdno?: string }>();
   const router = useRouter();
 
@@ -41,6 +47,9 @@ export default function VideoTestScreen() {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
+
+  // 分頁狀態
+  const [activeTab, setActiveTab] = useState<TabType>('live');
 
   // 從 store 獲取連線狀態
   const { isConnected } = useGps808Store();
@@ -160,11 +169,36 @@ export default function VideoTestScreen() {
         <Pressable style={styles.backBtn} onPress={() => router.back()}>
           <ChevronLeft size={24} color={colors.textPrimary} />
         </Pressable>
-        <Text style={styles.headerTitle}>實時影像測試</Text>
+        <Text style={styles.headerTitle}>實時影像</Text>
         <View style={styles.headerSpacer} />
       </View>
 
+      {/* 分頁導航 */}
+      <View style={styles.tabBar}>
+        <Pressable
+          style={[styles.tab, activeTab === 'live' && styles.tabActive]}
+          onPress={() => setActiveTab('live')}
+        >
+          <Video size={16} color={activeTab === 'live' ? defaultColors.primary : colors.textSecondary} />
+          <Text style={[styles.tabText, activeTab === 'live' && styles.tabTextActive]}>
+            即時影像
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.tab, activeTab === 'playback' && styles.tabActive]}
+          onPress={() => setActiveTab('playback')}
+        >
+          <Monitor size={16} color={activeTab === 'playback' ? defaultColors.primary : colors.textSecondary} />
+          <Text style={[styles.tabText, activeTab === 'playback' && styles.tabTextActive]}>
+            {t('vehicles.livePlaybackTab')}
+          </Text>
+        </Pressable>
+      </View>
+
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* 即時影像分頁 */}
+        {activeTab === 'live' && (
+          <>
         {/* 設備 ID 輸入 */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>設備 ID</Text>
@@ -365,6 +399,16 @@ export default function VideoTestScreen() {
             </View>
           </View>
         )}
+        </>
+        )}
+
+        {/* 影像回放分頁 */}
+        {activeTab === 'playback' && (
+          <VideoPlaybackCard
+            devIdno={devIdno}
+            height={500}
+          />
+        )}
       </ScrollView>
     </View>
   );
@@ -399,6 +443,34 @@ const styles = StyleSheet.create({
   },
   headerSpacer: {
     width: 40,
+  },
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: colors.card,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabActive: {
+    borderBottomColor: defaultColors.primary,
+  },
+  tabText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  tabTextActive: {
+    color: defaultColors.primary,
+    fontWeight: '700',
   },
   content: {
     flex: 1,

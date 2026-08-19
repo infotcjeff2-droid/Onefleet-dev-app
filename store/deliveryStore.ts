@@ -240,8 +240,10 @@ export const useDeliveryStore = create<DeliveryState>((set, get) => ({
       let queryUrl = `${url}/rest/v1/delivery_orders?is_deleted=eq.false`;
       
       if (userRole === 'driver') {
-        // 司機只看指派給自己的
-        queryUrl += `&assigned_driver_id=eq.${encodeURIComponent(userId)}`;
+        // 司機只看指派給自己的配送單
+        // ★ 支援雙重匹配：同時用 assigned_driver_id 和 assigned_driver_name 比對
+        // 避免因 ID 格式不一致導致查詢失敗
+        queryUrl += `&or=(assigned_driver_id.eq.${encodeURIComponent(userId)},assigned_driver_name.eq.${encodeURIComponent(user?.name || '')})`;
       } else if (userRole === 'company' && companyId) {
         // 公司只看自己公司的
         queryUrl += `&company_id=eq.${encodeURIComponent(companyId)}`;

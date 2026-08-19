@@ -55,18 +55,9 @@ export default function UserManagementScreen() {
   const [syncing, setSyncing] = useState(false);
   const [syncDone, setSyncDone] = useState(false);
 
-  // 載入使用者資料並同步到 Supabase
+  // 載入使用者資料
   useEffect(() => {
-    const loadAndSync = async () => {
-      // 先載入本地資料
-      await loadUsers();
-      // 確保資料同步到 Supabase（讓子使用戶能看到公司清單）
-      const { syncUsers } = useUserManagementStore.getState();
-      await syncUsers();
-      // 再次載入以確保取得最新資料
-      await loadUsers();
-    };
-    loadAndSync();
+    loadUsers();
   }, []);
 
   const isZh = locale === 'zh-TW';
