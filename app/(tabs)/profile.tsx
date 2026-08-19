@@ -24,7 +24,6 @@ import { User as AppUser } from '@/types';
 import {
   diagnoseGpsConnection,
   clearGpsConnectionCache,
-  resetGpsConnection,
   GpsDiagnosticInfo,
   GpsClearResult,
 } from '@/utils/gpsDiagnostics';
@@ -1288,14 +1287,16 @@ function DriverEditModal({
 function GpsDiagnosticsCard() {
   const { t } = useTranslation();
   const colors = useThemeStore((s) => s.colors);
-  const { isConnected, loadConfig } = useGps808Store();
+  const gpsStore = useGps808Store();
+  const { isConnected, config, loadConfig } = gpsStore;
   const [expanded, setExpanded] = useState(false);
   const [diag, setDiag] = useState<GpsDiagnosticInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [resetResult, setResetResult] = useState<{
     cleared: GpsClearResult;
-    reconnected: boolean;
+    proxyTest: { ok: boolean; status: number; error?: string };
+    reconnectResult: boolean;
     error?: string;
   } | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -1315,16 +1316,47 @@ function GpsDiagnosticsCard() {
     }
   };
 
+  /**
+   * 重置流程：
+   * 1. 通知 store 斷開（清除 isConnected 狀態）
+   * 2. 清除所有本地快取（module / storage / SW / Cache）
+   * 3. 測試 proxy 是否可達
+   * 4. 如果有帳密，重新 testConnection
+   */
   const handleReset = async () => {
     setResetting(true);
     setResetResult(null);
     try {
-      const result = await resetGpsConnection();
-      setResetResult(result);
-      // 重新診斷
+      // Step 1: 先通知 store 斷開（同步更新 UI 狀態）
+      await gpsStore.disconnect();
+
+      // Step 2: 清除所有本地快取
+      const cleared = await clearGpsConnectionCache();
+
+      // Step 3: 測試 proxy 是否可達
+      const base = getWebProxyBaseUrlSync();
+      const proxyTest = await testProxyReachability(base);
+
+      // Step 4: 如果有帳密，嘗試重新登入
+      let reconnectResult = false;
+      let reconnectError: string | undefined;
+      if (config.account && config.password) {
+        try {
+          // reset 後 module cache 已清，重新計算 base URL
+          const ok = await gpsStore.testConnection(config);
+          reconnectResult = ok;
+          if (!ok) reconnectError = 'testConnection returned false';
+        } catch (e) {
+          reconnectError = e instanceof Error ? e.message : String(e);
+        }
+      } else {
+        reconnectError = 'no stored credentials (account/password empty)';
+      }
+
+      setResetResult({ cleared, proxyTest, reconnectResult, error: reconnectError });
+
+      // Step 5: 重新跑診斷（拿到最新狀態）
       await runDiagnose();
-      // 重新載入 GPS config（會自動重新登入）
-      await loadConfig();
     } catch (e) {
       console.warn('[GPS Diagnostics] Reset failed:', e);
     } finally {
@@ -1469,6 +1501,31 @@ function GpsDiagnosticsCard() {
                 <Text style={[styles.diagResultTitle, { color: colors.textSecondary }]}>
                   {t('profile.gpsCurrentStatus')}
                 </Text>
+                {/* Proxy 可達性測試（最關鍵） */}
+                <View style={styles.diagRow}>
+                  <Text style={[styles.diagLabel, { color: colors.textTertiary }]}>
+                    {t('profile.diagProxyReachable')}
+                  </Text>
+                  <View style={[
+                    styles.boolBadge,
+                    {
+                      backgroundColor: diag.proxyTest.ok
+                        ? `${colors.success}20`
+                        : `${colors.danger}20`,
+                    },
+                  ]}>
+                    <Text style={[
+                      styles.boolBadgeText,
+                      {
+                        color: diag.proxyTest.ok ? colors.success : colors.danger,
+                      },
+                    ]}>
+                      {diag.proxyTest.ok
+                        ? `✓ 可達 (HTTP ${diag.proxyTest.status})`
+                        : `✗ 不可達 ${diag.proxyTest.error ? ': ' + diag.proxyTest.error : ''}`}
+                    </Text>
+                  </View>
+                </View>
                 {renderRow(t('profile.diagEffectiveUrl'), diag.effectiveProxyUrl, 'effective')}
                 {renderRow(t('profile.diagStoredUrl'), diag.storedServerUrl, 'stored')}
                 {renderBool(t('profile.diagHasJsession'), diag.hasJsession, 'jsession')}
@@ -1491,25 +1548,43 @@ function GpsDiagnosticsCard() {
             {/* 重置結果 */}
             {resetResult && (
               <View style={[styles.diagResult, {
-                backgroundColor: resetResult.reconnected ? `${colors.success}15` : `${colors.warning}15`,
-                borderColor: resetResult.reconnected ? colors.success : colors.warning,
+                backgroundColor: resetResult.reconnectResult ? `${colors.success}15` : `${colors.warning}15`,
+                borderColor: resetResult.reconnectResult ? colors.success : colors.warning,
                 marginTop: spacing.sm,
               }]}>
                 <Text style={[styles.diagResultTitle, {
-                  color: resetResult.reconnected ? colors.success : colors.warning,
+                  color: resetResult.reconnectResult ? colors.success : colors.warning,
                 }]}>
-                  {resetResult.reconnected
+                  {resetResult.reconnectResult
                     ? `✅ ${t('profile.gpsResetSuccess')}`
                     : `⚠️ ${t('profile.gpsResetPartial')}`}
                 </Text>
+                <View style={styles.diagRow}>
+                  <Text style={[styles.diagLabel, { color: colors.textTertiary }]}>
+                    Proxy 可達性
+                  </Text>
+                  <View style={[styles.boolBadge, {
+                    backgroundColor: resetResult.proxyTest.ok
+                      ? `${colors.success}20`
+                      : `${colors.danger}20`,
+                  }]}>
+                    <Text style={[styles.boolBadgeText, {
+                      color: resetResult.proxyTest.ok ? colors.success : colors.danger,
+                    }]}>
+                      {resetResult.proxyTest.ok
+                        ? `✓ 可達 (HTTP ${resetResult.proxyTest.status})`
+                        : `✗ 不可達`}
+                    </Text>
+                  </View>
+                </View>
                 {resetResult.cleared.clearedItems.map((item, idx) => (
                   <Text key={idx} style={[styles.diagClearedItem, { color: colors.textSecondary }]}>
                     • {item}
                   </Text>
                 ))}
                 {resetResult.error && (
-                  <Text style={[styles.diagClearedItem, { color: colors.danger }]}>
-                    {t('common.error')}: {resetResult.error}
+                  <Text style={[styles.diagClearedItem, { color: colors.warning }]}>
+                    ⚠️ {resetResult.error}
                   </Text>
                 )}
               </View>

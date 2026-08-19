@@ -30,6 +30,8 @@ export interface GpsDiagnosticInfo {
   storedServerUrl: string | null;
   /** 透過解析規則計算出的 proxy URL（也就是 fetch 真正會用的 URL） */
   effectiveProxyUrl: string;
+  /** 測試 proxy 是否可達（真實網路請求） */
+  proxyTest: { ok: boolean; status: number; error?: string };
   /** localStorage 中是否有 jsession */
   hasJsession: boolean;
   /** jsession 字串前 16 碼（方便判斷過期/格式） */
@@ -126,6 +128,7 @@ export async function diagnoseGpsConnection(): Promise<GpsDiagnosticInfo> {
     runtimeServerUrl,
     storedServerUrl,
     effectiveProxyUrl,
+    proxyTest: await testProxyReachability(effectiveProxyUrl),
     hasJsession: !!jsession,
     jsessionPreview: jsession ? jsession.substring(0, 16) + '...' : null,
     hasSessionUser: !!sessionUser,
@@ -248,44 +251,34 @@ export async function clearGpsConnectionCache(): Promise<GpsClearResult> {
 }
 
 /**
- * 重置 GPS 連線的完整流程：
- *   1. 清掉所有本地快取（module / storage / SW / Cache）
- *   2. 重新計算 proxy URL
- *   3. 使用 stored 帳密自動登入（如果有的話）
- *
- * @param onProgress 用於 UI 顯示步驟
+ * 直接測試 proxy 是否能正常回應（不依賴 jsession）
  */
-export async function resetGpsConnection(
-  onProgress?: (step: string) => void,
-): Promise<{
-  ok: boolean;
-  cleared: GpsClearResult;
-  reconnected: boolean;
-  error?: string;
-}> {
-  onProgress?.('清除本地快取…');
-  const cleared = await clearGpsConnectionCache();
-
-  // 嘗試重新登入
-  onProgress?.('重新連線 GPS…');
-  let reconnected = false;
-  let error: string | undefined;
+export async function testProxyReachability(
+  baseUrl: string,
+): Promise<{ ok: boolean; status: number; error?: string }> {
   try {
-    // 重新計算 proxy URL（resetServerUrlCache 已經在上面做過了）
-    const base = getWebProxyBaseUrlSync();
-    console.log('[GPS Diagnostics] Reset complete. New proxy URL:', base);
-
-    // 用 ping 試一次；如果失敗就視為未連線
-    const ok = await gps808Api.ping();
-    reconnected = ok;
+    const url = `${baseUrl}/StandardApiAction_login.action`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'account=_diag_&password=_diag_',
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      // 任何 HTTP 回應（即使 400/401）都表示 proxy活著
+      // 只有 network error / timeout 才算失敗
+      return { ok: true, status: res.status };
+    } catch (fetchErr) {
+      clearTimeout(timeout);
+      if (fetchErr instanceof Error && fetchErr.name === 'AbortError') {
+        return { ok: false, status: 0, error: '連線逾時（8秒）' };
+      }
+      return { ok: false, status: 0, error: String(fetchErr) };
+    }
   } catch (e) {
-    error = e instanceof Error ? e.message : String(e);
+    return { ok: false, status: 0, error: String(e) };
   }
-
-  return {
-    ok: true,
-    cleared,
-    reconnected,
-    error,
-  };
 }

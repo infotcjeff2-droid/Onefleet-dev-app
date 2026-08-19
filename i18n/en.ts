@@ -557,6 +557,7 @@ export const en = {
     diagServiceWorker: 'Service Worker count',
     diagCacheStorage: 'Cache Storage names',
     diagLocalStorageKeys: 'Related localStorage keys',
+    diagProxyReachable: 'Proxy Reachable',
   },
   settings: {
     title: 'Settings',

@@ -562,6 +562,7 @@ export const zhTW = {
     diagServiceWorker: 'Service Worker 數量',
     diagCacheStorage: 'Cache Storage 名稱',
     diagLocalStorageKeys: '相關 localStorage keys',
+    diagProxyReachable: 'Proxy 可達性',
   },
   settings: {
     title: '設定',
