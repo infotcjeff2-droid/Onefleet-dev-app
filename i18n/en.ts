@@ -508,6 +508,14 @@ export const en = {
     deliveryPhotoUploaded: 'Delivery photo uploaded',
     addDeliveryPhotoAnytime: 'You can still upload delivery photos after completing the order',
     addDeliveryPhotoAfterComplete: 'You can return here to upload delivery photos after completing the order',
+    // Delivery Order Management (System Admin)
+    deliveryManagement: 'Delivery Order Management',
+    deliveryManagementTitle: 'Delivery Order Management',
+    searchPlaceholder: 'Search order no., customer, address...',
+    filterStatus: 'Filter Status',
+    filterAll: 'All',
+    noOrders: 'No delivery orders',
+    noResults: 'Try a different keyword',
   },
   profile: {
     title: 'Profile',

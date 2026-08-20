@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Image, Linking } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
-import { ChevronRight, Truck, Link2, Cpu, Warehouse, Package, Zap, RefreshCw, Settings, Shield, LayoutDashboard, Navigation } from 'lucide-react-native';
+import { ChevronRight, Truck, Link2, Cpu, Warehouse, Package, Zap, RefreshCw, Settings, Shield, LayoutDashboard, Navigation, FileText } from 'lucide-react-native';
 import { Card } from '@/components/ui/Card';
 import { Header } from '@/components/ui/Header';
 import { useThemeStore } from '@/store/themeStore';
@@ -153,6 +153,14 @@ export default function OneFleetSystemAdminScreen() {
             <View style={styles.settingLeft}>
               <Zap size={18} color="#22C55E" />
               <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>智能配送調度</Text>
+            </View>
+            <ChevronRight size={18} color={colors.textSecondary} />
+          </Pressable>
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <Pressable style={styles.settingRow} onPress={() => router.push('/onefleet-system-admin/delivery-management')}>
+            <View style={styles.settingLeft}>
+              <FileText size={18} color="#EF4444" />
+              <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>配送單管理</Text>
             </View>
             <ChevronRight size={18} color={colors.textSecondary} />
           </Pressable>

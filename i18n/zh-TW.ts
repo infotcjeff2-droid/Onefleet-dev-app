@@ -511,6 +511,14 @@ export const zhTW = {
     deliveryPhotoUploaded: '送達相片已上載',
     addDeliveryPhotoAnytime: '完成訂單後仍可上載送達相片',
     addDeliveryPhotoAfterComplete: '完成訂單後仍可回來上載送達相片',
+    // 配送單管理（系統管理後台）
+    deliveryManagement: '配送單管理',
+    deliveryManagementTitle: '配送單管理',
+    searchPlaceholder: '搜尋單號、客戶、地址...',
+    filterStatus: '篩選狀態',
+    filterAll: '全部',
+    noOrders: '尚無配送單',
+    noResults: '嘗試其他關鍵字',
   },
   profile: {
     title: '個人資料',
