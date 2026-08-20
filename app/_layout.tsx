@@ -17,6 +17,7 @@ import { I18nProvider, useTranslation } from '@/i18n';
 import { FontScaleProvider } from '@/contexts/FontScaleContext';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useEffect, useRef } from 'react';
+import { Platform } from 'react-native';
 import { ClerkProvider } from '@clerk/expo';
 import { tokenCache } from '@/utils/tokenCache';
 import { useSyncClerkToSupabase } from '@/hooks/useSyncClerkToSupabase';
@@ -138,21 +139,35 @@ function AppContent() {
 
 export default function RootLayout() {
   const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY || '';
+  const isWeb = Platform.OS === 'web';
 
+  // 如果 Clerk key 格式無效（base64 padding 問題），跳過 ClerkProvider
+  const isClerkKeyValid = clerkPublishableKey.startsWith('pk_') && clerkPublishableKey.length > 20;
+
+  const appContent = (
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
+      <SafeAreaProvider>
+        <I18nProvider>
+          <FontScaleProvider>
+            <AppContent />
+          </FontScaleProvider>
+        </I18nProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
+  );
+
+  // Web 環境下 Clerk 載入有問題，完全跳過 ClerkProvider
+  if (isWeb) {
+    return <>{appContent}</>;
+  }
+
+  // Native 環境：正常初始化 Clerk
   return (
     <ClerkProvider
       tokenCache={tokenCache}
-      publishableKey={clerkPublishableKey}
+      publishableKey={isClerkKeyValid ? clerkPublishableKey : ''}
     >
-      <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
-        <SafeAreaProvider>
-          <I18nProvider>
-            <FontScaleProvider>
-              <AppContent />
-            </FontScaleProvider>
-          </I18nProvider>
-        </SafeAreaProvider>
-      </GestureHandlerRootView>
+      {appContent}
     </ClerkProvider>
   );
 }

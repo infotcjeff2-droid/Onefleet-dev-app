@@ -8,12 +8,22 @@
  *   - 使用 Clerk user.id 當 primary key，跨裝置 / 跨登入方式皆一致
  *   - upsert by id，已存在則只更新 last_sign_in_at，不覆蓋業務欄位
  *   - 第一次登入才會建立記錄，後續登入只是更新時間戳記
+ * 
+ * Web 環境：跳過 Clerk 整合，user_profile 由網頁認證流程處理
  */
 import { useEffect, useRef } from 'react';
+import { Platform } from 'react-native';
 import { useUser } from '@clerk/expo';
 import { supabase, hasSupabaseEnv } from '@/utils/supabase';
 
 export function useEnsureUserProfile() {
+  const isWeb = Platform.OS === 'web';
+  
+  // Web 環境下 Clerk 未初始化，跳過
+  if (isWeb) {
+    return;
+  }
+
   const { user, isSignedIn, isLoaded } = useUser();
   const ensuredFor = useRef<string | null>(null);
 

@@ -1,7 +1,4 @@
-import * as SecureStore from 'expo-secure-store';
-import * as Platform from 'react-native';
-
-// Web fallback: localStorage (expo-secure-store 不支援 web，會 throw)
+// Web fallback: localStorage
 const memoryTokenCache = new Map<string, string>();
 
 const webTokenCache = {
@@ -26,22 +23,40 @@ const webTokenCache = {
   },
 };
 
-const nativeTokenCache = {
-  async getToken(key: string) {
-    try {
-      return await SecureStore.getItemAsync(key);
-    } catch {
-      return null;
-    }
-  },
-  async saveToken(key: string, value: string) {
-    try {
-      await SecureStore.setItemAsync(key, value);
-    } catch {
-      // Ignore error
-    }
-  },
-};
+// Lazy load native token cache to avoid import errors on web
+let nativeTokenCache: {
+  getToken: (key: string) => Promise<string | null>;
+  saveToken: (key: string, value: string) => Promise<void>;
+} | null = null;
 
-export const tokenCache =
-  Platform.OS === 'web' ? webTokenCache : nativeTokenCache;
+async function getNativeTokenCache() {
+  if (nativeTokenCache) return nativeTokenCache;
+  
+  try {
+    const SecureStore = await import('expo-secure-store');
+    nativeTokenCache = {
+      async getToken(key: string) {
+        try {
+          return await SecureStore.getItemAsync(key);
+        } catch {
+          return null;
+        }
+      },
+      async saveToken(key: string, value: string) {
+        try {
+          await SecureStore.setItemAsync(key, value);
+        } catch {
+          // Ignore error
+        }
+      },
+    };
+  } catch {
+    nativeTokenCache = {
+      getToken: async () => null,
+      saveToken: async () => {},
+    };
+  }
+  return nativeTokenCache;
+}
+
+export const tokenCache = webTokenCache;

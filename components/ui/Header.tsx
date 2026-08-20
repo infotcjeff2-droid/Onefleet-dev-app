@@ -30,25 +30,12 @@ export function Header({ title, showBack = false, leftElement, rightAction, tran
                 </View>
               </Pressable>
             )}
+            {leftElement && <View style={styles.leftElementWrap}>{leftElement}</View>}
           </View>
 
-          {leftElement ? (
-            <>
-              <View style={styles.logoTitleContainer}>
-                <View style={styles.logoWrap}>{leftElement}</View>
-                <View style={styles.titleSpacer} />
-              </View>
-              <View style={styles.titleOverlay} pointerEvents="none">
-                <Text style={[styles.title, transparent && styles.titleTransparent]} numberOfLines={1}>
-                  {title}
-                </Text>
-              </View>
-            </>
-          ) : (
-            <Text style={[styles.title, transparent && styles.titleTransparent]} numberOfLines={1}>
-              {title}
-            </Text>
-          )}
+          <Text style={[styles.title, transparent && styles.titleTransparent]} numberOfLines={1}>
+            {title}
+          </Text>
 
           <View style={styles.rightSection}>{rightAction}</View>
         </View>
@@ -77,12 +64,14 @@ const styles = StyleSheet.create({
     height: layout.headerHeight,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
     backgroundColor: colors.background,
   },
   leftSection: {
-    alignItems: 'flex-start',
-    justifyContent: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    width: 80,
+    paddingLeft: spacing.lg,
   },
   backButton: {
     padding: spacing.sm,
@@ -103,30 +92,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
-  logoTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  logoWrap: {
-    marginRight: spacing.sm,
-  },
-  titleSpacer: {
-    width: 0,
-    flex: 1,
-  },
-  titleOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: spacing.lg,
-    right: spacing.lg,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
+  leftElementWrap: {
+    marginLeft: spacing.sm,
   },
   title: {
+    flex: 1,
     fontSize: typography.fontSize.lg,
     fontWeight: '600',
     color: colors.textPrimary,
+    textAlign: 'center',
   },
   titleTransparent: {
     color: colors.textPrimary,
@@ -137,5 +111,7 @@ const styles = StyleSheet.create({
   rightSection: {
     alignItems: 'flex-end',
     justifyContent: 'center',
+    width: 80,
+    paddingRight: spacing.lg,
   },
 });

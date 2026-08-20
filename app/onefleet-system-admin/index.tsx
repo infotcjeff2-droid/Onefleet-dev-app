@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Image, Linking } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
-import { ChevronRight, Truck, Link2, Cpu, Warehouse, Package, Zap, RefreshCw, Settings, Shield, LayoutDashboard, Navigation, FileText } from 'lucide-react-native';
+import { ChevronRight, Truck, Link2, Cpu, Warehouse, Package, Zap, RefreshCw, Settings, Shield, LayoutDashboard, Navigation, FileText, Wifi } from 'lucide-react-native';
 import { Card } from '@/components/ui/Card';
 import { Header } from '@/components/ui/Header';
 import { useThemeStore } from '@/store/themeStore';
@@ -31,12 +31,7 @@ export default function OneFleetSystemAdminScreen() {
 
   const handleCopySql = async () => {
     await Clipboard.setStringAsync(supabaseSetupSql);
-    Alert.alert(
-      locale === 'zh-TW' ? '已複製 SQL' : 'SQL copied',
-      locale === 'zh-TW'
-        ? '請到 Supabase SQL Editor 貼上執行，建立或更新同步資料表。'
-        : 'Paste it into the Supabase SQL Editor to create or update the sync table.'
-    );
+    Alert.alert('已複製', '請到 Supabase SQL Editor 貼上執行。');
   };
 
   const handleOpenSupabase = () => {
@@ -86,49 +81,59 @@ export default function OneFleetSystemAdminScreen() {
           </Pressable>
         </Card>
 
-        {/* 系統管理 */}
-        <Card style={styles.card}>
-          <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>🛠️ 系統管理</Text>
-          <Pressable style={styles.settingRow} onPress={() => router.push('/onefleet-system-admin/vehicle-management')}>
-            <View style={styles.settingLeft}>
-              <Truck size={18} color={colors.textSecondary} />
-              <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>{t('nav.vehicleManagement')}</Text>
-            </View>
-            <ChevronRight size={18} color={colors.textSecondary} />
-          </Pressable>
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <Pressable style={styles.settingRow} onPress={() => router.push('/onefleet-system-admin/pair-device')}>
-            <View style={styles.settingLeft}>
-              <Link2 size={18} color={colors.textSecondary} />
-              <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>{t('nav.pairDevice')}</Text>
-            </View>
-            <ChevronRight size={18} color={colors.textSecondary} />
-          </Pressable>
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <Pressable style={styles.settingRow} onPress={() => router.push('/onefleet-system-admin/config')}>
-            <View style={styles.settingLeft}>
-              <Cpu size={18} color={colors.textSecondary} />
-              <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>{t('nav.config')}</Text>
-            </View>
-            <ChevronRight size={18} color={colors.textSecondary} />
-          </Pressable>
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <Pressable style={styles.settingRow} onPress={() => router.push('/onefleet-system-admin/user-management')}>
-            <View style={styles.settingLeft}>
-              <Text style={{ fontSize: 16 }}>👤</Text>
-              <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>使用者管理</Text>
-            </View>
-            <ChevronRight size={18} color={colors.textSecondary} />
-          </Pressable>
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <Pressable style={styles.settingRow} onPress={() => router.push('/onefleet-system-admin/trash')}>
-            <View style={styles.settingLeft}>
-              <Text style={{ fontSize: 16 }}>🗑️</Text>
-              <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>垃圾桶</Text>
-            </View>
-            <ChevronRight size={18} color={colors.textSecondary} />
-          </Pressable>
-        </Card>
+        {/* 系統管理 - 僅 admin 可見 */}
+        {role === 'admin' && (
+          <Card style={styles.card}>
+            <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>🛠️ 系統管理</Text>
+            <Pressable style={styles.settingRow} onPress={() => router.push('/onefleet-system-admin/vehicle-management')}>
+              <View style={styles.settingLeft}>
+                <Truck size={18} color={colors.textSecondary} />
+                <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>{t('nav.vehicleManagement')}</Text>
+              </View>
+              <ChevronRight size={18} color={colors.textSecondary} />
+            </Pressable>
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            <Pressable style={styles.settingRow} onPress={() => router.push('/onefleet-system-admin/pair-device')}>
+              <View style={styles.settingLeft}>
+                <Link2 size={18} color={colors.textSecondary} />
+                <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>{t('nav.pairDevice')}</Text>
+              </View>
+              <ChevronRight size={18} color={colors.textSecondary} />
+            </Pressable>
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            <Pressable style={styles.settingRow} onPress={() => router.push('/onefleet-system-admin/config')}>
+              <View style={styles.settingLeft}>
+                <Cpu size={18} color={colors.textSecondary} />
+                <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>{t('nav.config')}</Text>
+              </View>
+              <ChevronRight size={18} color={colors.textSecondary} />
+            </Pressable>
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            <Pressable style={styles.settingRow} onPress={() => router.push('/onefleet-system-admin/user-management')}>
+              <View style={styles.settingLeft}>
+                <Text style={{ fontSize: 16 }}>👤</Text>
+                <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>使用者管理</Text>
+              </View>
+              <ChevronRight size={18} color={colors.textSecondary} />
+            </Pressable>
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            <Pressable style={styles.settingRow} onPress={() => router.push('/onefleet-system-admin/trash')}>
+              <View style={styles.settingLeft}>
+                <Text style={{ fontSize: 16 }}>🗑️</Text>
+                <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>垃圾桶</Text>
+              </View>
+              <ChevronRight size={18} color={colors.textSecondary} />
+            </Pressable>
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            <Pressable style={styles.settingRow} onPress={() => router.push('/onefleet-system-admin/gps-diagnostics')}>
+              <View style={styles.settingLeft}>
+                <Wifi size={18} color={colors.textSecondary} />
+                <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>GPS 連線診斷</Text>
+              </View>
+              <ChevronRight size={18} color={colors.textSecondary} />
+            </Pressable>
+          </Card>
+        )}
 
         {/* 庫存與配送 */}
         <Card style={styles.card}>

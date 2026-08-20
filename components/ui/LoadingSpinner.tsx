@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { View, Image, StyleSheet } from 'react-native';
 import Animated, {
   useAnimatedStyle,
@@ -19,17 +20,21 @@ interface LoadingSpinnerProps {
 
 function Dot({ delay = 0 }: { delay?: number }) {
   const opacity = useSharedValue(0.3);
-  opacity.value = withDelay(
-    delay,
-    withRepeat(
-      withSequence(
-        withTiming(1, { duration: 400, easing: Easing.inOut(Easing.ease) }),
-        withTiming(0.3, { duration: 400, easing: Easing.inOut(Easing.ease) }),
+
+  useEffect(() => {
+    opacity.value = withDelay(
+      delay,
+      withRepeat(
+        withSequence(
+          withTiming(1, { duration: 400, easing: Easing.inOut(Easing.ease) }),
+          withTiming(0.3, { duration: 400, easing: Easing.inOut(Easing.ease) }),
+        ),
+        -1,
+        true,
       ),
-      -1,
-      true,
-    ),
-  );
+    );
+  }, [delay, opacity]);
+
   const animatedStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
   return <Animated.View style={[styles.dot, animatedStyle]} />;
 }
@@ -38,20 +43,22 @@ export function LoadingSpinner({ size = 80, fullScreen = false }: LoadingSpinner
   const rotation = useSharedValue(0);
   const scale = useSharedValue(1);
 
-  rotation.value = withRepeat(
-    withTiming(360, { duration: 1200, easing: Easing.linear }),
-    -1,
-    false,
-  );
+  useEffect(() => {
+    rotation.value = withRepeat(
+      withTiming(360, { duration: 1200, easing: Easing.linear }),
+      -1,
+      false,
+    );
 
-  scale.value = withRepeat(
-    withSequence(
-      withTiming(1.05, { duration: 600, easing: Easing.inOut(Easing.ease) }),
-      withTiming(1, { duration: 600, easing: Easing.inOut(Easing.ease) }),
-    ),
-    -1,
-    true,
-  );
+    scale.value = withRepeat(
+      withSequence(
+        withTiming(1.05, { duration: 600, easing: Easing.inOut(Easing.ease) }),
+        withTiming(1, { duration: 600, easing: Easing.inOut(Easing.ease) }),
+      ),
+      -1,
+      true,
+    );
+  }, [rotation, scale]);
 
   const logoStyle = useAnimatedStyle(() => ({
     transform: [

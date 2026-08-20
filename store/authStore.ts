@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import { User, UserRole } from '@/types';
 import { adminCredentials, demoCredentials, driverCredentials, companyCredentials } from '@/constants/mockData';
 import { storage } from '@/utils/storage';
-import { getClerkInstance } from '@clerk/expo';
 import { hasSupabaseEnv, syncUserProfiles } from '@/utils/fleetSync';
 
 /**
@@ -264,9 +263,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: async () => {
     set({ isLoggingOut: true });
+    // Web 環境下 Clerk 未初始化，跳過 Clerk sign-out
     try {
-      const clerk = getClerkInstance();
-      await clerk.signOut();
+      const isWeb = typeof window !== 'undefined';
+      if (!isWeb) {
+        const { getClerkInstance } = await import('@clerk/expo');
+        const clerk = getClerkInstance();
+        await clerk.signOut();
+      }
     } catch {
       // Ignore Clerk sign-out errors (e.g. no active session)
     }
