@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -659,6 +659,20 @@ export default function DeliveryScreen() {
     }
   }, [isDriver, user, normalizedDeliveries.length]);
 
+  // ★ 計算 company 角色的可見池：本公司的 userId + 旗下所有相關 driver 的 userId。
+  //   與 store/deliveryStore.ts 的後端 query 邏輯保持一致，確保本地 cache 與遠端同步結果一致。
+  const managedUsers = useUserManagementStore((state) => state.users);
+  const companyPoolUserIds = useMemo(() => {
+    if (!user || user.role !== 'company') return null;
+    const pool = new Set<string>([user.id]);
+    for (const u of managedUsers) {
+      if (u.role === 'driver' && u.companyId === user.id && u.id) {
+        pool.add(u.id);
+      }
+    }
+    return pool;
+  }, [user, managedUsers]);
+
   const displayDeliveries = isDriver && user
     ? normalizedDeliveries
         .filter((delivery) => {
@@ -676,12 +690,25 @@ export default function DeliveryScreen() {
           const dateB = new Date(b.createdAt).getTime();
           return dateB - dateA;
         })
-    : normalizedDeliveries.sort((a, b) => {
-        // 由新至舊排序（最新建立的在前）
-        const dateA = new Date(a.createdAt).getTime();
-        const dateB = new Date(b.createdAt).getTime();
-        return dateB - dateA;
-      });
+    : user?.role === 'company' && companyPoolUserIds
+      ? normalizedDeliveries
+          .filter((delivery) => {
+            // ★ 公司帳號的可見範圍：建立者 user_id 落在 {本公司, 旗下司機} 池內
+            //   '斷開 relation' (司機改 companyId / 被刪) 下次 sync 會自然移出池外
+            const creatorId = delivery.userId;
+            return !!creatorId && companyPoolUserIds.has(creatorId);
+          })
+          .sort((a, b) => {
+            const dateA = new Date(a.createdAt).getTime();
+            const dateB = new Date(b.createdAt).getTime();
+            return dateB - dateA;
+          })
+      : normalizedDeliveries.sort((a, b) => {
+          // 由新至舊排序（最新建立的在前）
+          const dateA = new Date(a.createdAt).getTime();
+          const dateB = new Date(b.createdAt).getTime();
+          return dateB - dateA;
+        });
   console.log('[DeliveryScreen] displayDeliveries count:', displayDeliveries.length);
 
   const activeStatuses: DeliveryStatus[] = ['pending', 'assigned', 'in_transit'];

@@ -236,17 +236,38 @@ export const useDeliveryStore = create<DeliveryState>((set, get) => ({
       // 直接從 Supabase REST API 獲取配送單
       const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
       const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-      
+
       let queryUrl = `${url}/rest/v1/delivery_orders?is_deleted=eq.false`;
-      
+
       if (userRole === 'driver') {
         // 司機只看指派給自己的配送單
         // ★ 支援雙重匹配：同時用 assigned_driver_id 和 assigned_driver_name 比對
         // 避免因 ID 格式不一致導致查詢失敗
-        queryUrl += `&or=(assigned_driver_id.eq.${encodeURIComponent(userId)},assigned_driver_name.eq.${encodeURIComponent(user?.name || '')})`;
-      } else if (userRole === 'company' && companyId) {
-        // 公司只看自己公司的
-        queryUrl += `&company_id=eq.${encodeURIComponent(companyId)}`;
+        queryUrl += `&or=(assigned_driver_id.eq.${encodeURIComponent(userId)},assigned_driver_name.eq.${encodeURIComponent(currentUser?.name || '')})`;
+      } else if (userRole === 'company' && userId) {
+        // ★ 公司帳號的可見範圍 = 自己 + 旗下所有司機 (driver.user_profile.company_id === 此公司 id)。
+        //   由於 delivery_orders 表用 user_id 記錄「建立者」,所以只要把 user_id 組成池即可
+        //   (公司本人新增的單 user_id = 公司 id,司機新增的單 user_id = 該司機 id)。
+        //   '斷開 relation' = 司機被改 companyId / 從 user_profile 移除 → 下次 sync 不會再撈到。
+        let poolUserIds: string[] = [userId];
+        try {
+          const { useUserManagementStore } = await import('./userManagementStore');
+          const ensureLoaded = useUserManagementStore.getState().users.length === 0
+            ? await useUserManagementStore.getState().loadUsers()
+            : Promise.resolve();
+          await ensureLoaded;
+          const relatedDrivers = useUserManagementStore.getState().getUsersByCompanyId(userId);
+          for (const d of relatedDrivers) {
+            if (d.role === 'driver' && d.id && !poolUserIds.includes(d.id)) {
+              poolUserIds.push(d.id);
+            }
+          }
+          console.log('[deliveryStore] company pool user_ids:', poolUserIds);
+        } catch (err) {
+          console.warn('[deliveryStore] failed to expand company pool, fallback to self only:', err);
+        }
+        const inList = poolUserIds.map((id) => `"${id.replace(/"/g, '')}"`).join(',');
+        queryUrl += `&user_id=in.(${inList})`;
       }
       queryUrl += '&order=pickup_time.asc';
       

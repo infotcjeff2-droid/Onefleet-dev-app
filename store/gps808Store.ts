@@ -4,33 +4,12 @@ import { gps808Api, setServerUrl, Gps808Vehicle, resetServerUrlCache } from '@/u
 import { Platform } from 'react-native';
 import { useAuthStore } from './authStore';
 import {
-  fetchGps808ConfigFromSupabase,
-  upsertGps808ConfigToSupabase,
-  deleteGps808ConfigFromSupabase,
-} from '@/utils/gps808Supabase';
+  fetchGps808SharedConfig,
+  upsertGps808SharedConfig,
+  resetGps808SharedConfig,
+} from '@/utils/gps808SharedSupabase';
 
 const JSESSION_STORAGE_KEY = 'gps808_jsession';
-/** 儲存當前 session 所屬的用戶 ID（用於檢測用戶切換） */
-const JSESSION_USER_KEY = 'gps808_jsession_user';
-
-/** 保存 session 關聯的用戶 ID */
-async function saveSessionUserId(userId: string): Promise<void> {
-  try {
-    await storage.setItem(JSESSION_USER_KEY, userId);
-    console.log('[GPS808] Session userId 已保存:', userId);
-  } catch (e) {
-    console.warn('[GPS808] 保存 session userId 失敗:', e);
-  }
-}
-
-/** 獲取 session 關聯的用戶 ID */
-async function getSessionUserId(): Promise<string | null> {
-  try {
-    return await storage.getItem(JSESSION_USER_KEY);
-  } catch {
-    return null;
-  }
-}
 
 interface Gps808Config {
   serverUrl: string;
@@ -77,10 +56,9 @@ interface Gps808State {
   batchUpdateDeviceStatus: (statuses: GpsDeviceStatusCache[]) => void;
 }
 
-function getStorageKey(): string {
-  const userId = useAuthStore.getState().user?.id ?? 'guest';
-  return `gps808_config_${userId}`;
-}
+/** 共用配置的本機快取 key（不再以 user 區分） */
+const SHARED_LOCAL_CACHE_KEY = 'gps808_shared_config';
+
 const DEFAULT_CONFIG: Gps808Config = {
   serverUrl: 'https://console.onefleet.hk',
   account: '',
@@ -127,10 +105,13 @@ function getInitialConfig(): Gps808Config {
   return DEFAULT_CONFIG;
 }
 
+/** 判斷當前使用者是否為管理員（共用配置的寫入者） */
+function isAdminUser(): boolean {
+  return useAuthStore.getState().user?.id === 'u-admin';
+}
+
 /**
  * 預載：從 storage 讀取「上次連線狀態」，避免刷新頁面後 isConnected 閃成 false。
- * 此函式在 store 建立時立即同步執行（不透過 useEffect）。
- * 注意：Web Storage 是同步的，但為了介面一致仍用 async。
  */
 async function loadInitialConnectionState(): Promise<boolean> {
   if (!IS_WEB) return false;
@@ -143,298 +124,209 @@ async function loadInitialConnectionState(): Promise<boolean> {
 }
 
 export const useGps808Store = create<Gps808State>((set, get) => {
-  // 在 store 初始化時把 isConnected 設定為「與 storage 一致」的樂觀值，
-  // 避免初次 render 顯示為 false，refresh 之後使用者必須重新設定的錯覺。
   const initialState: Pick<Gps808State, 'config' | 'isConnected' | 'isLoading' | 'isSaving' | 'error' | 'deviceStatusCache'> = {
     config: getInitialConfig(),
-    isConnected: false, // 先設為 false，避免閃爍
+    isConnected: false,
     isLoading: true,
     isSaving: false,
     error: null,
     deviceStatusCache: {},
   };
 
-  // Fire-and-forget：非同步把正確的初始連線狀態寫回 store
   if (IS_WEB) {
     void loadInitialConnectionState().then((wasConnected) => {
       if (wasConnected && !useGps808Store.getState().isConnected) {
-        // 只在 store 還沒被外部 update 時才覆蓋（避免 race）
         useGps808Store.setState({ isConnected: true });
       }
     });
-    // Reload 之後 module 重新執行，把 runtimeServerUrl cache 清掉以重新計算
     resetServerUrlCache();
   }
 
   return {
     ...initialState,
 
-  loadConfig: async () => {
-    set({ isLoading: true, error: null });
-    try {
-      // Web 端：先確保 serverUrl 是 proxy URL（CORS 必要）
-      if (IS_WEB) {
-        const proxyUrl = getWebProxyUrl();
-        await setServerUrl(proxyUrl);
-      }
-
-      const currentUser = useAuthStore.getState().user;
-      const userId = currentUser?.id || 'u-admin';
-      console.log('[GPS808] loadConfig: userId =', userId);
-
-      // 檢測用戶是否切換：如果 session userId 與當前用戶不同，需要重新登入
-      const sessionUserId = await getSessionUserId();
-      let userSwitched = false;
-      if (sessionUserId && sessionUserId !== userId) {
-        console.log('[GPS808] 用戶切換檢測: session 屬於', sessionUserId, '但當前用戶是', userId);
-        userSwitched = true;
-        // 清除舊的 session，準備重新登入
-        await storage.removeItem(JSESSION_STORAGE_KEY);
-        await storage.removeItem(JSESSION_USER_KEY);
-      }
-
-      // 優先從 Supabase 載入（多設備同步的核心）
-      let parsed: Gps808Config | null = null;
-      let cloudIsConnected = false;
-
+    loadConfig: async () => {
+      set({ isLoading: true, error: null });
       try {
-        const cloudConfig = await fetchGps808ConfigFromSupabase(userId);
-        if (cloudConfig) {
-          parsed = {
-            serverUrl: cloudConfig.server_url,
-            account: cloudConfig.account,
-            password: cloudConfig.password,
-          };
-          cloudIsConnected = cloudConfig.is_connected;
-          console.log('[GPS808] loadConfig: loaded from Supabase, is_connected =', cloudIsConnected);
+        const proxyUrl = IS_WEB ? getWebProxyUrl() : null;
+        if (IS_WEB) {
+          console.log('[GPS808] loadConfig: using proxyUrl =', proxyUrl);
+          await setServerUrl(proxyUrl!);
         }
-      } catch (e) {
-        console.log('[GPS808] loadConfig: Supabase fetch failed, fallback to localStorage', e);
-      }
 
-      // 回退到 localStorage（離線快取）
-      if (!parsed) {
-        const stored = await storage.getItem(getStorageKey());
-        console.log('[GPS808] loadConfig: stored (localStorage) =', stored ? 'has data' : 'empty');
-        if (stored) {
-          try {
-            parsed = JSON.parse(stored) as Gps808Config;
-          } catch (e) {
-            console.log('[GPS808] loadConfig: localStorage parse failed', e);
+        let parsed: Gps808Config | null = null;
+        let cloudIsConnected = false;
+        let hadCredentials = false; // localStorage 有 credentials
+
+        // 1) 優先從 Supabase 共用單列讀取（跨裝置同步）
+        try {
+          const cloudConfig = await fetchGps808SharedConfig();
+          console.log('[GPS808] loadConfig: Supabase fetch result =', cloudConfig);
+          if (cloudConfig && cloudConfig.account && cloudConfig.password) {
+            parsed = {
+              serverUrl: cloudConfig.server_url,
+              account: cloudConfig.account,
+              password: cloudConfig.password,
+            };
+            cloudIsConnected = cloudConfig.is_connected;
+            hadCredentials = true;
+            console.log('[GPS808] loadConfig: parsed from Supabase, is_connected =', cloudIsConnected);
+          } else {
+            console.log('[GPS808] loadConfig: Supabase row empty or missing credentials');
+          }
+        } catch (e) {
+          console.log('[GPS808] loadConfig: Supabase fetch failed, fallback to localStorage', e);
+        }
+
+        // 2) 回退到本機快取（單一瀏覽器本地優先）
+        if (!parsed) {
+          const stored = await storage.getItem(SHARED_LOCAL_CACHE_KEY);
+          if (stored) {
+            try {
+              parsed = JSON.parse(stored) as Gps808Config;
+              hadCredentials = true;
+              console.log('[GPS808] loadConfig: parsed from localStorage');
+            } catch (e) {
+              console.log('[GPS808] loadConfig: localStorage parse failed', e);
+            }
           }
         }
-      }
 
-      // Case 1: 有 config → 驗證登入狀態
-      if (parsed) {
-        // Web 端：使用 proxy URL 避免 CORS 問題
-        if (IS_WEB) {
-          const proxyUrl = getWebProxyUrl();
-          await setServerUrl(proxyUrl);
-        } else {
-          await setServerUrl(parsed.serverUrl);
+        // 3) 都沒有 config，但有 env 自動連線（web 開發用）
+        if (!parsed && Platform.OS === 'web' && WEB_AUTO_CONNECT && WEB_ENV_CONFIG.account) {
+          parsed = WEB_ENV_CONFIG;
+          hadCredentials = true;
+          console.log('[GPS808] loadConfig: using WEB_ENV_CONFIG (auto-connect)');
         }
+
+        if (!parsed) {
+          console.log('[GPS808] loadConfig: no config found, returning');
+          set({ isLoading: false });
+          return;
+        }
+
+        console.log('[GPS808] loadConfig: final parsed config, account =', parsed.account, 'hasPassword =', !!parsed.password);
         set({ config: parsed });
 
-        // 如果 Supabase 標記為用戶主動中斷（is_connected=false）→ 直接視為未連線
-        if (!cloudIsConnected && parsed) {
-          // 但仍保留 config 讓使用者不用重打（除非他們也要清掉）
-          // 標記為未連線，但 config 仍保存
-          set({ isConnected: false, isLoading: false });
-          return;
-        }
-
-        // Try ping first
-        const valid = await gps808Api.ping();
-        if (valid) {
-          await saveSessionUserId(userId);
-          set({ isConnected: true, isLoading: false });
-          await storage.setItem(getStorageKey(), JSON.stringify(parsed));
-          await upsertGps808ConfigToSupabase({
-            user_id: userId,
-            server_url: parsed.serverUrl,
-            account: parsed.account,
-            password: parsed.password,
-            is_connected: true,
-          });
-          return;
-        }
-
-        // ping 失敗：用 stored 帳密 relogin
+        // 4) 有 credentials → 嘗試 login
+        // （GPS Proxy Worker 會自動維護 session，若仍有效會直接成功；若過期則重新 login）
         if (parsed.account && parsed.password) {
-          console.log('[GPS808] loadConfig: attempting relogin with account =', parsed.account);
-          if (IS_WEB) {
-            const proxyUrl = getWebProxyUrl();
-            await setServerUrl(proxyUrl);
-          } else {
-            await setServerUrl(parsed.serverUrl);
-          }
+          console.log('[GPS808] loadConfig: calling gps808Api.login()...');
           const result = await gps808Api.login(parsed.account, parsed.password);
-          console.log('[GPS808] loadConfig: relogin result =', result);
+          console.log('[GPS808] loadConfig: login result =', result);
+
           if (result.success) {
-            await saveSessionUserId(userId);
-            await storage.setItem(getStorageKey(), JSON.stringify(parsed));
+            await storage.setItem(SHARED_LOCAL_CACHE_KEY, JSON.stringify(parsed));
+            console.log('[GPS808] loadConfig: SUCCESS, setting isConnected = true');
             set({ isConnected: true, isLoading: false });
-            await upsertGps808ConfigToSupabase({
-              user_id: userId,
-              server_url: parsed.serverUrl,
-              account: parsed.account,
-              password: parsed.password,
-              is_connected: true,
-            });
           } else {
-            set({ isConnected: false, isLoading: false, error: result.error || null });
+            console.log('[GPS808] loadConfig: login FAILED, error =', result.error, 'hadCredentials =', hadCredentials);
+            // 若有 credentials（上次成功設定過），login 失敗視為暫時性網路問題，
+            // 保持 UI connected 狀態（下次有操作時會重試）
+            if (hadCredentials) {
+              console.log('[GPS808] loadConfig: had credentials → UI stays connected (temporary network issue)');
+              set({ isConnected: true, isLoading: false });
+            } else {
+              console.log('[GPS808] loadConfig: no prior credentials → set disconnected');
+              set({ isConnected: false, isLoading: false, error: result.error || null });
+            }
           }
         } else {
+          console.log('[GPS808] loadConfig: no credentials, returning');
           set({ isLoading: false });
         }
+      } catch (e) {
+        console.log('[GPS808] loadConfig error:', e);
+        set({ isLoading: false });
+      }
+    },
+
+    saveConfig: async (config: Gps808Config) => {
+      if (!isAdminUser()) {
+        console.warn('[GPS808] saveConfig blocked: only admin can modify shared config');
+        set({ error: '僅管理員可修改 API 配置' });
         return;
       }
-
-      // Case 2: 沒有 stored config → 但 user 之前已登入（storage 還有 jsession）
-      if (IS_WEB) {
-        const jsessionStill = await storage.getItem(JSESSION_STORAGE_KEY);
-        if (jsessionStill) {
-          await saveSessionUserId(userId);
-          set({ isConnected: true });
-
-          const valid = await gps808Api.ping();
-          if (!valid) {
-            if (WEB_AUTO_CONNECT && WEB_ENV_CONFIG.account && WEB_ENV_CONFIG.password) {
-              const proxyUrl = getWebProxyUrl();
-              await setServerUrl(proxyUrl);
-              const result = await gps808Api.login(WEB_ENV_CONFIG.account, WEB_ENV_CONFIG.password);
-              if (result.success) {
-                await saveSessionUserId(userId);
-                set({ isConnected: true, isLoading: false });
-                await upsertGps808ConfigToSupabase({
-                  user_id: userId,
-                  server_url: WEB_ENV_CONFIG.serverUrl,
-                  account: WEB_ENV_CONFIG.account,
-                  password: WEB_ENV_CONFIG.password,
-                  is_connected: true,
-                });
-                return;
-              }
-            }
-            set({ isLoading: false });
-          } else {
-            set({ isLoading: false });
-          }
-          return;
-        }
+      set({ isSaving: true, error: null });
+      try {
+        await setServerUrl(config.serverUrl);
+        await storage.setItem(SHARED_LOCAL_CACHE_KEY, JSON.stringify(config));
+        set({ config, isSaving: false });
+      } catch {
+        set({ isSaving: false, error: 'Failed to save configuration' });
       }
+    },
 
-      // Case 3: 既無 stored config 也無 jsession，但有 env 自動連線
-      if (Platform.OS === 'web' && WEB_AUTO_CONNECT && WEB_ENV_CONFIG.account) {
-        console.log('[GPS808] loadConfig: attempting env-based auto-connect...');
-        const proxyUrl = getWebProxyUrl();
-        await setServerUrl(proxyUrl);
-        const result = await gps808Api.login(WEB_ENV_CONFIG.account, WEB_ENV_CONFIG.password);
-        console.log('[GPS808] loadConfig: login result =', result);
-        if (result.success) {
-          await saveSessionUserId(userId);
-          set({ config: WEB_ENV_CONFIG, isConnected: true, isLoading: false });
-          await storage.setItem(getStorageKey(), JSON.stringify(WEB_ENV_CONFIG));
-          await upsertGps808ConfigToSupabase({
-            user_id: userId,
-            server_url: WEB_ENV_CONFIG.serverUrl,
-            account: WEB_ENV_CONFIG.account,
-            password: WEB_ENV_CONFIG.password,
-            is_connected: true,
-          });
-        } else {
-          set({ config: WEB_ENV_CONFIG, isLoading: false, error: result.error || null });
-        }
-        return;
-      }
-
-      set({ isLoading: false });
-    } catch (e) {
-      console.log('[GPS808] loadConfig error:', e);
-      set({ isLoading: false });
-    }
-  },
-
-  saveConfig: async (config: Gps808Config) => {
-    set({ isSaving: true, error: null });
-    try {
-      await setServerUrl(config.serverUrl);
-      await storage.setItem(getStorageKey(), JSON.stringify(config));
-      set({ config, isSaving: false });
-    } catch {
-      set({ isSaving: false, error: 'Failed to save configuration' });
-    }
-  },
-
-  testConnection: async (config: Gps808Config) => {
-    set({ isSaving: true, error: null });
-    try {
-      // Web 端：使用 proxy URL 避免 CORS 問題
-      // 只有移動端可以直接請求 console.onefleet.hk
-      const effectiveServerUrl = IS_WEB ? getWebProxyUrl() : config.serverUrl;
-
-      await setServerUrl(effectiveServerUrl);
-      const result = await gps808Api.login(config.account, config.password);
-      if (result.success) {
-        await storage.setItem(getStorageKey(), JSON.stringify({ ...config }));
-        set({ config, isConnected: true, isSaving: false });
-
-        // 同步到 Supabase（多設備同步）
-        const currentUser = useAuthStore.getState().user;
-        const userId = currentUser?.id || 'u-admin';
-        await saveSessionUserId(userId);
-        await upsertGps808ConfigToSupabase({
-          user_id: userId,
-          server_url: config.serverUrl,
-          account: config.account,
-          password: config.password,
-          is_connected: true,
-        });
-
-        return true;
-      } else {
-        set({ error: result.error || 'Connection failed', isSaving: false });
+    testConnection: async (config: Gps808Config) => {
+      if (!isAdminUser()) {
+        console.warn('[GPS808] testConnection blocked: only admin can modify shared config');
+        set({ error: '僅管理員可修改 API 配置' });
         return false;
       }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
-      set({ error: msg, isSaving: false });
-      return false;
-    }
-  },
+      set({ isSaving: true, error: null });
+      try {
+        const effectiveServerUrl = IS_WEB ? getWebProxyUrl() : config.serverUrl;
+        await setServerUrl(effectiveServerUrl);
+        const result = await gps808Api.login(config.account, config.password);
+        if (result.success) {
+          await storage.setItem(SHARED_LOCAL_CACHE_KEY, JSON.stringify({ ...config }));
+          set({ config, isConnected: true, isSaving: false });
 
-  disconnect: async () => {
-    await gps808Api.logout();
-    await storage.removeItem(getStorageKey());
-    await storage.removeItem(JSESSION_STORAGE_KEY);
-    await storage.removeItem(JSESSION_USER_KEY);
+          // 同步到 Supabase 共用單列
+          await upsertGps808SharedConfig(
+            {
+              server_url: config.serverUrl,
+              account: config.account,
+              password: config.password,
+              is_connected: true,
+            },
+            'u-admin'
+          );
 
-    // 從 Supabase 刪除（多設備同步）
-    const currentUser = useAuthStore.getState().user;
-    const userId = currentUser?.id || 'u-admin';
-    await deleteGps808ConfigFromSupabase(userId);
-
-    set({ config: DEFAULT_CONFIG, isConnected: false, error: null, deviceStatusCache: {} });
-  },
-
-  clearError: () => set({ error: null }),
-
-  getDeviceStatus: (devIdno: string) => {
-    return get().deviceStatusCache[devIdno];
-  },
-
-  batchUpdateDeviceStatus: (statuses: GpsDeviceStatusCache[]) => {
-    if (!statuses || statuses.length === 0) return;
-    set((state) => {
-      const next = { ...state.deviceStatusCache };
-      for (const s of statuses) {
-        if (!s || !s.devIdno) continue;
-        next[s.devIdno] = s;
+          return true;
+        } else {
+          set({ error: result.error || 'Connection failed', isSaving: false });
+          return false;
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        set({ error: msg, isSaving: false });
+        return false;
       }
-      return { deviceStatusCache: next };
-    });
-  },
+    },
+
+    disconnect: async () => {
+      if (!isAdminUser()) {
+        console.warn('[GPS808] disconnect blocked: only admin can modify shared config');
+        return;
+      }
+      await gps808Api.logout();
+      await storage.removeItem(SHARED_LOCAL_CACHE_KEY);
+      await storage.removeItem(JSESSION_STORAGE_KEY);
+
+      // 重置 Supabase 共用單列
+      await resetGps808SharedConfig('u-admin');
+
+      set({ config: DEFAULT_CONFIG, isConnected: false, error: null, deviceStatusCache: {} });
+    },
+
+    clearError: () => set({ error: null }),
+
+    getDeviceStatus: (devIdno: string) => {
+      return get().deviceStatusCache[devIdno];
+    },
+
+    batchUpdateDeviceStatus: (statuses: GpsDeviceStatusCache[]) => {
+      if (!statuses || statuses.length === 0) return;
+      set((state) => {
+        const next = { ...state.deviceStatusCache };
+        for (const s of statuses) {
+          if (!s || !s.devIdno) continue;
+          next[s.devIdno] = s;
+        }
+        return { deviceStatusCache: next };
+      });
+    },
   };
 });
 

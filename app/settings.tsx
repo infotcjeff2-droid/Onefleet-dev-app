@@ -1,7 +1,8 @@
 import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Image, ActivityIndicator } from 'react-native';
+import { useState } from 'react';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
-import { ChevronRight, Globe, Check, Database, Type, Users, RefreshCw, Video, Gauge, Trash2 } from 'lucide-react-native';
+import { ChevronRight, Globe, Check, Database, Type, Users, RefreshCw, Video, Gauge, Trash2, Link2, Map, CheckCircle, XCircle } from 'lucide-react-native';
 import { Card } from '@/components/ui/Card';
 import { Header } from '@/components/ui/Header';
 import { useThemeStore, defaultColors } from '@/store/themeStore';
@@ -10,6 +11,9 @@ import { spacing, typography, borderRadius } from '@/constants/theme';
 import { useVehicleStore } from '@/store/vehicleStore';
 import { useDeliveryStore } from '@/store/deliveryStore';
 import { useUserManagementStore } from '@/store/userManagementStore';
+import { useGps808Store } from '@/store/gps808Store';
+import { useGoogleMapsStore } from '@/store/googleMapsStore';
+import { useAuthStore } from '@/store/authStore';
 import { hasSupabaseEnv, supabaseSetupSql } from '@/utils/fleetSync';
 import { useFontScale, FontScale } from '@/contexts/FontScaleContext';
 import { useVideoStreamStore, formatBytes, formatDuration, DEFAULT_STREAM_SETTINGS } from '@/store/videoStreamStore';
@@ -42,6 +46,19 @@ export default function SettingsScreen() {
   // 視頻流量設定
   const videoStreamStore = useVideoStreamStore();
   const { settings, vehicleUsage, updateSettings, resetAllUsage } = videoStreamStore;
+
+  // API 整合共用狀態（管理員設定，其他帳號唯讀查看）
+  const user = useAuthStore((s) => s.user);
+  const isAdmin = user?.id === 'u-admin';
+  const gpsConnected = useGps808Store((s) => s.isConnected);
+  const gpsLoading = useGps808Store((s) => s.isLoading);
+  const mapsConfigured = useGoogleMapsStore((s) => s.isConfigured);
+  const mapsLoading = useGoogleMapsStore((s) => s.isLoading);
+
+  const apiBadgeText = (loading: boolean, ok: boolean, okText: string, failText: string) => {
+    if (loading) return locale === 'zh-TW' ? '載入中' : 'Loading';
+    return ok ? okText : failText;
+  };
 
   const FONT_SCALES: { scale: FontScale; label: string; labelEn: string }[] = [
     { scale: 'normal', label: '標準', labelEn: 'Normal' },
@@ -216,6 +233,82 @@ export default function SettingsScreen() {
               </View>
             ))}
           </Card>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
+            {locale === 'zh-TW' ? 'API 整合（共用）' : 'API Integrations (Shared)'}
+          </Text>
+          <Card style={styles.settingsCard}>
+            <View style={styles.settingItem}>
+              <View style={styles.settingLeft}>
+                <View style={[styles.settingIconWrap, { backgroundColor: `${colors.primary}15` }]}>
+                  <Link2 size={18} color={colors.primary} />
+                </View>
+                <View>
+                  <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>
+                    808GPS Provider
+                  </Text>
+                  <Text style={[styles.settingSub, { color: colors.textTertiary }]}>
+                    console.onefleet.hk
+                  </Text>
+                </View>
+              </View>
+              <Text
+                style={[
+                  styles.settingValue,
+                  { color: gpsConnected ? colors.success : colors.textTertiary },
+                ]}
+              >
+                {apiBadgeText(
+                  gpsLoading,
+                  gpsConnected,
+                  locale === 'zh-TW' ? '已連線' : 'Connected',
+                  locale === 'zh-TW' ? '未連線' : 'Disconnected'
+                )}
+              </Text>
+            </View>
+
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+            <View style={styles.settingItem}>
+              <View style={styles.settingLeft}>
+                <View style={[styles.settingIconWrap, { backgroundColor: `${colors.secondary}15` }]}>
+                  <Map size={18} color={colors.secondary} />
+                </View>
+                <View>
+                  <Text style={[styles.settingLabel, { color: colors.textPrimary }]}>
+                    Google Maps API
+                  </Text>
+                  <Text style={[styles.settingSub, { color: colors.textTertiary }]}>
+                    maps.googleapis.com
+                  </Text>
+                </View>
+              </View>
+              <Text
+                style={[
+                  styles.settingValue,
+                  { color: mapsConfigured ? colors.success : colors.textTertiary },
+                ]}
+              >
+                {apiBadgeText(
+                  mapsLoading,
+                  mapsConfigured,
+                  locale === 'zh-TW' ? '已設定' : 'Configured',
+                  locale === 'zh-TW' ? '未設定' : 'Not Set'
+                )}
+              </Text>
+            </View>
+          </Card>
+          <Text style={[styles.sharedHint, { color: colors.textTertiary }]}>
+            {locale === 'zh-TW'
+              ? isAdmin
+                ? '此頁為狀態查看。請至「系統管理 / 配置」修改 API 設定。'
+                : '此 API 設定由管理員統一管理，全網站使用者共用，無需個別設定。'
+              : isAdmin
+                ? 'Status view only. Please go to "System Admin / Config" to modify API settings.'
+                : 'API settings are managed by admin and shared across all users.'}
+          </Text>
         </View>
 
         <View style={styles.section}>
@@ -562,6 +655,12 @@ const styles = StyleSheet.create({
     marginLeft: spacing.lg + 36 + spacing.md,
   },
   spacer: { height: 80 },
+  sharedHint: {
+    fontSize: typography.fontSize.xs,
+    marginTop: spacing.sm,
+    marginLeft: spacing.xs,
+    lineHeight: 16,
+  },
   // Video stream settings styles
   optionGrid: {
     flexDirection: 'row',

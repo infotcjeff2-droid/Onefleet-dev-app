@@ -79,6 +79,15 @@ function AppContent() {
     loadGoogleMapsConfig();
   }, []);
 
+  // 登入狀態變化時，重新載入共用 API 配置（管理員更新後其他裝置可即時生效）
+  useEffect(() => {
+    if (isAuthenticated) {
+      console.log('[GPS808] _layout.tsx: auth ready, reload shared API configs');
+      loadGpsConfig();
+      loadGoogleMapsConfig();
+    }
+  }, [isAuthenticated]);
+
   if (!isInitialized || authLoading) {
     return <LoadingSpinner size={96} fullScreen />;
   }

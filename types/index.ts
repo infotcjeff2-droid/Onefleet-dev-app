@@ -31,6 +31,8 @@ export interface Vehicle {
   userId?: string;
   /** 設備的影像通道數量（如 4 通道的 VL-6012，6 通道的其他設備），預設由 API 動態獲取 */
   numChannels?: number;
+  /** 車輛擁有者 ID（對應 user_profile.id）。為空表示全平台共用（僅 admin 可見）。 */
+  ownerId?: string;
 }
 
 export type UserRole = 'admin' | 'company' | 'driver' | 'user';

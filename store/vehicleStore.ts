@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Vehicle } from '@/types';
 import { storage } from '@/utils/storage';
+import { useAuthStore } from './authStore';
 import {
   fetchVehiclesFromSupabase,
   syncVehiclesToSupabase,
@@ -11,6 +12,20 @@ import {
 } from '@/utils/fleetSync';
 import { useGps808Store, GpsDeviceStatusCache, GpsDeviceStatusType } from './gps808Store';
 import { fetchGpsVehicles, gps808Api } from './gps808Store';
+
+/**
+ * 依目前登入使用者角色過濾車輛：
+ * - admin：看到所有車輛
+ * - company：只看到擁有者為自己的車輛
+ * - driver / user：只看到擁有者為自己的車輛（與 company 邏輯一致）
+ */
+function filterVehiclesByOwner(vehicles: Vehicle[]): Vehicle[] {
+  const { user, role } = useAuthStore.getState();
+  if (role === 'admin' || !user) {
+    return vehicles;
+  }
+  return vehicles.filter((v) => v.ownerId === user.id);
+}
 
 const LOCAL_STORAGE_KEY = 'vehicles_v_legacy'; // 保留舊本地 key
 
@@ -217,7 +232,7 @@ export const useVehicleStore = create<VehicleState>((set, get) => ({
 
   getFilteredVehicles: () => {
     const { vehicles, searchQuery, statusFilter } = get();
-    let filtered = vehicles;
+    let filtered = filterVehiclesByOwner(vehicles);
 
     if (statusFilter !== 'all') {
       filtered = filtered.filter((v) => v.status === statusFilter);

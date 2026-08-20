@@ -16,6 +16,8 @@ import { TextInput } from '@/components/ui/TextInput';
 import { SelectField } from '@/components/ui/SelectField';
 import { useVehicleStore } from '@/store/vehicleStore';
 import { useDriverStore } from '@/store/driverStore';
+import { useAuthStore } from '@/store/authStore';
+import { useUserManagementStore } from '@/store/userManagementStore';
 import { colors, borderRadius, spacing, typography } from '@/constants/theme';
 import { BodyType, FuelType, TransmissionType, VehicleStatus } from '@/types';
 import { useTranslation } from '@/i18n';
@@ -44,6 +46,7 @@ interface FormData {
   notes: string;
   imageUrl: string;
   assignedDriverId: string;
+  ownerId: string;
 }
 
 const initialFormData: FormData = {
@@ -65,6 +68,7 @@ const initialFormData: FormData = {
   notes: '',
   imageUrl: '',
   assignedDriverId: '',
+  ownerId: '',
 };
 
 interface AddVehicleFormProps {
@@ -110,6 +114,8 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
 
   const { getVehicleById, addVehicle, updateVehicle } = useVehicleStore();
   const { drivers, loadDrivers } = useDriverStore();
+  const { user, role } = useAuthStore();
+  const { users, loadUsers, getCompanies } = useUserManagementStore();
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<FormData>(initialFormData);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -119,7 +125,18 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
 
   useEffect(() => {
     loadDrivers();
-  }, [loadDrivers]);
+    loadUsers();
+  }, [loadDrivers, loadUsers]);
+
+  useEffect(() => {
+    // 預設擁有者：admin 預設為空（需手動選擇），其他角色預設為自己
+    if (!isEditMode && !form.ownerId) {
+      setForm((prev) => ({
+        ...prev,
+        ownerId: role === 'admin' ? '' : (user?.id ?? ''),
+      }));
+    }
+  }, [role, user, isEditMode]);
 
   useEffect(() => {
     if (editId) {
@@ -144,6 +161,7 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
           notes: stripHtmlTags(existing.notes || ''),
           imageUrl: existing.imageUrl,
           assignedDriverId: existing.assignedDriverId || '',
+          ownerId: existing.ownerId || (role === 'admin' ? '' : (user?.id ?? '')),
         });
       }
     }
@@ -230,6 +248,7 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
         notes: form.notes || '',
         imageUrl: '',
         assignedDriverId: form.assignedDriverId || undefined,
+        ownerId: form.ownerId || undefined,
       };
 
       let finalImageUrl = '';
@@ -293,6 +312,17 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
       label: `${driver.name} ${driver.phone ? `(${driver.phone})` : ''}`,
     })),
   ];
+
+  // admin 可以選擇車輛擁有者（公司），其他角色自動為自己
+  const ownerOptions = role === 'admin'
+    ? [
+        { value: '', label: '（不指定擁有者）' },
+        ...getCompanies().map((company) => ({
+          value: company.id,
+          label: company.nameZh || company.name,
+        })),
+      ]
+    : [];
 
   // 從 __pending__: URI 中取出真實 URI 供 Image 元件顯示
   const displayImageUrl = form.imageUrl.startsWith('__pending__:')
@@ -469,6 +499,16 @@ export function AddVehicleForm({ editId }: AddVehicleFormProps) {
         onValueChange={(v) => updateField('assignedDriverId', v)}
         description={selectedDriver ? t('vehicles.driverAssigned', { name: selectedDriver.name }) : undefined}
       />
+
+      {role === 'admin' && (
+        <SelectField
+          label="車輛擁有者"
+          value={form.ownerId}
+          options={ownerOptions}
+          onValueChange={(v) => updateField('ownerId', v)}
+          description="選擇此車輛的擁有公司，只有該公司登入時會看到此車輛"
+        />
+      )}
 
       <TextInput
         label={t('vehicles.purchaseDate')}

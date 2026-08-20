@@ -32,14 +32,69 @@ import {
   AlertCircle,
   WifiOff,
   Monitor,
+  Stethoscope,
+  ChevronDown,
+  ChevronUp,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
 } from 'lucide-react-native';
-import { gps808Api, type VideoFileInfo } from '@/utils/gps808Api';
+import { gps808Api, type VideoFileInfo, type VideoDiagnosticResult, type DiagnosticCheck } from '@/utils/gps808Api';
 import { useGps808Store } from '@/store/gps808Store';
 import { colors, borderRadius, spacing, typography } from '@/constants/theme';
 import { useTranslation } from '@/i18n';
 import { defaultColors } from '@/store/themeStore';
 
 const IS_WEB = Platform.OS === 'web';
+
+/** 診斷狀態圖示元件 */
+function DiagnosticStatusIcon({ status }: { status: DiagnosticCheck['status'] }) {
+  const size = 16;
+  switch (status) {
+    case 'pass':
+      return <CheckCircle size={size} color="#22C55E" />;
+    case 'warn':
+      return <AlertTriangle size={size} color="#F59E0B" />;
+    case 'fail':
+      return <XCircle size={size} color="#EF4444" />;
+    case 'error':
+      return <AlertCircle size={size} color="#EF4444" />;
+    default:
+      return <ActivityIndicator size={12} color={colors.textTertiary} />;
+  }
+}
+
+/** 診斷狀態標籤 */
+function DiagnosticStatusBadge({ status }: { status: DiagnosticCheck['status'] }) {
+  const labels: Record<DiagnosticCheck['status'], string> = {
+    pass: '通過',
+    warn: '警告',
+    fail: '失敗',
+    error: '錯誤',
+    pending: '檢查中',
+  };
+  const bgColors: Record<DiagnosticCheck['status'], string> = {
+    pass: 'rgba(34, 197, 94, 0.15)',
+    warn: 'rgba(245, 158, 11, 0.15)',
+    fail: 'rgba(239, 68, 68, 0.15)',
+    error: 'rgba(239, 68, 68, 0.15)',
+    pending: colors.surface,
+  };
+  const textColors: Record<DiagnosticCheck['status'], string> = {
+    pass: '#22C55E',
+    warn: '#F59E0B',
+    fail: '#EF4444',
+    error: '#EF4444',
+    pending: colors.textTertiary,
+  };
+  return (
+    <View style={[styles.diagBadge, { backgroundColor: bgColors[status] }]}>
+      <Text style={[styles.diagBadgeText, { color: textColors[status] }]}>
+        {labels[status]}
+      </Text>
+    </View>
+  );
+}
 
 interface VideoPlaybackCardProps {
   /** GPS 設備 ID */
@@ -112,6 +167,11 @@ export function VideoPlaybackCard({
   const [videoFiles, setVideoFiles] = useState<VideoFileInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showResults, setShowResults] = useState(false);
+  
+  // 診斷相關狀態
+  const [isDiagnosing, setIsDiagnosing] = useState(false);
+  const [diagnosisResult, setDiagnosisResult] = useState<VideoDiagnosticResult | null>(null);
+  const [showDiagnosis, setShowDiagnosis] = useState(false);
 
   const today = getToday();
   const [params, setParams] = useState<QueryParams>({
@@ -168,7 +228,8 @@ export function VideoPlaybackCard({
         store: params.store,
       });
 
-      const result = await gps808Api.queryVideoHistoryFile(devIdno, {
+      // 使用 fallback 查詢：先查設備，再查服務器
+      const result = await gps808Api.queryVideoHistoryFileWithFallback(devIdno, {
         year: params.year,
         month: params.month,
         day: params.day,
@@ -179,7 +240,6 @@ export function VideoPlaybackCard({
         beg: begSeconds,
         end: endSeconds,
         recType: params.recType,
-        store: params.store,
       });
 
       console.log('[VideoPlayback] 查詢結果:', result);
@@ -188,6 +248,12 @@ export function VideoPlaybackCard({
         const files = result.videoFiles || [];
         setVideoFiles(files);
         setShowResults(true);
+        
+        // 顯示存儲位置資訊
+        if (result.usedFallback) {
+          console.log(`[VideoPlayback] 已自動切換：設備→服務器，最終使用 store=${result.effectiveStore}`);
+        }
+        
         if (files.length === 0) {
           setError('查詢時間範圍內沒有找到錄像檔案');
         }
@@ -201,6 +267,27 @@ export function VideoPlaybackCard({
       setIsLoading(false);
     }
   }, [devIdno, params, isConnected]);
+  
+  /** 執行錄像診斷 */
+  const handleDiagnose = useCallback(async () => {
+    if (!isConnected) {
+      setError('GPS 尚未連線');
+      return;
+    }
+
+    setIsDiagnosing(true);
+    setShowDiagnosis(true);
+
+    try {
+      const result = await gps808Api.diagnoseVideoRecording(devIdno);
+      setDiagnosisResult(result);
+    } catch (err) {
+      console.error('[VideoPlayback] 診斷錯誤:', err);
+      setError(String(err));
+    } finally {
+      setIsDiagnosing(false);
+    }
+  }, [devIdno, isConnected]);
 
   const handleOpenVideoUrl = useCallback(async (file: VideoFileInfo) => {
     if (file.playUrl) {
@@ -290,6 +377,20 @@ export function VideoPlaybackCard({
           <Text style={styles.title}>實時影像回放</Text>
         </View>
         <View style={styles.headerRight}>
+          {/* 診斷按鈕 */}
+          <Pressable
+            style={[styles.diagnoseBtn, isDiagnosing && styles.diagnoseBtnDisabled]}
+            onPress={handleDiagnose}
+            disabled={!isConnected || isDiagnosing}
+          >
+            {isDiagnosing ? (
+              <ActivityIndicator size={12} color={defaultColors.primary} />
+            ) : (
+              <Stethoscope size={12} color={defaultColors.primary} />
+            )}
+            <Text style={styles.diagnoseBtnText}>診斷</Text>
+          </Pressable>
+          
           {isConnected ? (
             <View style={[styles.statusBadge, styles.onlineBadge]}>
               <View style={styles.onlineDot} />
@@ -602,6 +703,94 @@ export function VideoPlaybackCard({
                   )}
                 </ScrollView>
               )}
+            </View>
+          )}
+
+          {/* 錄像診斷面板 */}
+          {showDiagnosis && (
+            <View style={styles.diagnosisPanel}>
+              <Pressable
+                style={styles.diagnosisHeader}
+                onPress={() => setShowDiagnosis(false)}
+              >
+                <View style={styles.diagnosisHeaderLeft}>
+                  <Stethoscope size={16} color={defaultColors.primary} />
+                  <Text style={styles.diagnosisTitle}>錄像診斷報告</Text>
+                </View>
+                <ChevronUp size={18} color={colors.textSecondary} />
+              </Pressable>
+              
+              {isDiagnosing ? (
+                <View style={styles.diagnosisLoading}>
+                  <ActivityIndicator size={24} color={defaultColors.primary} />
+                  <Text style={styles.diagnosisLoadingText}>正在檢測設備錄像狀態...</Text>
+                </View>
+              ) : diagnosisResult ? (
+                <View style={styles.diagnosisContent}>
+                  {/* 診斷摘要 */}
+                  <View style={styles.diagnosisSummary}>
+                    <Text style={[
+                      styles.diagnosisSummaryText,
+                      diagnosisResult.summary.hasIssue ? styles.diagnosisSummaryWarn : styles.diagnosisSummaryPass
+                    ]}>
+                      {diagnosisResult.summary.hasIssue
+                        ? `發現 ${diagnosisResult.summary.issues.length} 個問題`
+                        : '所有檢查通過'}
+                    </Text>
+                  </View>
+                  
+                  {/* 檢查項目列表 */}
+                  <View style={styles.diagnosisChecks}>
+                    {(Object.entries(diagnosisResult.checks) as [keyof typeof diagnosisResult.checks, DiagnosticCheck][]).map(([key, check]) => (
+                      <View key={key} style={styles.diagnosisCheckItem}>
+                        <View style={styles.diagnosisCheckLeft}>
+                          <DiagnosticStatusIcon status={check.status} />
+                          <Text style={styles.diagnosisCheckLabel}>
+                            {key === 'deviceOnline' && '設備在線'}
+                            {key === 'deviceStatus' && '設備狀態'}
+                            {key === 'storageDevice' && '本地存儲'}
+                            {key === 'storageServer' && '雲端存儲'}
+                            {key === 'channelSupport' && '通道支援'}
+                            {key === 'todayRecordings' && '今天錄像'}
+                            {key === 'last7DaysRecordings' && '近7天錄像'}
+                          </Text>
+                        </View>
+                        <View style={styles.diagnosisCheckRight}>
+                          <DiagnosticStatusBadge status={check.status} />
+                          <Text style={styles.diagnosisCheckDetail} numberOfLines={2}>
+                            {check.detail}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                  
+                  {/* 建議操作 */}
+                  {diagnosisResult.summary.recommendations.length > 0 && (
+                    <View style={styles.diagnosisRecommendations}>
+                      <Text style={styles.diagnosisRecommendationsTitle}>建議操作</Text>
+                      {diagnosisResult.summary.recommendations.map((rec, i) => (
+                        <Text key={i} style={styles.diagnosisRecommendationText}>
+                          • {rec}
+                        </Text>
+                      ))}
+                    </View>
+                  )}
+                  
+                  {/* 詳細問題列表 */}
+                  {diagnosisResult.summary.issues.length > 0 && (
+                    <View style={styles.diagnosisIssues}>
+                      <Text style={styles.diagnosisIssuesTitle}>發現問題</Text>
+                      {diagnosisResult.summary.issues.map((issue, i) => (
+                        <View key={i} style={styles.diagnosisIssueItem}>
+                          <AlertTriangle size={12} color="#F59E0B" />
+                          <Text style={styles.diagnosisIssueText}>{issue}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              ) : null}
             </View>
           )}
         </View>
@@ -1011,5 +1200,166 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     textAlign: 'center',
     paddingVertical: spacing.sm,
+  },
+  // 診斷按鈕
+  diagnoseBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: borderRadius.sm,
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.3)',
+  },
+  diagnoseBtnDisabled: {
+    opacity: 0.5,
+  },
+  diagnoseBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: defaultColors.primary,
+  },
+  // 診斷面板
+  diagnosisPanel: {
+    marginTop: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.3)',
+    overflow: 'hidden',
+  },
+  diagnosisHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: 'rgba(99, 102, 241, 0.05)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(99, 102, 241, 0.2)',
+  },
+  diagnosisHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  diagnosisTitle: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '700',
+    color: defaultColors.primary,
+  },
+  diagnosisLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.lg,
+  },
+  diagnosisLoadingText: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+  },
+  diagnosisContent: {
+    padding: spacing.md,
+    gap: spacing.md,
+  },
+  diagnosisSummary: {
+    padding: spacing.sm,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.background,
+  },
+  diagnosisSummaryText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  diagnosisSummaryPass: {
+    color: '#22C55E',
+  },
+  diagnosisSummaryWarn: {
+    color: '#F59E0B',
+  },
+  diagnosisChecks: {
+    gap: spacing.sm,
+  },
+  diagnosisCheckItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  diagnosisCheckLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  diagnosisCheckLabel: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    minWidth: 60,
+  },
+  diagnosisCheckRight: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  diagnosisCheckDetail: {
+    flex: 1,
+    fontSize: typography.fontSize.xs,
+    color: colors.textSecondary,
+  },
+  diagBadge: {
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  diagBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  diagnosisRecommendations: {
+    padding: spacing.sm,
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    borderRadius: borderRadius.sm,
+    gap: spacing.xs,
+  },
+  diagnosisRecommendationsTitle: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: '700',
+    color: '#3B82F6',
+  },
+  diagnosisRecommendationText: {
+    fontSize: typography.fontSize.xs,
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  diagnosisIssues: {
+    padding: spacing.sm,
+    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+    borderRadius: borderRadius.sm,
+    gap: spacing.xs,
+  },
+  diagnosisIssuesTitle: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: '700',
+    color: '#F59E0B',
+  },
+  diagnosisIssueItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.xs,
+  },
+  diagnosisIssueText: {
+    flex: 1,
+    fontSize: typography.fontSize.xs,
+    color: colors.textSecondary,
+    lineHeight: 18,
   },
 });

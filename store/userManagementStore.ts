@@ -305,21 +305,36 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
    * 硬刪除以避免 syncUsers() 後又被拉回來。
    *
    * 行為：
-   * 1. 從本地 `managed_users` 移除該 user 並 persist。
-   * 2. 嘗試從 Supabase `user_profile` 表硬刪除該 row（DELETE, 不是 is_deleted=true）。
-   *    - 若失敗（例：RLS 拒絕 DELETE）→ 退而求其次 softDeleteUserProfile() 設 is_deleted=true。
-   *    - 若兩者皆失敗 → 仍不影響本地（已先移除），只記錄錯誤。
-   * 3. 加進垃圾桶，仍然保留 30 天可從垃圾桶還原。
-   * 回傳垃圾桶快照，UI 可用於 alert 提示。
+   * 1. 先把 email 加入垃圾桶過濾名單（即使後面失敗也要防範復活）
+   * 2. 從本地 `managed_users` 移除該 user 並 persist。
+   * 3. 嘗試從 Supabase `user_profile` 表刪除該 row。
+   *    - 若失敗 → 設 is_deleted=true（fetchUserProfiles 已過濾 is_deleted=false）
+   *    - 若兩者皆失敗 → 本地已移除 + 垃圾桶已鎖定，仍安全
    */
   softDeleteUser: async (id) => {
     const target = get().users.find((u) => u.id === id);
     if (!target) return null;
+
+    const targetEmail = target.email?.trim().toLowerCase() || '';
+    const targetSource = (target as { source?: 'managed' | 'clerk' }).source ?? 'managed';
+
+    // ★★★ 關鍵修復：先把 email 加入垃圾桶，確保即使後續操作失敗也會被 syncUsers 過濾 ★★★
+    const { useTrashStore } = await import('@/store/trashStore');
+
+    // 動態載入垃圾桶 store 避免循環依賴
+    const snapshot: Record<string, unknown> = {
+      ...target,
+      // 標記來源,垃圾桶「永久刪除」時決定要走 Clerk 還是 Supabase
+      source: targetSource,
+    };
+    const trashItem = await useTrashStore.getState().addToTrash('user', snapshot);
+
+    // 從本地 users 移除（先做，確保本地狀態正確）
     const updated = sanitizeUsers(get().users.filter((user) => user.id !== id));
     set({ users: updated, syncError: null, isSyncing: hasSupabaseEnv });
     await persistUsers(updated);
 
-    // ★ 同步清理 managed_drivers，避免刪除的司機從 driverStore 復活
+    // 同步清理 managed_drivers，避免刪除的司機從 driverStore 復活
     if (target.role === 'driver') {
       try {
         const storedDrivers = await storage.getItem(DRIVER_STORAGE_KEY);
@@ -336,12 +351,7 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
 
     // 雲端處理（不影響本地已刪的事實）
     if (hasSupabaseEnv) {
-      // ★ 依 source 決定雲端刪除策略
-      // - 'clerk'：帳號已在 Clerk 建立，須同步刪除 Clerk 帳號
-      // - 'managed'：純 App 內建帳號，只刪除 Supabase user_profile 表
-      const source = (target as { source?: 'managed' | 'clerk' }).source ?? 'managed';
-
-      if (source === 'clerk' && target.email) {
+      if (targetSource === 'clerk' && target.email) {
         // Clerk 帳號：先用 Edge Function 刪除 Clerk，再刪除 Supabase
         try {
           const { deleteClerkUserByEmail } = await import('@/utils/clerkSync');
@@ -369,24 +379,14 @@ export const useUserManagementStore = create<UserManagementState>((set, get) => 
             hardErr,
             softErr
           );
-          set({ syncError: '無法從雲端刪除使用者，請檢查 RLS 政策與連線狀態。' });
+          // ★★★ 即使 Supabase 刪除完全失敗，垃圾桶已鎖定 email，仍可防止復活 ★★★
+          set({ syncError: '使用者已從本地刪除並鎖定至垃圾桶，但雲端刪除失敗。請稍後重試同步。' });
         }
       } finally {
         set({ isSyncing: false });
       }
     }
 
-    // 動態載入垃圾桶 store 避免循環依賴
-    const { useTrashStore } = await import('@/store/trashStore');
-    const snapshot: Record<string, unknown> = {
-      ...target,
-      // 標記來源,垃圾桶「永久刪除」時決定要走 Clerk 還是 Supabase
-      // - 'clerk'   : 此帳號已在 Clerk 建立(透過「同步至雲端」按鈕)
-      // - 'managed' : 純 App 內建帳號,只在 Supabase user_profile 表
-      // 預設 'managed'；如未來 addUser 流程有標記可覆寫
-      source: (target as { source?: 'managed' | 'clerk' }).source ?? 'managed',
-    };
-    const trashItem = await useTrashStore.getState().addToTrash('user', snapshot);
     return trashItem;
   },
 

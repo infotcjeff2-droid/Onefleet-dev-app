@@ -296,6 +296,8 @@ export interface Gps808Pagination {
 
 export interface Gps808ApiResponse<T> {
   result: number;
+  /** 錯誤訊息（808GPS API 通常在 result !== 0 時返回） */
+  message?: string;
   infos?: T[];
   /** 某些 API（如視頻查詢）返回的視頻列表欄位 */
   videoFiles?: T[];
@@ -944,7 +946,7 @@ export const gps808Api = {
    * @param options.recType 錄像類型
    * @param options.store 存儲位置 (1=設備, 2=服務器)
    */
-  queryVideoHistoryFile(
+  async queryVideoHistoryFile(
     devIdno: string,
     options: {
       year: number;
@@ -963,13 +965,21 @@ export const gps808Api = {
     result: number;
     videoFiles?: VideoFileInfo[];
     error?: string;
+    /** 原始 API 回應（除錯用） */
+    rawResponse?: Gps808ApiResponse<unknown>;
+    /** 嘗試提取的 infos 欄位內容 */
+    extractedInfos?: unknown[];
+    /** 使用的存儲位置 */
+    storeUsed?: number;
   }> {
     // LOC 參數：0=全部, 1=設備, 2=服務器
-    const loc = options.store === 1 ? 1 : 2;
+    const storeUsed = options.store ?? 2;
+    const loc = storeUsed === 1 ? 1 : 2;
+    const storeLabel = storeUsed === 1 ? '設備(本地)' : '服務器(雲端)';
     
     const params: Record<string, string | number> = {
       DevIDNO: devIdno,
-      LOC: loc,  // 必需的參數！
+      LOC: loc,
       CHN: options.channel,
       YEAR: options.year,
       MON: options.month,
@@ -979,41 +989,91 @@ export const gps808Api = {
       DAYE: options.dayE,
       BEG: options.beg ?? 0,
       END: options.end ?? 86399,
-      RECTYPE: options.recType ?? -1,
+      RECTYPE: options.recType ?? 0, // 0=全部，1=報警，2=普通；不傳或傳-1可能導致 "Request parameter is incorrect"
       FILEATTR: 2,
       ARM1: 0,
       ARM2: 0,
       RES: 0,
       STREAM: 0,
-      STORE: options.store ?? 2,
+      STORE: storeUsed,
     };
 
-    console.log('[GPS808] queryVideoHistoryFile 參數:', params);
+    console.log(`[GPS808] queryVideoHistoryFile 請求參數 [${storeLabel}]:`, JSON.stringify(params, null, 2));
 
-    return apiCall<VideoFileInfo>('/StandardApiAction_getVideoHistoryFile.action', params).then((res) => {
-      console.log('[GPS808] getVideoHistoryFile 原始返回:', JSON.stringify(res, null, 2));
+    try {
+      const rawResponse = await apiCall<VideoFileInfo>('/StandardApiAction_getVideoHistoryFile.action', params);
       
-      if (res.result === 0) {
-        // 808GPS API 返回的視頻列表欄位可能是以下之一：
-        //   - infos (舊版)
-        //   - videoFiles (新版)
-        //   - files (實際使用最多的欄位名)
-        //   - jsonresult.videoFiles (某些包裝結構)
-        //   - jsonresult.infos (某些包裝結構)
-        //   - jsonresult.files (某些包裝結構)
-        let infos = res.infos || res.videoFiles || res.files;
-        if (!infos && res.jsonresult) {
-          infos = res.jsonresult.videoFiles || res.jsonresult.infos || res.jsonresult.files;
-          // jsonresult.encoding 通常為 null/空，不影響數據
+      // 增強除錯日誌：完整輸出原始回應
+      console.log(`[GPS808] queryVideoHistoryFile 原始回應 [${storeLabel}]:`, JSON.stringify(rawResponse, null, 2));
+      
+      // 診斷資訊：列出所有回應欄位
+      const responseKeys = Object.keys(rawResponse).filter(k => k !== 'error');
+      console.log(`[GPS808] 回應欄位 [${storeLabel}]:`, responseKeys);
+      
+      // 嘗試提取 infos 的過程記錄
+      let infos: any[] | undefined = undefined;
+      const extractionSteps: string[] = [];
+      
+      // 按優先順序嘗試不同的欄位名稱
+      const possibleFields = ['infos', 'videoFiles', 'files'];
+      for (const field of possibleFields) {
+        const val = (rawResponse as any)[field];
+        extractionSteps.push(`${field}=${val ? (Array.isArray(val) ? `[${val.length} items]` : typeof val) : 'undefined/null'}`);
+        if (val !== undefined && val !== null) {
+          infos = val;
+          break;
         }
-        
-        if (!infos || !Array.isArray(infos) || infos.length === 0) {
-          console.log('[GPS808] 查無錄像檔案，infos 為空');
-          return { result: 0, videoFiles: [] };
+      }
+      
+      // 嘗試從 jsonresult 提取
+      if (!infos && rawResponse.jsonresult) {
+        const jr = rawResponse.jsonresult;
+        extractionSteps.push(`jsonresult exists with keys: ${Object.keys(jr).join(', ')}`);
+        for (const field of possibleFields) {
+          const val = (jr as any)[field];
+          if (val !== undefined && val !== null) {
+            infos = val;
+            extractionSteps.push(`jsonresult.${field}=${Array.isArray(val) ? `[${val.length} items]` : typeof val}`);
+            break;
+          }
         }
-        
-        // 映射 API 返回的欄位到 VideoFileInfo 格式
-        const videoFiles: VideoFileInfo[] = infos.map((item: any) => ({
+      } else if (!infos) {
+        extractionSteps.push('jsonresult=undefined/null');
+      }
+      
+      console.log(`[GPS808] infos 提取過程 [${storeLabel}]:`, extractionSteps);
+      console.log(`[GPS808] infos 最終值 [${storeLabel}]:`, 
+        infos === undefined ? 'undefined/null' : 
+        !Array.isArray(infos) ? `非陣列 (${typeof infos})` :
+        infos.length === 0 ? '空陣列 []' : 
+        `[${infos.length} items]`);
+      
+      if (rawResponse.result !== 0) {
+        const errMsg = rawResponse.error || rawResponse.message || `API 錯誤 (result=${rawResponse.result})`;
+        console.error(`[GPS808] API 錯誤 [${storeLabel}]: result=${rawResponse.result}, message=${rawResponse.message}, error=${rawResponse.error}`);
+        return { 
+          result: rawResponse.result, 
+          error: errMsg,
+          rawResponse,
+          extractedInfos: undefined,
+          storeUsed,
+        };
+      }
+      
+      if (!infos || !Array.isArray(infos) || infos.length === 0) {
+        console.warn(`[GPS808] 查無錄像檔案 [${storeLabel}], infos=${JSON.stringify(infos)}`);
+        return { 
+          result: 0, 
+          videoFiles: [], 
+          rawResponse,
+          extractedInfos: infos === undefined ? undefined : (Array.isArray(infos) ? infos : [infos]),
+          storeUsed,
+        };
+      }
+      
+      // 映射 API 返回的欄位到 VideoFileInfo 格式
+      const videoFiles: VideoFileInfo[] = infos.map((item: any, index: number) => {
+        const mapped = {
           name: item.name || item.fileName || item.filename,
           filePath: item.filePath || item.fp || item.path,
           chn: item.chn ?? item.channel ?? item.CH ?? item.Chn ?? options.channel,
@@ -1021,20 +1081,387 @@ export const gps808Api = {
           endTime: item.endTime || item.et || item.endTime || item.end_time,
           fileSize: item.fileSize || item.len || item.size || item.fs,
           recType: item.recType ?? item.type ?? item.rec_type,
-          store: item.store ?? item.STORE ?? options.store,
+          store: item.store ?? item.STORE ?? storeUsed,
           devId: item.devId || item.did || item.devIdno,
           fileId: item.id || item.fileId,
           downUrl: item.downUrl || item.downloadUrl || item.url || item.DownUrl || item.DownTaskUrl,
           playUrl: item.playUrl || item.playerUrl || item.PlaybackUrlWs || item.PlaybackUrl,
           isRecording: item.isRecording ?? false,
           mediaType: item.mediaType ?? item.type,
-        }));
+        };
         
-        console.log('[GPS808] 映射後的 videoFiles:', videoFiles);
-        return { result: 0, videoFiles };
+        // 除錯：第一個和最後一個檔案的詳細資訊
+        if (index === 0 || index === infos.length - 1 || infos.length <= 3) {
+          console.log(`[GPS808] 映射結果 [${storeLabel}][${index}/${infos.length - 1}]:`, JSON.stringify({
+            ...mapped,
+            beginTime: mapped.beginTime ? new Date(mapped.beginTime).toISOString() : mapped.beginTime,
+            endTime: mapped.endTime ? new Date(mapped.endTime).toISOString() : mapped.endTime,
+          }, null, 2));
+        }
+        
+        return mapped;
+      });
+      
+      console.log(`[GPS808] 查詢成功 [${storeLabel}]: 共 ${videoFiles.length} 個錄像檔案`);
+      console.log(`[GPS808] 映射後的 videoFiles [${storeLabel}]:`, videoFiles);
+      
+      return { result: 0, videoFiles, rawResponse, extractedInfos: infos, storeUsed };
+    } catch (err) {
+      console.error(`[GPS808] queryVideoHistoryFile 異常 [${storeLabel}]:`, err);
+      return { result: -1, error: String(err), storeUsed };
+    }
+  },
+
+  /**
+   * 查詢歷史錄像（自動切換存儲位置）
+   * 
+   * 優先順序：設備本地 → 服務器雲端
+   * - 先查設備存儲 (store=1)
+   * - 若設備無資料，再查服務器存儲 (store=2)
+   * - 合併去重後返回
+   * 
+   * @param devIdno 設備號
+   * @param options 查詢參數（不含 store）
+   * @returns 合併後的錄像列表和各存儲位置的原始結果
+   */
+  async queryVideoHistoryFileWithFallback(
+    devIdno: string,
+    options: {
+      year: number;
+      month: number;
+      day: number;
+      yearE: number;
+      monthE: number;
+      dayE: number;
+      channel: number;
+      beg?: number;
+      end?: number;
+      recType?: number;
+    },
+  ): Promise<{
+    result: number;
+    videoFiles: VideoFileInfo[];
+    /** 設備存儲的原始結果 */
+    deviceResult?: {
+      result: number;
+      videoFiles?: VideoFileInfo[];
+      rawResponse?: Gps808ApiResponse<unknown>;
+      extractedInfos?: unknown[];
+    };
+    /** 服務器存儲的原始結果 */
+    serverResult?: {
+      result: number;
+      videoFiles?: VideoFileInfo[];
+      rawResponse?: Gps808ApiResponse<unknown>;
+      extractedInfos?: unknown[];
+    };
+    /** 是否使用了 fallback（設備查到空資料後查了服務器） */
+    usedFallback: boolean;
+    /** 最終使用的存儲位置 */
+    effectiveStore?: number;
+    error?: string;
+  }> {
+    console.log('[GPS808] queryVideoHistoryFileWithFallback 開始');
+    console.log('[GPS808] 將依序查詢：設備(本地) → 服務器(雲端)');
+    
+    // 確保 recType 不為負數（808GPS API 不接受）
+    const safeRecType = (options.recType ?? 0) < 0 ? 0 : options.recType;
+    if (safeRecType !== options.recType) {
+      console.warn(`[GPS808] 修正 recType: ${options.recType} → ${safeRecType}（不允許負數）`);
+    }
+    
+    // 先查設備存儲 (store=1)
+    console.log('[GPS808] Step 1/2: 查詢設備存儲 (store=1)...');
+    const deviceResult = await this.queryVideoHistoryFile(devIdno, { ...options, recType: safeRecType, store: 1 });
+    console.log(`[GPS808] 設備存儲結果: ${deviceResult.videoFiles?.length ?? 0} 個檔案`);
+    
+    if (deviceResult.videoFiles && deviceResult.videoFiles.length > 0) {
+      console.log('[GPS808] 設備存儲有資料，直接返回設備結果');
+      return {
+        result: 0,
+        videoFiles: deviceResult.videoFiles,
+        deviceResult: {
+          result: deviceResult.result,
+          videoFiles: deviceResult.videoFiles,
+          rawResponse: deviceResult.rawResponse,
+          extractedInfos: deviceResult.extractedInfos,
+        },
+        usedFallback: false,
+        effectiveStore: 1,
+      };
+    }
+    
+    // 設備存儲無資料，查服務器 (store=2)
+    console.log('[GPS808] 設備存儲無資料，Step 2/2: 查詢服務器存儲 (store=2)...');
+    const serverResult = await this.queryVideoHistoryFile(devIdno, { ...options, recType: safeRecType, store: 2 });
+    console.log(`[GPS808] 服務器存儲結果: ${serverResult.videoFiles?.length ?? 0} 個檔案`);
+    
+    const usedFallback = true;
+    
+    if (serverResult.videoFiles && serverResult.videoFiles.length > 0) {
+      console.log('[GPS808] 服務器存儲有資料，返回服務器結果');
+      return {
+        result: 0,
+        videoFiles: serverResult.videoFiles,
+        deviceResult: {
+          result: deviceResult.result,
+          videoFiles: deviceResult.videoFiles,
+          rawResponse: deviceResult.rawResponse,
+          extractedInfos: deviceResult.extractedInfos,
+        },
+        serverResult: {
+          result: serverResult.result,
+          videoFiles: serverResult.videoFiles,
+          rawResponse: serverResult.rawResponse,
+          extractedInfos: serverResult.extractedInfos,
+        },
+        usedFallback,
+        effectiveStore: 2,
+      };
+    }
+    
+    // 兩個都沒有資料
+    console.warn('[GPS808] 兩個存儲位置都查無錄像');
+    return {
+      result: 0,
+      videoFiles: [],
+      deviceResult: {
+        result: deviceResult.result,
+        videoFiles: deviceResult.videoFiles,
+        rawResponse: deviceResult.rawResponse,
+        extractedInfos: deviceResult.extractedInfos,
+      },
+      serverResult: {
+        result: serverResult.result,
+        videoFiles: serverResult.videoFiles,
+        rawResponse: serverResult.rawResponse,
+        extractedInfos: serverResult.extractedInfos,
+      },
+      usedFallback,
+      effectiveStore: undefined,
+    };
+  },
+
+  /**
+   * 錄像診斷功能
+   * 
+   * 全面檢測設備的錄像能力狀態，幫助快速定位問題。
+   * 
+   * @param devIdno 設備號
+   * @returns 診斷結果，包含各項檢查的狀態和詳細資訊
+   */
+  async diagnoseVideoRecording(
+    devIdno: string,
+  ): Promise<VideoDiagnosticResult> {
+    const diagnosis: VideoDiagnosticResult = {
+      devIdno,
+      timestamp: new Date().toISOString(),
+      checks: {
+        deviceOnline: { status: 'pending', detail: '' },
+        deviceStatus: { status: 'pending', detail: '' },
+        storageDevice: { status: 'pending', detail: '' },
+        storageServer: { status: 'pending', detail: '' },
+        channelSupport: { status: 'pending', detail: '' },
+        todayRecordings: { status: 'pending', detail: '' },
+        last7DaysRecordings: { status: 'pending', detail: '' },
+      },
+      summary: { hasIssue: false, issues: [], recommendations: [] },
+    };
+
+    console.log(`[GPS808] === 錄像診斷開始 (${devIdno}) ===`);
+
+    // Step 1: 檢查設備在線狀態
+    console.log('[GPS808] [診斷] Step 1: 檢查設備在線狀態...');
+    try {
+      const statusResult = await this.getDeviceStatus(devIdno, false);
+      if (statusResult.result === 0 && statusResult.status) {
+        const isOnline = statusResult.status.ol === 1 || statusResult.status.ol === '1';
+        diagnosis.checks.deviceOnline = {
+          status: isOnline ? 'pass' : 'fail',
+          detail: `設備${isOnline ? '在線' : '離線'}`,
+        };
+        
+        diagnosis.checks.deviceStatus = {
+          status: 'pass',
+          detail: JSON.stringify({
+            ol: statusResult.status.ol,
+            sp: statusResult.status.sp,
+            ChanNum: statusResult.status.ChanNum,
+            hx: statusResult.status.hx,
+            ps: statusResult.status.ps,
+          }),
+        };
+        
+        // 記錄通道數
+        const chanNum = statusResult.status.ChanNum;
+        if (chanNum !== undefined && chanNum !== null) {
+          const parsed = typeof chanNum === 'string' ? parseInt(chanNum as string, 10) : chanNum as number;
+          diagnosis.checks.channelSupport = {
+            status: !isNaN(parsed) && parsed > 0 ? 'pass' : 'warn',
+            detail: `支援 ${parsed} 通道`,
+          };
+        }
+        
+        if (!isOnline) {
+          diagnosis.summary.hasIssue = true;
+          diagnosis.summary.issues.push('設備離線，無法觀看實時影像或查詢錄像');
+          diagnosis.summary.recommendations.push('請確認設備電源正常且網路連線穩定');
+        }
+      } else {
+        diagnosis.checks.deviceOnline = {
+          status: 'fail',
+          detail: `API 錯誤: ${(statusResult as any).message || statusResult.error || `result=${statusResult.result}`}`,
+        };
+        diagnosis.checks.deviceStatus = {
+          status: 'fail',
+          detail: '無法獲取設備狀態',
+        };
+        diagnosis.summary.hasIssue = true;
+        diagnosis.summary.issues.push('無法獲取設備狀態');
+        diagnosis.summary.recommendations.push('請檢查 session 是否有效，或確認設備 ID 是否正確');
       }
-      return { result: res.result, error: res.error };
-    });
+    } catch (err) {
+      diagnosis.checks.deviceOnline = { status: 'error', detail: String(err) };
+      diagnosis.checks.deviceStatus = { status: 'error', detail: String(err) };
+      diagnosis.summary.hasIssue = true;
+      diagnosis.summary.issues.push(`檢查設備狀態時發生錯誤: ${err}`);
+    }
+
+    // Step 2: 檢查設備本地存儲 (store=1)
+    console.log('[GPS808] [診斷] Step 2: 檢查設備本地存儲...');
+    try {
+      const today = new Date();
+      const r = await this.queryVideoHistoryFile(devIdno, {
+        year: today.getFullYear(),
+        month: today.getMonth() + 1,
+        day: today.getDate(),
+        yearE: today.getFullYear(),
+        monthE: today.getMonth() + 1,
+        dayE: today.getDate(),
+        channel: 0,
+        beg: 0,
+        end: 86399,
+        store: 1,
+      });
+      
+      if (r.result === 0) {
+        const count = r.videoFiles?.length ?? 0;
+        diagnosis.checks.storageDevice = {
+          status: count > 0 ? 'pass' : 'warn',
+          detail: count > 0 
+            ? `今天有 ${count} 個錄像`
+            : '今天無錄像（可能未開機、SD 卡異常、或通道未啟用錄像）',
+        };
+        
+        if (count === 0) {
+          diagnosis.summary.issues.push('設備本地存儲今天無錄像');
+        }
+      } else {
+        diagnosis.checks.storageDevice = {
+          status: 'error',
+          detail: `API 錯誤: ${r.error || `result=${r.result}`}`,
+        };
+        diagnosis.summary.issues.push(`設備本地存儲查詢失敗: ${r.error}`);
+      }
+    } catch (err) {
+      diagnosis.checks.storageDevice = { status: 'error', detail: String(err) };
+      diagnosis.summary.issues.push(`檢查設備存儲時發生錯誤: ${err}`);
+    }
+
+    // Step 3: 檢查服務器存儲 (store=2)
+    console.log('[GPS808] [診斷] Step 3: 檢查服務器存儲...');
+    try {
+      const today = new Date();
+      const r = await this.queryVideoHistoryFile(devIdno, {
+        year: today.getFullYear(),
+        month: today.getMonth() + 1,
+        day: today.getDate(),
+        yearE: today.getFullYear(),
+        monthE: today.getMonth() + 1,
+        dayE: today.getDate(),
+        channel: 0,
+        beg: 0,
+        end: 86399,
+        store: 2,
+      });
+      
+      if (r.result === 0) {
+        const count = r.videoFiles?.length ?? 0;
+        diagnosis.checks.storageServer = {
+          status: count > 0 ? 'pass' : 'warn',
+          detail: count > 0 
+            ? `今天有 ${count} 個錄像（已上傳雲端）`
+            : '今天無錄像上傳雲端',
+        };
+        
+        if (count === 0) {
+          diagnosis.summary.issues.push('服務器存儲今天無錄像');
+        }
+      } else {
+        diagnosis.checks.storageServer = {
+          status: 'error',
+          detail: `API 錯誤: ${r.error || `result=${r.result}`}`,
+        };
+        diagnosis.summary.issues.push(`服務器存儲查詢失敗: ${r.error}`);
+      }
+    } catch (err) {
+      diagnosis.checks.storageServer = { status: 'error', detail: String(err) };
+      diagnosis.summary.issues.push(`檢查服務器存儲時發生錯誤: ${err}`);
+    }
+
+    // Step 4: 檢查近 7 天錄像
+    console.log('[GPS808] [診斷] Step 4: 檢查近 7 天錄像...');
+    try {
+      const today = new Date();
+      const weekAgo = new Date(today);
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      
+      const r = await this.queryVideoHistoryFile(devIdno, {
+        year: weekAgo.getFullYear(),
+        month: weekAgo.getMonth() + 1,
+        day: weekAgo.getDate(),
+        yearE: today.getFullYear(),
+        monthE: today.getMonth() + 1,
+        dayE: today.getDate(),
+        channel: 0,
+        beg: 0,
+        end: 86399,
+        store: 2, // 使用服務器存儲查詢歷史
+      });
+      
+      if (r.result === 0) {
+        const count = r.videoFiles?.length ?? 0;
+        diagnosis.checks.last7DaysRecordings = {
+          status: count > 0 ? 'pass' : 'warn',
+          detail: count > 0 
+            ? `近 7 天有 ${count} 個錄像`
+            : '近 7 天無錄像（設備可能長期離線或未啟用錄像）',
+        };
+        
+        if (count === 0) {
+          diagnosis.summary.issues.push('近 7 天無錄像記錄');
+          diagnosis.summary.recommendations.push('請確認：1) 設備 SD 卡/硬碟正常 2) 錄像計劃已啟用 3) 設備有穩定網路連線');
+        }
+      } else {
+        diagnosis.checks.last7DaysRecordings = {
+          status: 'error',
+          detail: `API 錯誤: ${r.error || `result=${r.result}`}`,
+        };
+      }
+    } catch (err) {
+      diagnosis.checks.last7DaysRecordings = { status: 'error', detail: String(err) };
+    }
+
+    // 產出最終建議
+    if (diagnosis.summary.issues.length === 0) {
+      diagnosis.summary.hasIssue = false;
+      diagnosis.summary.issues.push('所有檢查通過，未發現明顯問題');
+    }
+    
+    console.log(`[GPS808] === 錄像診斷完成 === 問題數: ${diagnosis.summary.issues.length}`);
+    console.log('[GPS808] 診斷結果:', JSON.stringify(diagnosis, null, 2));
+    
+    return diagnosis;
   },
 
   /**
@@ -1182,6 +1609,48 @@ export interface VideoFileInfo {
   isRecording?: boolean;
   /** 媒體類型 */
   mediaType?: number;
+}
+
+/** 錄像診斷結果：設備錄像能力全面檢測 */
+export interface VideoDiagnosticResult {
+  /** 設備 ID */
+  devIdno: string;
+  /** 診斷時間 */
+  timestamp: string;
+  /** 各項檢查結果 */
+  checks: {
+    /** 設備在線狀態 */
+    deviceOnline: DiagnosticCheck;
+    /** 設備詳細狀態 */
+    deviceStatus: DiagnosticCheck;
+    /** 設備本地存儲（SD 卡） */
+    storageDevice: DiagnosticCheck;
+    /** 服務器雲端存儲 */
+    storageServer: DiagnosticCheck;
+    /** 通道支援數量 */
+    channelSupport: DiagnosticCheck;
+    /** 今天錄像 */
+    todayRecordings: DiagnosticCheck;
+    /** 近 7 天錄像 */
+    last7DaysRecordings: DiagnosticCheck;
+  };
+  /** 診斷摘要 */
+  summary: {
+    /** 是否存在問題 */
+    hasIssue: boolean;
+    /** 發現的問題列表 */
+    issues: string[];
+    /** 建議操作列表 */
+    recommendations: string[];
+  };
+}
+
+/** 單項診斷檢查結果 */
+export interface DiagnosticCheck {
+  /** 檢查狀態: pass=通過, warn=警告, fail=失敗, error=異常, pending=待檢查 */
+  status: 'pass' | 'warn' | 'fail' | 'error' | 'pending';
+  /** 詳細說明 */
+  detail: string;
 }
 
 /** 下載任務資訊 */

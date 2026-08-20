@@ -1,4 +1,4 @@
-import { Vehicle, User, DeliveryOrder, DeliveryStatus, SignatureStroke, DeliveryPhoto, DeliveryCargoItem } from '@/types';
+﻿import { Vehicle, User, DeliveryOrder, DeliveryStatus, SignatureStroke, DeliveryPhoto, DeliveryCargoItem } from '@/types';
 import { supabase, hasSupabaseEnv as hasSupabaseEnvConfigured } from './supabase';
 
 const VEHICLES_TABLE = 'vehicles';
@@ -148,6 +148,7 @@ export async function updateVehicleInSupabase(id: string, updates: Partial<Vehic
   if ('registrationExpiry' in updates) dbUpdates.registration_expiry = updates.registrationExpiry || '';
   if ('notes' in updates) dbUpdates.notes = updates.notes || '';
   if ('assignedDriverId' in updates) dbUpdates.assigned_driver_id = updates.assignedDriverId || null;
+  if ('ownerId' in updates) dbUpdates.owner_id = updates.ownerId || null;
   dbUpdates.updated_at = new Date().toISOString();
 
   const { data, error } = await client
@@ -219,6 +220,7 @@ function mapDbToVehicle(db: Record<string, unknown>): Vehicle {
     registrationExpiry: (db.registration_expiry as string) || '',
     notes: (db.notes as string) || '',
     assignedDriverId: (db.assigned_driver_id as string) || undefined,
+    ownerId: (db.owner_id as string) || undefined,
   };
 }
 
@@ -244,6 +246,7 @@ function mapVehicleToDb(vehicle: Partial<Vehicle>): Record<string, unknown> {
     registration_expiry: vehicle.registrationExpiry || '',
     notes: vehicle.notes || '',
     assigned_driver_id: vehicle.assignedDriverId || null,
+    owner_id: vehicle.ownerId || null,
     created_at: vehicle.createdAt || new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
