@@ -306,6 +306,9 @@ export function FullScreenMonitor({
     feed: CameraFeedItem | null;
   }>({ visible: false, feed: null });
 
+  // 全螢幕地圖 Modal 狀態
+  const [showFullscreenMap, setShowFullscreenMap] = useState(false);
+
   // 全螢幕按鈕點擊處理
   const handleFullscreenPress = useCallback((feed: CameraFeedItem) => {
     setFullscreenVideoModal({ visible: true, feed });
@@ -778,6 +781,15 @@ export function FullScreenMonitor({
         <View style={styles.mapHeaderLeft}>
           <Text style={styles.mapHeaderLabel}>GPS 位置</Text>
         </View>
+        <View style={styles.mapHeaderRight}>
+          <TouchableOpacity
+            onPress={() => setShowFullscreenMap(true)}
+            style={styles.mapFullscreenBtn}
+            hitSlop={8}
+          >
+            <Maximize2 size={14} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* GPS Stats Row */}
@@ -1214,6 +1226,111 @@ export function FullScreenMonitor({
           </View>
         </View>
       </Modal>
+
+      {/* 全螢幕地圖 Modal */}
+      <Modal
+        visible={showFullscreenMap}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowFullscreenMap(false)}
+      >
+        <View style={fullscreenMapStyles.modalContainer}>
+          {/* Header */}
+          <View style={fullscreenMapStyles.topBar}>
+            <TouchableOpacity
+              style={fullscreenMapStyles.backBtn}
+              onPress={() => setShowFullscreenMap(false)}
+            >
+              <ChevronDown size={20} color="#FFFFFF" />
+              <Text style={fullscreenMapStyles.backText}>返回</Text>
+            </TouchableOpacity>
+            <View style={fullscreenMapStyles.topBarCenter}>
+              <MapPin size={16} color={defaultColors.primary} />
+              <Text style={fullscreenMapStyles.topBarTitle}>
+                {currentPlateNumber || currentDevIdno}
+              </Text>
+              <View style={fullscreenMapStyles.statusBadge}>
+                <View style={[fullscreenMapStyles.statusDot, { backgroundColor: isRealTimeGps ? '#22C55E' : (hasValidGps ? '#F59E0B' : '#EF4444') }]} />
+                <Text style={fullscreenMapStyles.statusText}>
+                  {isRealTimeGps ? '即時' : (hasValidGps ? '最後位置' : '無GPS')}
+                </Text>
+              </View>
+            </View>
+            <View style={{ width: 80 }} />
+          </View>
+
+          {/* GPS Stats Row */}
+          {hasValidGps && (
+            <View style={fullscreenMapStyles.statsRow}>
+              <View style={fullscreenMapStyles.statItem}>
+                <Gauge size={14} color="#FFFFFF" />
+                <Text style={fullscreenMapStyles.statValue}>{formatSpeed(gpsData.speed)}</Text>
+              </View>
+              <View style={fullscreenMapStyles.statItem}>
+                <Navigation
+                  size={14}
+                  color="#FFFFFF"
+                  style={{ transform: [{ rotate: `${gpsData.direction}deg` }] }}
+                />
+                <Text style={fullscreenMapStyles.statValue}>{formatDirection(gpsData.direction)}</Text>
+              </View>
+              <View style={fullscreenMapStyles.statItem}>
+                <Clock size={14} color="#FFFFFF" />
+                <Text style={fullscreenMapStyles.statValue}>{formatGpsTime(gpsData.gpsTime)}</Text>
+              </View>
+            </View>
+          )}
+
+          {/* Address Row */}
+          {hasValidGps && gpsData.address && (
+            <View style={fullscreenMapStyles.addressRow}>
+              <MapPin size={12} color="rgba(255,255,255,0.7)" />
+              <Text style={fullscreenMapStyles.addressText} numberOfLines={2}>
+                {gpsData.address}
+              </Text>
+            </View>
+          )}
+
+          {/* Fullscreen Map */}
+          <View style={fullscreenMapStyles.mapContainer}>
+            {IS_WEB ? (
+              <iframe
+                srcDoc={mapHtml}
+                style={{ width: '100%', height: '100%', border: 0, display: 'block' }}
+                title="Live GPS Map Fullscreen"
+                sandbox="allow-scripts allow-same-origin"
+              />
+            ) : (
+              <WebView
+                ref={webViewRef}
+                source={{ html: mapHtml, baseUrl: 'https://localhost' }}
+                style={{ flex: 1, backgroundColor: '#E5E7EB' }}
+                javaScriptEnabled
+                domStorageEnabled
+                originWhitelist={['*']}
+                mixedContentMode="always"
+                allowsFullscreenVideo
+                startInLoadingState
+                renderLoading={() => (
+                  <View style={fullscreenMapStyles.mapLoading}>
+                    <LoadingSpinner size={32} />
+                    <Text style={{ marginTop: 12, fontSize: 14, color: '#6B7280' }}>載入地圖中...</Text>
+                  </View>
+                )}
+              />
+            )}
+          </View>
+
+          {/* Last refresh info */}
+          {lastRefresh && (
+            <View style={fullscreenMapStyles.refreshInfo}>
+              <Text style={fullscreenMapStyles.refreshInfoText}>
+                更新時間 {lastRefresh.toLocaleTimeString()} · 每 10 秒自動刷新
+              </Text>
+            </View>
+          )}
+        </View>
+      </Modal>
     </Modal>
   );
 }
@@ -1342,6 +1459,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
+  },
+  mapFullscreenBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(59, 130, 246, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   refreshBtn: {
     padding: spacing.xs,
@@ -1735,5 +1860,119 @@ const fullscreenVideoStyles = StyleSheet.create({
   videoContainer: {
     flex: 1,
     backgroundColor: '#0f0f1a',
+  },
+});
+
+// Fullscreen Map Modal Styles
+const fullscreenMapStyles = StyleSheet.create({
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#0D0F14',
+  },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    backgroundColor: '#161A23',
+    borderBottomWidth: 1,
+    borderBottomColor: '#2A3040',
+  },
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+    paddingRight: spacing.sm,
+    width: 80,
+  },
+  backText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  topBarCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flex: 1,
+    justifyContent: 'center',
+  },
+  topBarTitle: {
+    fontSize: typography.fontSize.lg,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  statusText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: spacing.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  statItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  statValue: {
+    fontSize: typography.fontSize.sm,
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  addressRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+  },
+  addressText: {
+    fontSize: typography.fontSize.sm,
+    color: 'rgba(255, 255, 255, 0.8)',
+    flex: 1,
+    lineHeight: 20,
+  },
+  mapContainer: {
+    flex: 1,
+    backgroundColor: '#E5E7EB',
+  },
+  mapLoading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E5E7EB',
+  },
+  refreshInfo: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: '#161A23',
+  },
+  refreshInfoText: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.5)',
+    textAlign: 'center',
   },
 });

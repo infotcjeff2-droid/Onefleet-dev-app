@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, Pressable, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Alert, Platform, Modal, TouchableOpacity } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { MapPin, Navigation, Gauge, Clock, RefreshCw, WifiOff, ExternalLink, AlertCircle, Maximize2, Minimize2 } from 'lucide-react-native';
+import { MapPin, Navigation, Gauge, Clock, RefreshCw, WifiOff, ExternalLink, AlertCircle, Maximize2 } from 'lucide-react-native';
 import { Card } from '@/components/ui/Card';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useGps808Store } from '@/store/gps808Store';
@@ -24,6 +24,8 @@ interface GpsLiveTrackerProps {
   plateNumber?: string;
   onStatusUpdate?: (status: { isOnline: boolean; hasGps: boolean; isRealTime: boolean; speed: number; address?: string }) => void;
   bare?: boolean;
+  /** 當按下地圖全螢幕按鈕時的回調 */
+  onFullscreenMapPress?: () => void;
 }
 
 interface GpsData {
@@ -132,7 +134,7 @@ function formatAddressForPopup(address: string, lang: string): string {
   return address;
 }
 
-function buildMapHtml(opts: {
+export function buildMapHtml(opts: {
   lat: number;
   lng: number;
   label: string;
@@ -286,7 +288,7 @@ function buildMapHtml(opts: {
 </html>`;
 }
 
-export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate, bare = false }: GpsLiveTrackerProps) {
+export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate, bare = false, onFullscreenMapPress }: GpsLiveTrackerProps) {
   const { locale, t } = useTranslation();
   const { isConnected } = useGps808Store();
   const [gpsData, setGpsData] = useState<GpsData | null>(null);
@@ -698,13 +700,11 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate, bare = fa
               </Text>
             </View>
             <Pressable
-              onPress={() => setMapExpanded(!mapExpanded)}
+              onPress={onFullscreenMapPress}
               style={styles.mapToggleBtn}
               hitSlop={8}
             >
-              {mapExpanded
-                ? <Minimize2 size={12} color={colors.textTertiary} />
-                : <Maximize2 size={12} color={colors.textTertiary} />}
+              <Maximize2 size={12} color={colors.textTertiary} />
             </Pressable>
           </View>
           <View style={[styles.mapContainer, { height: mapExpanded ? 320 : 120 }]}>
@@ -742,7 +742,11 @@ export function GpsLiveTracker({ devIdno, plateNumber, onStatusUpdate, bare = fa
   );
 
   if (bare) return <View>{mainBody}</View>;
-  return <Card style={{ padding: spacing.lg }}>{mainBody}</Card>;
+  return (
+    <Card style={{ padding: spacing.lg }}>
+      {mainBody}
+    </Card>
+  );
 }
 
 const styles = StyleSheet.create({

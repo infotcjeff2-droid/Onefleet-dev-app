@@ -1086,6 +1086,12 @@ export default function DeliveryDetailScreen() {
 
   // 取貨相片：即時拍照並獲取位置資訊
   const handleTakePickupPhoto = async () => {
+    if (Platform.OS === 'web') {
+      // Web 平台：使用 HTML 檔案輸入開啟相機
+      await handleWebPickupPhoto();
+      return;
+    }
+
     // 請求相機權限
     const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
     if (cameraPermission.status !== 'granted') {
@@ -1100,7 +1106,7 @@ export default function DeliveryDetailScreen() {
       return;
     }
 
-    // 拍攝相片（expo-image-picker 在 Web 平台會正確處理瀏覽器相機權限）
+    // 拍攝相片
     const photoResult = await ImagePicker.launchCameraAsync({
       mediaTypes: ['images'],
       allowsEditing: false,
@@ -1108,6 +1114,127 @@ export default function DeliveryDetailScreen() {
     });
 
     await processPickupPhoto(photoResult);
+  };
+
+  // Web 平台專用：使用 getUserMedia API 直接調用相機
+  const handleWebPickupPhoto = () => {
+    return new Promise<void>((resolve) => {
+      // 方案1：嘗試使用 MediaDevices API 直接訪問相機（更可靠）
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const video = document.createElement('video');
+        const canvas = document.createElement('canvas');
+        const input = document.createElement('input');
+        
+        video.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:999999;object-fit:cover;background:#000;';
+        document.body.appendChild(video);
+        
+        // 嘗試調用後置相機
+        navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false 
+        }).then((stream) => {
+          video.srcObject = stream;
+          video.play();
+          
+          // 顯示拍攝按鈕覆蓋層
+          const overlay = document.createElement('div');
+          overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:1000000;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;padding:20px;box-sizing:border-box;';
+          
+          const hint = document.createElement('div');
+          hint.style.cssText = 'color:#fff;font-size:16px;margin-bottom:auto;margin-top:20px;text-align:center;';
+          hint.textContent = '相機預覽中...';
+          overlay.appendChild(hint);
+          
+          const captureBtn = document.createElement('button');
+          captureBtn.textContent = '📷 拍攝';
+          captureBtn.style.cssText = 'width:80px;height:80px;border-radius:50%;border:4px solid #fff;background:#2563eb;font-size:16px;color:#fff;cursor:pointer;margin-bottom:40px;';
+          overlay.appendChild(captureBtn);
+          
+          const cancelBtn = document.createElement('button');
+          cancelBtn.textContent = '✕ 取消';
+          cancelBtn.style.cssText = 'position:absolute;top:20px;right:20px;padding:10px 20px;background:rgba(0,0,0,0.5);color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer;';
+          overlay.appendChild(cancelBtn);
+          
+          document.body.appendChild(overlay);
+          
+          captureBtn.onclick = () => {
+            // 停止相機流
+            stream.getTracks().forEach(track => track.stop());
+            
+            // 捕捉視頻幀到 canvas
+            canvas.width = video.videoWidth || 1280;
+            canvas.height = video.videoHeight || 720;
+            const ctx = canvas.getContext('2d');
+            if (ctx) ctx.drawImage(video, 0, 0);
+            
+            // 清理 UI
+            document.body.removeChild(video);
+            document.body.removeChild(overlay);
+            
+            // 轉為 data URL
+            const dataUri = canvas.toDataURL('image/jpeg', 0.85);
+            const photoResult = { canceled: false, assets: [{ uri: dataUri }] };
+            void processPickupPhoto(photoResult as any);
+            resolve();
+          };
+          
+          cancelBtn.onclick = () => {
+            stream.getTracks().forEach(track => track.stop());
+            document.body.removeChild(video);
+            document.body.removeChild(overlay);
+            resolve();
+          };
+          
+        }).catch((err) => {
+          console.warn('[Web] getUserMedia failed, fallback to file input:', err);
+          document.body.removeChild(video);
+          // 回退到方案2：使用普通文件輸入
+          useFileInputFallback();
+        });
+      } else {
+        // 方案2：回退到文件輸入（capture 屬性可能不被支持）
+        useFileInputFallback();
+      }
+      
+      function useFileInputFallback() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.capture = 'environment';
+        input.style.display = 'none';
+        
+        input.onchange = async (event: any) => {
+          const file = event.target.files?.[0];
+          if (input.parentNode) document.body.removeChild(input);
+          
+          if (!file) {
+            resolve();
+            return;
+          }
+          
+          const reader = new FileReader();
+          reader.onload = async () => {
+            const dataUri = reader.result as string;
+            const photoResult = { canceled: false, assets: [{ uri: dataUri }] };
+            await processPickupPhoto(photoResult as any);
+            resolve();
+          };
+          reader.onerror = () => {
+            console.error('[Web] Failed to read file');
+            resolve();
+          };
+          reader.readAsDataURL(file);
+        };
+        
+        input.oncancel = () => {
+          if (input.parentNode) document.body.removeChild(input);
+          resolve();
+        };
+        
+        document.body.appendChild(input);
+        input.click();
+      }
+    });
   };
 
   // 處理拍照後的相片邏輯（提取出來共用）
@@ -1208,6 +1335,118 @@ export default function DeliveryDetailScreen() {
 
   // 【任務3】處理即時拍照送達
   const handleTakeDeliveryPhoto = async () => {
+    if (Platform.OS === 'web') {
+      // Web 平台：使用 getUserMedia API 直接調用相機（更可靠）
+      return new Promise<void>((resolve) => {
+        // 方案1：嘗試使用 MediaDevices API 直接訪問相機
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          const video = document.createElement('video');
+          const canvas = document.createElement('canvas');
+          
+          video.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:999999;object-fit:cover;background:#000;';
+          document.body.appendChild(video);
+          
+          navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: false 
+          }).then((stream) => {
+            video.srcObject = stream;
+            video.play();
+            
+            const overlay = document.createElement('div');
+            overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:1000000;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;padding:20px;box-sizing:border-box;';
+            
+            const hint = document.createElement('div');
+            hint.style.cssText = 'color:#fff;font-size:16px;margin-bottom:auto;margin-top:20px;text-align:center;';
+            hint.textContent = '相機預覽中...';
+            overlay.appendChild(hint);
+            
+            const captureBtn = document.createElement('button');
+            captureBtn.textContent = '📷 拍攝';
+            captureBtn.style.cssText = 'width:80px;height:80px;border-radius:50%;border:4px solid #fff;background:#2563eb;font-size:16px;color:#fff;cursor:pointer;margin-bottom:40px;';
+            overlay.appendChild(captureBtn);
+            
+            const cancelBtn = document.createElement('button');
+            cancelBtn.textContent = '✕ 取消';
+            cancelBtn.style.cssText = 'position:absolute;top:20px;right:20px;padding:10px 20px;background:rgba(0,0,0,0.5);color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer;';
+            overlay.appendChild(cancelBtn);
+            
+            document.body.appendChild(overlay);
+            
+            captureBtn.onclick = () => {
+              stream.getTracks().forEach(track => track.stop());
+              
+              canvas.width = video.videoWidth || 1280;
+              canvas.height = video.videoHeight || 720;
+              const ctx = canvas.getContext('2d');
+              if (ctx) ctx.drawImage(video, 0, 0);
+              
+              document.body.removeChild(video);
+              document.body.removeChild(overlay);
+              
+              const dataUri = canvas.toDataURL('image/jpeg', 0.85);
+              const photoResult = { canceled: false, assets: [{ uri: dataUri }] };
+              void processDeliveryPhoto(photoResult as any);
+              resolve();
+            };
+            
+            cancelBtn.onclick = () => {
+              stream.getTracks().forEach(track => track.stop());
+              document.body.removeChild(video);
+              document.body.removeChild(overlay);
+              resolve();
+            };
+            
+          }).catch((err) => {
+            console.warn('[Web] getUserMedia failed, fallback to file input:', err);
+            document.body.removeChild(video);
+            useFileInputFallback();
+          });
+        } else {
+          useFileInputFallback();
+        }
+        
+        function useFileInputFallback() {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = 'image/*';
+          input.capture = 'environment';
+          input.style.display = 'none';
+          
+          input.onchange = async (event: any) => {
+            const file = event.target.files?.[0];
+            if (input.parentNode) document.body.removeChild(input);
+            
+            if (!file) {
+              resolve();
+              return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = async () => {
+              const dataUri = reader.result as string;
+              const photoResult = { canceled: false, assets: [{ uri: dataUri }] };
+              await processDeliveryPhoto(photoResult as any);
+              resolve();
+            };
+            reader.onerror = () => {
+              console.error('[Web] Failed to read file');
+              resolve();
+            };
+            reader.readAsDataURL(file);
+          };
+          
+          input.oncancel = () => {
+            if (input.parentNode) document.body.removeChild(input);
+            resolve();
+          };
+          
+          document.body.appendChild(input);
+          input.click();
+        }
+      });
+    }
+
     // 請求相機權限
     const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
     if (cameraPermission.status !== 'granted') {
@@ -1215,7 +1454,7 @@ export default function DeliveryDetailScreen() {
       return;
     }
 
-    // 拍攝相片（expo-image-picker 在 Web 平台會正確處理瀏覽器相機權限）
+    // 拍攝相片
     const photoResult = await ImagePicker.launchCameraAsync({
       mediaTypes: ['images'],
       allowsEditing: false,

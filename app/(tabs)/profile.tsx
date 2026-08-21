@@ -826,6 +826,7 @@ function EditUserModal({
   const [companyId, setCompanyId] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [companyModalVisible, setCompanyModalVisible] = useState(false);
 
   const companies = getCompanies();
   const isDriver = user.role === 'driver';
@@ -975,19 +976,7 @@ function EditUserModal({
                   </View>
                 </View>
                 <TouchableOpacity
-                  onPress={() => {
-                    Alert.alert(
-                      t('company.selectCompany'),
-                      '',
-                      [
-                        { text: t('company.noCompany'), onPress: () => setCompanyId('') },
-                        ...companies.map((c) => ({
-                          text: c.nameZh || c.name || c.email,
-                          onPress: () => setCompanyId(c.id),
-                        })),
-                      ]
-                    );
-                  }}
+                  onPress={() => setCompanyModalVisible(true)}
                   style={[styles.formInputWrap, { backgroundColor: colors.background, borderColor: colors.border }]}
                   activeOpacity={0.7}
                 >
@@ -1001,6 +990,44 @@ function EditUserModal({
                 </TouchableOpacity>
               </View>
             )}
+
+            {/* 公司選擇 Modal */}
+            <Modal visible={companyModalVisible} transparent animationType="fade" onRequestClose={() => setCompanyModalVisible(false)}>
+              <View style={styles.companyModalOverlay}>
+                <Pressable style={styles.companyModalBackdrop} onPress={() => setCompanyModalVisible(false)} />
+                <Animated.View entering={FadeInDown.springify()} style={[styles.companyModalContent, { backgroundColor: colors.card }]}>
+                  <View style={[styles.companyModalHeader, { borderBottomColor: colors.border }]}>
+                    <Text style={[styles.companyModalTitle, { color: colors.textPrimary }]}>{t('company.selectCompany')}</Text>
+                    <Pressable onPress={() => setCompanyModalVisible(false)} hitSlop={8}>
+                      <X size={20} color={colors.textSecondary} />
+                    </Pressable>
+                  </View>
+                  <ScrollView style={styles.companyModalScroll} showsVerticalScrollIndicator={false}>
+                    <TouchableOpacity
+                      onPress={() => { setCompanyId(''); setCompanyModalVisible(false); }}
+                      style={[styles.companyModalOption, { borderBottomColor: colors.border }]}
+                    >
+                      <Text style={[styles.companyModalOptionText, { color: !companyId ? colors.primary : colors.textPrimary }]}>
+                        {t('company.noCompany')}
+                      </Text>
+                      {companyId === '' && <ChevronRight size={16} color={colors.primary} />}
+                    </TouchableOpacity>
+                    {companies.map((c) => (
+                      <TouchableOpacity
+                        key={c.id}
+                        onPress={() => { setCompanyId(c.id); setCompanyModalVisible(false); }}
+                        style={[styles.companyModalOption, { borderBottomColor: colors.border }]}
+                      >
+                        <Text style={[styles.companyModalOptionText, { color: companyId === c.id ? colors.primary : colors.textPrimary }]}>
+                          {c.nameZh || c.name || c.email}
+                        </Text>
+                        {companyId === c.id && <ChevronRight size={16} color={colors.primary} />}
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </Animated.View>
+              </View>
+            </Modal>
 
             {/* 新密碼 - 可編輯（留空保持不變） */}
             <View style={styles.formField}>
