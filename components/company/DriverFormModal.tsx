@@ -12,11 +12,12 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
+  TouchableOpacity,
 } from 'react-native';
-import { X, Mail, Lock, Phone, User, Building2, ChevronDown } from 'lucide-react-native';
+import { X, Mail, Lock, Phone, User, Building2, ChevronDown, ChevronRight } from 'lucide-react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { TextInput } from '@/components/ui/TextInput';
 import { Button } from '@/components/ui/Button';
-import { SelectField } from '@/components/ui/SelectField';
 import { useUserManagementStore } from '@/store/userManagementStore';
 import { useDriverStore } from '@/store/driverStore';
 import { useTranslation } from '@/i18n';
@@ -25,6 +26,7 @@ import type { User as UserType } from '@/types';
 import * as ImagePicker from 'expo-image-picker';
 import { useThemeStore } from '@/store/themeStore';
 import { supabase } from '@/utils/supabase';
+import { useTranslation as useTran } from '@/i18n';
 
 const isWeb = Platform.OS === 'web';
 
@@ -103,6 +105,7 @@ export function DriverFormModal({ visible, onClose, driver, onSave }: DriverForm
   const [uploadingImage, setUploadingImage] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formReady, setFormReady] = useState(false);
+  const [companyModalVisible, setCompanyModalVisible] = useState(false);
 
   // Fetch companies directly from Supabase
   const fetchCompaniesFromSupabase = async () => {
@@ -313,18 +316,79 @@ export function DriverFormModal({ visible, onClose, driver, onSave }: DriverForm
               autoCapitalize="words"
             />
 
-            {/* Company Select Field - directly from Supabase */}
-            <SelectField
-              label={t('company.title') || '公司'}
-              placeholder={loadingCompanies ? '載入中...' : (t('company.selectCompany') || '選擇公司')}
-              value={companyId || ''}
-              options={supabaseCompanies.map((c) => ({
-                value: c.id,
-                label: c.nameZh || c.name,
-              }))}
-              onValueChange={setCompanyId}
-              disabled={loadingCompanies}
-            />
+            {/* Company Select Field - popup selector */}
+            <View style={styles.formField}>
+              <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+                {t('company.title')}
+              </Text>
+              <TouchableOpacity
+                onPress={() => setCompanyModalVisible(true)}
+                style={[styles.selectWrap, { backgroundColor: colors.background, borderColor: colors.border }]}
+                activeOpacity={0.7}
+              >
+                <Building2 size={18} color={colors.textTertiary} style={{ marginRight: spacing.sm }} />
+                <Text style={[styles.selectText, { color: companyId ? colors.textPrimary : colors.textTertiary }]}>
+                  {companyId
+                    ? (supabaseCompanies.find((c) => c.id === companyId)?.name || supabaseCompanies.find((c) => c.id === companyId)?.nameZh)
+                    : (t('company.noCompany') || '無公司')}
+                </Text>
+                <ChevronRight size={18} color={colors.textTertiary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Company Selection Modal */}
+            <Modal
+              visible={companyModalVisible}
+              transparent
+              animationType="fade"
+              onRequestClose={() => setCompanyModalVisible(false)}
+            >
+              <View style={styles.companyModalOverlay}>
+                <Pressable style={styles.companyModalBackdrop} onPress={() => setCompanyModalVisible(false)} />
+                <Animated.View
+                  entering={FadeInDown.springify()}
+                  style={[styles.companyModalContent, { backgroundColor: colors.card }]}
+                >
+                  <View style={[styles.companyModalHeader, { borderBottomColor: colors.border }]}>
+                    <Text style={[styles.companyModalTitle, { color: colors.textPrimary }]}>
+                      {t('company.selectCompany') || '選擇公司'}
+                    </Text>
+                    <Pressable onPress={() => setCompanyModalVisible(false)} hitSlop={8}>
+                      <X size={20} color={colors.textSecondary} />
+                    </Pressable>
+                  </View>
+                  <ScrollView style={styles.companyModalScroll} showsVerticalScrollIndicator={false}>
+                    <TouchableOpacity
+                      onPress={() => { setCompanyId(''); setCompanyModalVisible(false); }}
+                      style={[styles.companyModalOption, { borderBottomColor: colors.border }]}
+                    >
+                      <Text style={[styles.companyModalOptionText, { color: !companyId ? colors.primary : colors.textPrimary }]}>
+                        {t('company.noCompany') || '無公司'}
+                      </Text>
+                      {companyId === '' && <ChevronRight size={16} color={colors.primary} />}
+                    </TouchableOpacity>
+                    {loadingCompanies ? (
+                      <View style={styles.companyLoading}>
+                        <Text style={{ color: colors.textSecondary }}>{t('common.loading') || '載入中...'}</Text>
+                      </View>
+                    ) : (
+                      supabaseCompanies.map((c) => (
+                        <TouchableOpacity
+                          key={c.id}
+                          onPress={() => { setCompanyId(c.id); setCompanyModalVisible(false); }}
+                          style={[styles.companyModalOption, { borderBottomColor: colors.border }]}
+                        >
+                          <Text style={[styles.companyModalOptionText, { color: companyId === c.id ? colors.primary : colors.textPrimary }]}>
+                            {c.nameZh || c.name}
+                          </Text>
+                          {companyId === c.id && <ChevronRight size={16} color={colors.primary} />}
+                        </TouchableOpacity>
+                      ))
+                    )}
+                  </ScrollView>
+                </Animated.View>
+              </View>
+            </Modal>
 
             <TextInput
               label={`${t('auth.email')} *`}
@@ -472,5 +536,77 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     flex: 1,
+  },
+  // Form field styles
+  formField: {
+    marginBottom: spacing.md,
+  },
+  fieldLabel: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    marginBottom: spacing.sm,
+  },
+  selectWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+  },
+  selectText: {
+    flex: 1,
+    fontSize: typography.fontSize.base,
+  },
+  // Company Modal styles
+  companyModalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  companyModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+  },
+  companyModalContent: {
+    width: '85%',
+    maxWidth: 360,
+    maxHeight: '60%',
+    borderRadius: borderRadius.xl,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  companyModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+  },
+  companyModalTitle: {
+    fontSize: typography.fontSize.lg,
+    fontWeight: '600',
+  },
+  companyModalScroll: {
+    maxHeight: 300,
+  },
+  companyModalOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md + 2,
+  },
+  companyModalOptionText: {
+    fontSize: typography.fontSize.base,
+  },
+  companyLoading: {
+    padding: spacing.lg,
+    alignItems: 'center',
   },
 });

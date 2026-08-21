@@ -13,6 +13,7 @@ import {
   AlertTriangle,
   Monitor,
 } from 'lucide-react-native';
+import { useState, useEffect } from 'react';
 import { borderRadius, spacing, typography } from '@/constants/theme';
 import { useVideoStreamStore, formatBytes } from '@/store/videoStreamStore';
 import { useTranslation } from '@/i18n';
@@ -44,10 +45,25 @@ export function VideoControlPanel({
   plateNumber,
 }: VideoControlPanelProps) {
   const videoStreamStore = useVideoStreamStore();
+  const [refreshKey, setRefreshKey] = useState(0);
+  // 使用 refreshKey 強制組件在 interval 觸發時重新渲染
   const vehicleUsage = devIdno ? videoStreamStore.getVehicleUsage(devIdno) : null;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _ = refreshKey; // 引用 refreshKey 以確保組件重新渲染
   const settings = videoStreamStore.settings;
   const { locale, t } = useTranslation();
   const tVideo = (key: string) => t(`videoSettings.${key}`);
+
+  // 當 modal 可見時，每秒刷新一次數據
+  useEffect(() => {
+    if (!visible) return;
+
+    const interval = setInterval(() => {
+      setRefreshKey(prev => prev + 1);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [visible]);
 
   // 計算流量使用百分比
   const monthlyDataUsagePercent = vehicleUsage

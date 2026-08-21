@@ -1086,12 +1086,6 @@ export default function DeliveryDetailScreen() {
 
   // 取貨相片：即時拍照並獲取位置資訊
   const handleTakePickupPhoto = async () => {
-    if (Platform.OS === 'web') {
-      // Web 平台：使用 HTML 檔案輸入開啟相機
-      await handleWebPickupPhoto();
-      return;
-    }
-
     // 請求相機權限
     const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
     if (cameraPermission.status !== 'granted') {
@@ -1106,7 +1100,7 @@ export default function DeliveryDetailScreen() {
       return;
     }
 
-    // 拍攝相片
+    // 拍攝相片（expo-image-picker 在 Web 平台會正確處理瀏覽器相機權限）
     const photoResult = await ImagePicker.launchCameraAsync({
       mediaTypes: ['images'],
       allowsEditing: false,
@@ -1114,53 +1108,6 @@ export default function DeliveryDetailScreen() {
     });
 
     await processPickupPhoto(photoResult);
-  };
-
-  // Web 平台專用：使用 input[type=file] capture 觸發相機
-  const handleWebPickupPhoto = () => {
-    return new Promise<void>((resolve) => {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = 'image/*';
-      // capture 屬性在手機瀏覽器會開啟相機
-      input.capture = 'environment';
-      input.style.display = 'none';
-
-      input.onchange = async (event: any) => {
-        const file = event.target.files?.[0];
-        document.body.removeChild(input);
-
-        if (!file) {
-          resolve();
-          return;
-        }
-
-        // 將 File 轉成 data URI
-        const reader = new FileReader();
-        reader.onload = async () => {
-          const dataUri = reader.result as string;
-          const photoResult = {
-            canceled: false,
-            assets: [{ uri: dataUri }],
-          };
-          await processPickupPhoto(photoResult as any);
-          resolve();
-        };
-        reader.onerror = () => {
-          console.error('[Web] Failed to read file');
-          resolve();
-        };
-        reader.readAsDataURL(file);
-      };
-
-      input.oncancel = () => {
-        if (input.parentNode) document.body.removeChild(input);
-        resolve();
-      };
-
-      document.body.appendChild(input);
-      input.click();
-    });
   };
 
   // 處理拍照後的相片邏輯（提取出來共用）
@@ -1261,51 +1208,6 @@ export default function DeliveryDetailScreen() {
 
   // 【任務3】處理即時拍照送達
   const handleTakeDeliveryPhoto = async () => {
-    if (Platform.OS === 'web') {
-      // Web 平台：使用 HTML 檔案輸入開啟相機
-      return new Promise<void>((resolve) => {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = 'image/*';
-        input.capture = 'environment';
-        input.style.display = 'none';
-
-        input.onchange = async (event: any) => {
-          const file = event.target.files?.[0];
-          document.body.removeChild(input);
-
-          if (!file) {
-            resolve();
-            return;
-          }
-
-          const reader = new FileReader();
-          reader.onload = async () => {
-            const dataUri = reader.result as string;
-            const photoResult = {
-              canceled: false,
-              assets: [{ uri: dataUri }],
-            };
-            await processDeliveryPhoto(photoResult as any);
-            resolve();
-          };
-          reader.onerror = () => {
-            console.error('[Web] Failed to read file');
-            resolve();
-          };
-          reader.readAsDataURL(file);
-        };
-
-        input.oncancel = () => {
-          if (input.parentNode) document.body.removeChild(input);
-          resolve();
-        };
-
-        document.body.appendChild(input);
-        input.click();
-      });
-    }
-
     // 請求相機權限
     const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
     if (cameraPermission.status !== 'granted') {
@@ -1313,7 +1215,7 @@ export default function DeliveryDetailScreen() {
       return;
     }
 
-    // 拍攝相片
+    // 拍攝相片（expo-image-picker 在 Web 平台會正確處理瀏覽器相機權限）
     const photoResult = await ImagePicker.launchCameraAsync({
       mediaTypes: ['images'],
       allowsEditing: false,

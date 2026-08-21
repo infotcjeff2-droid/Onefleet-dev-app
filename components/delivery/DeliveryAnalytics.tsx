@@ -19,8 +19,13 @@ let YAxis: React.ComponentType<any> | null = null;
 let Tooltip: React.ComponentType<any> | null = null;
 let ResponsiveContainer: React.ComponentType<any> | null = null;
 
+// Recharts 載入狀態追蹤
+let rechartsLoading: boolean = false;
+let rechartsLoaded: boolean = false;
+
 // 動態導入 Recharts（僅 Web 環境）
-if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined' && !rechartsLoading && !rechartsLoaded) {
+  rechartsLoading = true;
   import('recharts').then(m => {
     ComposedChart = m.ComposedChart;
     Bar = m.Bar;
@@ -28,8 +33,11 @@ if (typeof window !== 'undefined') {
     YAxis = m.YAxis;
     Tooltip = m.Tooltip;
     ResponsiveContainer = m.ResponsiveContainer;
+    rechartsLoaded = true;
+    rechartsLoading = false;
   }).catch(() => {
     console.warn('Failed to load recharts');
+    rechartsLoading = false;
   });
 }
 
@@ -82,6 +90,39 @@ export default function DeliveryAnalytics({ companyId, userRole }: DeliveryAnaly
   const [chartConfig, setChartConfig] = useState<DashboardChartConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [chartsReady, setChartsReady] = useState(false);
+
+  // 檢查 Recharts 是否已載入
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      setChartsReady(false);
+      return;
+    }
+
+    // 如果已經載入，直接設定
+    if (rechartsLoaded && ComposedChart && ResponsiveContainer) {
+      setChartsReady(true);
+      return;
+    }
+
+    // 否則等待載入完成
+    const checkCharts = setInterval(() => {
+      if (rechartsLoaded && ComposedChart && ResponsiveContainer) {
+        setChartsReady(true);
+        clearInterval(checkCharts);
+      }
+    }, 50);
+
+    // 清理，1秒後停止檢查
+    const timeout = setTimeout(() => {
+      clearInterval(checkCharts);
+    }, 1000);
+
+    return () => {
+      clearInterval(checkCharts);
+      clearTimeout(timeout);
+    };
+  }, []);
 
   // 載入圖表配置和分析數據
   const loadData = useCallback(async () => {
@@ -274,8 +315,8 @@ export default function DeliveryAnalytics({ companyId, userRole }: DeliveryAnaly
             {t('dashboard.deliveryOverview')}
           </Text>
 
-          {/* Web 端使用 Recharts */}
-          {typeof window !== 'undefined' && ComposedChart && ResponsiveContainer ? (
+          {/* Web 端使用 Recharts（僅在圖表庫已載入後渲染） */}
+          {typeof window !== 'undefined' && chartsReady && ComposedChart && ResponsiveContainer ? (
             <View style={styles.webChart}>
               <ResponsiveContainer width="100%" height={300}>
                 <ComposedChart data={data.chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -317,7 +358,7 @@ export default function DeliveryAnalytics({ companyId, userRole }: DeliveryAnaly
               </ResponsiveContainer>
             </View>
           ) : (
-            /* 顯示長條圖文字版（非 Web） */
+            /* 顯示長條圖文字版（非 Web 或圖表庫未載入） */
             <View style={styles.chartPlaceholder}>
               <Text style={[styles.chartPlaceholderText, { color: colors.textTertiary }]}>
                 {data.chartData.map(d => `${d.label}: ${d.orderCount}${t('dashboard.orders')}`).join('\n')}

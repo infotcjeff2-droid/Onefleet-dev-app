@@ -293,6 +293,7 @@ export function FullScreenMonitor({
   const [slotOverLimits, setSlotOverLimits] = useState<Record<string, { isOver: boolean; reason?: string }>>({});
   const [slotDataUsage, setSlotDataUsage] = useState<Record<string, number>>({});
   const [showControlPanel, setShowControlPanel] = useState(false);
+  const [controlPanelKey, setControlPanelKey] = useState(0);
   const [streamQuality, setStreamQuality] = useState<StreamQuality>('sd');
   const [isPlaybackPaused, setIsPlaybackPaused] = useState(false); // 是否已暫停播放
   const [hasSessionExpired, setHasSessionExpired] = useState(false); // 是否已過期
@@ -313,6 +314,10 @@ export function FullScreenMonitor({
   // 使用 ref 保存最新值以避免閉包問題
   const streamingStartTimeRef = useRef(streamingStartTime);
   streamingStartTimeRef.current = streamingStartTime;
+
+  // 使用 ref 保存 slotDataUsage 以避免閉包問題
+  const slotDataUsageRef = useRef(slotDataUsage);
+  slotDataUsageRef.current = slotDataUsage;
 
   // 設備的總通道數（從設備狀態獲取，默認為 4）
   const deviceChannelCount = gpsData?.channelCount || 4;
@@ -472,7 +477,7 @@ export function FullScreenMonitor({
         if (feed.devIdno && !feed.id.startsWith('empty-')) {
           const bytesPerSecond = streamQuality === 'hd' ? 1.5 * 1024 * 1024 : 500 * 1024;
           const key = `${feed.id}-${feed.devIdno}`;
-          const currentUsage = slotDataUsage[key] || videoStreamStore.getVehicleUsage(feed.devIdno).monthlyBytes;
+          const currentUsage = slotDataUsageRef.current[key] ?? 0;
           setSlotDataUsage(prev => ({ ...prev, [key]: currentUsage + bytesPerSecond }));
           videoStreamStore.addDataUsage(feed.devIdno, bytesPerSecond);
           hasUpdate = true;
@@ -1130,7 +1135,10 @@ export function FullScreenMonitor({
           </View>
           <View style={styles.topBarRight}>
             <TouchableOpacity
-              onPress={() => setShowControlPanel(true)}
+              onPress={() => {
+                setControlPanelKey(prev => prev + 1);
+                setShowControlPanel(true);
+              }}
               style={styles.settingsBtn}
             >
               <Settings size={16} color="#FFFFFF" />
@@ -1153,6 +1161,7 @@ export function FullScreenMonitor({
 
       {/* Video Control Panel Modal */}
       <VideoControlPanel
+        key={controlPanelKey}
         visible={showControlPanel}
         onClose={() => setShowControlPanel(false)}
         devIdno={currentDevIdno}
