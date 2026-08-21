@@ -3,9 +3,11 @@ import { Globe, CodeXml } from 'lucide-react-native';
 import { useSSO, useUser } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import * as AuthSession from 'expo-auth-session';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { colors, borderRadius, spacing, typography } from '@/constants/theme';
 import { useAuthStore } from '@/store/authStore';
+
+const isWeb = Platform.OS === 'web';
 
 interface SocialButtonProps {
   provider: 'Google' | 'Github';
@@ -38,9 +40,39 @@ export function SocialButton({ provider, onPress, disabled }: SocialButtonProps)
 
 type Strategy = 'oauth_google' | 'oauth_github';
 
+// 巢狀 SocialButton 元件（需要 Clerk）
+function ClerkSocialButton({ provider, onPress, disabled }: SocialButtonProps) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [
+        styles.button,
+        pressed && { opacity: 0.8, transform: [{ scale: 0.98 }] },
+        disabled && { opacity: 0.5 },
+      ]}
+    >
+      {provider === 'Google' ? (
+        <Globe size={20} color={colors.textPrimary} />
+      ) : (
+        <CodeXml size={20} color={colors.textPrimary} />
+      )}
+      <Text style={styles.text}>
+        Continue with {provider === 'Google' ? 'Google' : 'Github'}
+      </Text>
+    </Pressable>
+  );
+}
+
 export function SocialButtons() {
   const router = useRouter();
   const { setUser, setIsAuthenticated, setRole, isLoggingOut } = useAuthStore();
+
+  // Web 環境下 ClerkProvider 未初始化，直接返回空（或顯示提示）
+  if (isWeb) {
+    return null;
+  }
+
   const { user, isLoaded } = useUser();
   const { startSSOFlow } = useSSO();
 
@@ -116,9 +148,9 @@ export function SocialButtons() {
         <Text style={styles.dividerText}>OR</Text>
         <View style={styles.dividerLine} />
       </View>
-      <SocialButton provider="Google" onPress={handleGoogle} />
+      <ClerkSocialButton provider="Google" onPress={handleGoogle} />
       <View style={styles.buttonSpacer} />
-      <SocialButton provider="Github" onPress={handleGithub} />
+      <ClerkSocialButton provider="Github" onPress={handleGithub} />
     </View>
   );
 }

@@ -290,6 +290,30 @@ export function QuadCameraMonitor({
   slotsRef.current = slots;
   streamingStartTimeRef.current = streamingStartTime;
 
+  // 當 Modal 關閉時，做最終結算
+  useEffect(() => {
+    if (visible) return;
+
+    // 計算每個通道的最終使用時長並結算
+    Object.entries(streamingStartTimeRef.current).forEach(([slotId, startTime]) => {
+      const duration = Math.floor((Date.now() - startTime) / 1000);
+      if (duration > 0) {
+        const slot = slotsRef.current.find(s => s.id === slotId);
+        if (slot?.devIdno) {
+          videoStreamStore.addDuration(slot.devIdno, duration);
+          videoStreamStore.stopStreaming();
+          console.log(`[QuadCameraMonitor] 結算頻道 ${slotId}: 使用時長 ${duration} 秒`);
+        }
+      }
+    });
+
+    // 重置所有狀態
+    setStreamingStartTime({});
+    setRemainingTimes({});
+    setSlotOverLimits({});
+    setSlotDataUsage({});
+  }, [visible]);
+
   // 計時器：每秒更新一次剩餘時間並檢查超限
   useEffect(() => {
     if (!visible) return;
@@ -315,6 +339,14 @@ export function QuadCameraMonitor({
           newRemaining[slotId] = 0;
           newOverLimits[slotId] = { isOver: true, reason: canContinue.reason };
           hasChanges = true;
+
+          // 計算最終使用時長並結算
+          const duration = Math.floor((now - startTime) / 1000);
+          if (duration > 0 && devIdno) {
+            videoStreamStore.addDuration(devIdno, duration);
+            videoStreamStore.stopStreaming();
+            console.log(`[QuadCameraMonitor] 計時器到期，結算頻道 ${slotId}: ${duration} 秒`);
+          }
 
           // 清除該 slot 的 URL 以斷開播放
           setSlots(prev => {

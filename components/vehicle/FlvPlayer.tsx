@@ -235,20 +235,20 @@ function FlvPlayerComponent({
         hasAudio: true,
         hasVideo: true,
         cors: true,
-        // 改善串流緩衝設定
+        // 緩衝優化：增大緩衝區提升穩定性
         enableStashBuffer: true,
-        stashInitialSize: 256 * 1024, // 256KB 初始緩衝（預設 128KB）
+        stashInitialSize: 512 * 1024, // 512KB 初始緩衝（提升流暢度）
         autoCleanupSourceBuffer: true,
-        autoCleanupMaxBackwardDuration: 3,  // 超過 3 秒往後快取就清理（減少記憶體）
-        autoCleanupMinBackwardDuration: 1,   // 最小保留 1 秒往後快取
-        // 降低延遲設定
-        lazyLoad: false,                   // 禁用懶加載，保持串流連續
+        autoCleanupMaxBackwardDuration: 5,  // 超過 5 秒往後快取就清理
+        autoCleanupMinBackwardDuration: 2,   // 最小保留 2 秒往後快取
+        // 禁用懶加載，保持串流連續
+        lazyLoad: false,
         lazyLoadMaxDuration: 0,
         lazyLoadRecoverDuration: 0,
-        // 重連設定
-        liveBufferLatencyChasing: true,    // 直播串流追逐模式：即時追上進度
-        liveBufferLatencyMaxLatency: 2.0,  // 最大延遲 2 秒（可根據網路調整）
-        liveBufferLatencyMinRemain: 0.5,   // 最小保留 0.5 秒
+        // 直播串流：增大緩衝提升穩定性
+        liveBufferLatencyChasing: true,    // 直播串流追逐模式
+        liveBufferLatencyMaxLatency: 3.0,  // 最大延遲 3 秒（更穩定）
+        liveBufferLatencyMinRemain: 1.0,   // 最小保留 1 秒
       });
 
       player.attachMediaElement(videoRef.current);

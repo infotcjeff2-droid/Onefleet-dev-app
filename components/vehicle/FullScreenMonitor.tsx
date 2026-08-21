@@ -299,9 +299,75 @@ export function FullScreenMonitor({
   // 修改為使用 Set 來追蹤選中的通道索引
   const [selectedChannels, setSelectedChannels] = useState<Set<number>>(new Set());
 
+  // 全螢幕視頻 Modal 狀態
+  const [fullscreenVideoModal, setFullscreenVideoModal] = useState<{
+    visible: boolean;
+    feed: CameraFeedItem | null;
+  }>({ visible: false, feed: null });
+
+  // 全螢幕按鈕點擊處理
+  const handleFullscreenPress = useCallback((feed: CameraFeedItem) => {
+    setFullscreenVideoModal({ visible: true, feed });
+  }, []);
+
   // 使用 ref 保存最新值以避免閉包問題
   const streamingStartTimeRef = useRef(streamingStartTime);
   streamingStartTimeRef.current = streamingStartTime;
+
+  // 設備的總通道數（從設備狀態獲取，默認為 4）
+  const deviceChannelCount = gpsData?.channelCount || 4;
+
+  // 根據設備通道數生成默認的 cameraFeeds
+  const defaultCameraFeeds: CameraFeedItem[] = Array.from({ length: deviceChannelCount }, (_, index) => ({
+    id: `${currentDevIdno}-ch${index}`,
+    devIdno: currentDevIdno,
+    channel: index,
+    plateNumber: currentPlateNumber || currentDevIdno,
+    vehicleName: getChannelLabel(currentDevIdno, index),
+  }));
+
+  // 使用傳入的 cameraFeeds 或默認配置
+  const allFeeds = cameraFeeds && cameraFeeds.length > 0 ? cameraFeeds : defaultCameraFeeds;
+
+  // 當 Modal 打開時，重置 session 使用量
+  useEffect(() => {
+    if (!visible) return;
+
+    // 重置所有設備的 sessionBytes
+    allFeeds.forEach((feed) => {
+      if (feed.devIdno) {
+        videoStreamStore.resetSessionUsage(feed.devIdno);
+      }
+    });
+  }, [visible]);
+
+  // 當 Modal 關閉時，做最終結算
+  useEffect(() => {
+    if (visible) return;
+
+    // 計算每個通道的最終使用時長並結算
+    Object.entries(streamingStartTimeRef.current).forEach(([feedId, startTime]) => {
+      const duration = Math.floor((Date.now() - startTime) / 1000);
+      if (duration > 0) {
+        // 找到對應的 feed 以獲取 devIdno
+        const feed = allFeeds.find(f => f.id === feedId);
+        if (feed?.devIdno) {
+          videoStreamStore.addDuration(feed.devIdno, duration);
+          videoStreamStore.stopStreaming();
+          console.log(`[FullScreenMonitor] 結算頻道 ${feedId}: 使用時長 ${duration} 秒`);
+        }
+      }
+    });
+
+    // 重置所有播放狀態
+    setIsPlaybackPaused(false);
+    setHasSessionExpired(false);
+    setSelectedChannels(new Set()); // 重置通道選擇
+    setStreamingStartTime({});
+    setRemainingTimes({});
+    setSlotOverLimits({});
+    setSlotDataUsage({});
+  }, [visible]);
 
   // 計時器：每秒檢查一次超限
   useEffect(() => {
@@ -317,11 +383,11 @@ export function FullScreenMonitor({
       Object.entries(currentStartTimes).forEach(([feedId, startTime]) => {
         const elapsedSeconds = Math.floor((now - startTime) / 1000);
         const remaining = MAX_STREAMING_DURATION - elapsedSeconds;
-        const canContinue = videoStreamStore.canContinueStreaming(currentDevIdno);
 
-        if (remaining <= 0 || !canContinue.canContinue) {
+        if (remaining <= 0) {
+          // 只有計時器倒數到 0 才標記為過期
           newRemaining[feedId] = 0;
-          newOverLimits[feedId] = { isOver: true, reason: canContinue.reason };
+          newOverLimits[feedId] = { isOver: true, reason: '播放時間已達上限' };
           anyExpired = true;
         } else {
           newRemaining[feedId] = remaining;
@@ -334,40 +400,33 @@ export function FullScreenMonitor({
         setSlotOverLimits(newOverLimits);
       }
 
-      // 如果有任何計時器過期，設置 hasSessionExpired
+      // 如果有任何計時器過期，設置 hasSessionExpired 並停止播放
       if (anyExpired && !hasSessionExpired) {
         setHasSessionExpired(true);
+        setIsPlaybackPaused(true);
+        
+        // 清空計時器狀態（停止倒數）
+        setStreamingStartTime({});
+        setRemainingTimes({});
+        
+        // 停止所有播放並做最終結算
+        Object.entries(currentStartTimes).forEach(([feedId, startTime]) => {
+          const duration = Math.floor((now - startTime) / 1000);
+          if (duration > 0) {
+            const feed = allFeeds.find(f => f.id === feedId);
+            if (feed?.devIdno) {
+              videoStreamStore.addDuration(feed.devIdno, duration);
+              videoStreamStore.stopStreaming();
+              console.log(`[FullScreenMonitor] 計時器到期，結算頻道 ${feedId}: ${duration} 秒`);
+            }
+          }
+        });
       }
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [visible, currentDevIdno, videoStreamStore, hasSessionExpired]);
+  }, [visible, currentDevIdno, videoStreamStore, hasSessionExpired, allFeeds]);
 
-  // 設備的總通道數（從設備狀態獲取，默認為 4）
-  const deviceChannelCount = gpsData?.channelCount || 4;
-  
-  // 用戶選擇要顯示的通道數（預設為 0，表示未選擇）
-  const [visibleChannelCount, setVisibleChannelCount] = useState(0);
-
-  // 當設備通道數變化時，更新 visibleChannelCount
-  useEffect(() => {
-    if (deviceChannelCount > 0 && visibleChannelCount > deviceChannelCount) {
-      setVisibleChannelCount(deviceChannelCount);
-    }
-  }, [deviceChannelCount, visibleChannelCount]);
-
-  // 根據設備通道數生成默認的 cameraFeeds
-  const defaultCameraFeeds: CameraFeedItem[] = Array.from({ length: deviceChannelCount }, (_, index) => ({
-    id: `${currentDevIdno}-ch${index}`,
-    devIdno: currentDevIdno,
-    channel: index,
-    plateNumber: currentPlateNumber || currentDevIdno,
-    vehicleName: getChannelLabel(currentDevIdno, index),
-  }));
-
-  // 使用傳入的 cameraFeeds 或默認配置
-  const allFeeds = cameraFeeds && cameraFeeds.length > 0 ? cameraFeeds : defaultCameraFeeds;
-  
   // 根據 selectedChannels 過濾要顯示的頻道
   const displayFeeds = allFeeds.filter((_, index) => selectedChannels.has(index));
 
@@ -607,7 +666,6 @@ export function FullScreenMonitor({
       setRemainingTimes({});
       setSlotOverLimits({});
       setSlotDataUsage({});
-      setVisibleChannelCount(0); // 重置為未選擇
       // 重新獲取 GPS 數據
       if (isConnected) {
         fetchGps();
@@ -653,7 +711,12 @@ export function FullScreenMonitor({
     const renderResumeButton = () => (
       <View style={styles.pauseOverlay}>
         <View style={styles.pauseOverlayContent}>
-          <Text style={styles.pauseOverlayText}>實時監控已暫停</Text>
+          <Text style={styles.pauseOverlayText}>
+            {hasSessionExpired ? '播放時間已結束' : '實時監控已暫停'}
+          </Text>
+          <Text style={styles.pauseOverlaySubText}>
+            {hasSessionExpired ? '請按「恢復實時監控」繼續觀看' : '請按「恢復實時監控」繼續觀看'}
+          </Text>
           <TouchableOpacity
             style={styles.resumeBtn}
             onPress={() => {
@@ -695,9 +758,10 @@ export function FullScreenMonitor({
           isOverLimit={slotOverLimits[feed.id]?.isOver ?? false}
           limitWarning={slotOverLimits[feed.id]?.reason}
           onOverLimitReset={() => handleOverLimitReset(feed)}
-          isPaused={isPlaybackPaused}
+          isPaused={isPlaybackPaused || hasSessionExpired}
+          onFullscreen={handleFullscreenPress}
         />
-        {isPlaybackPaused && renderResumeButton()}
+        {(isPlaybackPaused || hasSessionExpired) && renderResumeButton()}
       </View>
     );
   };
@@ -708,15 +772,6 @@ export function FullScreenMonitor({
       <View style={styles.mapHeader}>
         <View style={styles.mapHeaderLeft}>
           <Text style={styles.mapHeaderLabel}>GPS 位置</Text>
-        </View>
-        <View style={styles.mapHeaderRight}>
-          <TouchableOpacity onPress={fetchGps} style={styles.refreshBtn} disabled={isLoading}>
-            <RefreshCw
-              size={12}
-              color={isLoading ? colors.textTertiary : defaultColors.primary}
-              style={isLoading ? { transform: [{ rotate: '360deg' }] } : {}}
-            />
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -874,7 +929,7 @@ export function FullScreenMonitor({
               }}
             >
               <Text style={styles.autoStopTimerLabel}>自動停止計時器</Text>
-              <Text style={styles.sessionExpiredText}>Session Expired</Text>
+              <Text style={styles.sessionExpiredText}>已過期</Text>
             </TouchableOpacity>
           );
         }
@@ -1103,6 +1158,53 @@ export function FullScreenMonitor({
         devIdno={currentDevIdno}
         plateNumber={currentPlateNumber}
       />
+
+      {/* 全螢幕視頻 Modal */}
+      <Modal
+        visible={fullscreenVideoModal.visible}
+        animationType="fade"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setFullscreenVideoModal({ visible: false, feed: null })}
+      >
+        <View style={fullscreenVideoStyles.modalContainer}>
+          {/* Header */}
+          <View style={fullscreenVideoStyles.topBar}>
+            <TouchableOpacity
+              style={fullscreenVideoStyles.backBtn}
+              onPress={() => setFullscreenVideoModal({ visible: false, feed: null })}
+            >
+              <ChevronDown size={20} color="#FFFFFF" />
+              <Text style={fullscreenVideoStyles.backText}>關閉</Text>
+            </TouchableOpacity>
+            <View style={fullscreenVideoStyles.topBarCenter}>
+              {fullscreenVideoModal.feed && (
+                <>
+                  <View style={fullscreenVideoStyles.liveBadge}>
+                    <View style={fullscreenVideoStyles.liveDot} />
+                    <Text style={fullscreenVideoStyles.liveBadgeText}>LIVE</Text>
+                  </View>
+                  <Text style={fullscreenVideoStyles.topBarTitle}>
+                    {fullscreenVideoModal.feed.vehicleName || fullscreenVideoModal.feed.devIdno}
+                  </Text>
+                </>
+              )}
+            </View>
+            <View style={{ width: 80 }} />
+          </View>
+
+          {/* Fullscreen Video */}
+          <View style={fullscreenVideoStyles.videoContainer}>
+            {fullscreenVideoModal.feed && (
+              <CameraFeed
+                item={fullscreenVideoModal.feed}
+                quality={streamQuality}
+                showQualityControl
+                onQualityChange={setStreamQuality}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
     </Modal>
   );
 }
@@ -1439,6 +1541,12 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '600',
   },
+  pauseOverlaySubText: {
+    fontSize: typography.fontSize.sm,
+    color: 'rgba(255, 255, 255, 0.8)',
+    textAlign: 'center',
+    marginTop: spacing.xs,
+  },
   resumeBtn: {
     backgroundColor: '#3B82F6',
     paddingHorizontal: spacing.lg,
@@ -1551,5 +1659,72 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     color: defaultColors.primary,
     fontWeight: '700',
+  },
+});
+
+// 全螢幕視頻 Modal 樣式
+const fullscreenVideoStyles = StyleSheet.create({
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#0D0F14',
+  },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    backgroundColor: '#161A23',
+  },
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+    paddingRight: spacing.sm,
+    width: 80,
+  },
+  backText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  topBarCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flex: 1,
+    justifyContent: 'center',
+  },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#22C55E',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#FFFFFF',
+  },
+  liveBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+  },
+  topBarTitle: {
+    fontSize: typography.fontSize.lg,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
+  },
+  videoContainer: {
+    flex: 1,
+    backgroundColor: '#0f0f1a',
   },
 });

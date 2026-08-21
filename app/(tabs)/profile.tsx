@@ -23,6 +23,9 @@ import { User as AppUser } from '@/types';
 
 const isWeb = Platform.OS === 'web';
 
+// 用於追蹤 Root Layout 是否已完成 mount
+let layoutReady = false;
+
 type ManagedUser = { id: string; name: string; email: string; phone?: string; role: string; password?: string; avatar?: string; companyId?: string };
 
 function getInitials(name?: string) {
@@ -1288,6 +1291,15 @@ export default function ProfileScreen() {
   const loadDrivers = useDriverStore((state) => state.loadDrivers);
   const { locale, t, setLocale } = useTranslation();
   const inventoryStore = useInventoryStore();
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // 標記 Root Layout 已完成 mount，解決 expo-router 導航時序問題
+  useEffect(() => {
+    layoutReady = true;
+    return () => {
+      layoutReady = false;
+    };
+  }, []);
   const trashItems = useTrashStore((state) => state.items);
   const loadTrash = useTrashStore((state) => state.loadTrash);
   const trashCount = trashItems.filter((it) => it.expiresAt > Date.now()).length;
@@ -1297,7 +1309,6 @@ export default function ProfileScreen() {
   const [accountEditVisible, setAccountEditVisible] = useState(false);
   const [accountInfoVisible, setAccountInfoVisible] = useState(false);
   const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
   const [isLoadingDummyData, setIsLoadingDummyData] = useState(false);
 
   const isAdmin = role === 'admin';
@@ -1362,7 +1373,14 @@ export default function ProfileScreen() {
         // 即使 logout 失敗也強制跳轉
       }
       // 直接跳到 login，避開 index.tsx 的 checkAuth 時序問題
-      router.replace('/(auth)/login');
+      // 延遲執行導航，確保 Root Layout 完成 mount
+      const navigateToLogin = () => router.replace('/(auth)/login');
+      if (typeof window !== 'undefined' && layoutReady) {
+        // Web 環境下使用 setTimeout 確保 router 準備就緒
+        setTimeout(navigateToLogin, 50);
+      } else {
+        navigateToLogin();
+      }
     }
   };
 

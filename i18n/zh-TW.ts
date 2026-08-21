@@ -836,7 +836,7 @@ export const zhTW = {
     resetSessionUsage: '重置本次',
     stopAllPlayback: '停止所有播放',
     resumePlayback: '恢復播放',
-    sessionExpired: 'Session Expired',
+    sessionExpired: '已過期',
     autoStopTimer: '自動停止計時器',
   },
 };

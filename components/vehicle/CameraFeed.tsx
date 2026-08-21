@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, memo, useCallback } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, Pressable, Platform } from 'react-native';
-import { WifiOff, Video, AlertCircle } from 'lucide-react-native';
+import { WifiOff, Video, AlertCircle, Maximize2 } from 'lucide-react-native';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { gps808Api, getWebProxyBaseUrlSync } from '@/utils/gps808Api';
 import { useGps808Store } from '@/store/gps808Store';
@@ -57,6 +57,8 @@ interface CameraFeedProps {
   onOverLimitReset?: () => void;
   /** 是否已暫停播放 */
   isPaused?: boolean;
+  /** 全螢幕按鈕點擊回調 */
+  onFullscreen?: (item: CameraFeedItem) => void;
 }
 
 type FeedState = 'loading' | 'streaming' | 'streaming-hls' | 'streaming-pending' | 'device-offline' | 'offline' | 'error' | 'no-device';
@@ -75,6 +77,7 @@ function CameraFeedComponent({
   limitWarning,
   onOverLimitReset,
   isPaused = false,
+  onFullscreen,
 }: CameraFeedProps) {
   const { plateNumber, vehicleName, streamUrl, devIdno, channel = 0 } = item;
   const [feedState, setFeedState] = useState<FeedState>(
@@ -84,6 +87,7 @@ function CameraFeedComponent({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isDeviceOnline, setIsDeviceOnline] = useState<boolean | null>(null);
   const [isMuted, setIsMuted] = useState(true); // 預設靜音
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const { isConnected, loadConfig } = useGps808Store();
   const videoStreamStore = useVideoStreamStore();
 
@@ -98,6 +102,15 @@ function CameraFeedComponent({
   // 顯示格式：車牌號 鏡頭類型
   const cameraType = getCameraTypeFromVehicleName(vehicleName);
   const displayLabel = cameraType ? `${plateNumber || devIdno} ${cameraType}` : (plateNumber || vehicleName || item.id);
+
+  // 全螢幕處理函數
+  const handleFullscreen = useCallback(() => {
+    if (!item) return;
+
+    // 直接回調給父組件處理全螢幕
+    // 父組件可以打開一個全螢幕的視頻播放視窗
+    onFullscreen?.(item);
+  }, [item, onFullscreen]);
 
   // 重試函式 - 提升到組件作用域以便在 JSX 中引用
   const resolveUrl = useCallback(async () => {
@@ -388,6 +401,16 @@ function CameraFeedComponent({
               </Text>
             </Pressable>
           )}
+          {/* 全螢幕按鈕 */}
+          {(feedState === 'streaming' || feedState === 'streaming-hls') && !isOverLimit && onFullscreen && (
+            <Pressable
+              style={styles.fullscreenBtn}
+              onPress={handleFullscreen}
+              hitSlop={4}
+            >
+              <Maximize2 size={12} color="#FFFFFF" />
+            </Pressable>
+          )}
         </View>
       </View>
 
@@ -479,6 +502,14 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '800',
     color: '#FFFFFF',
+  },
+  fullscreenBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(59, 130, 246, 0.8)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   videoArea: {
     flex: 1,

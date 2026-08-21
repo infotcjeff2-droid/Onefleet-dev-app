@@ -15,8 +15,8 @@
  *   - 啟用 liveSyncDurationCount 同步到直播邊緣
  *   - 網路錯誤時自動重連（最多 3 次）
  */
-import { useEffect, useRef, memo, useState } from 'react';
-import { View } from 'react-native';
+import { useEffect, useRef, memo, useState, useCallback } from 'react';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 
 export interface HlsVideoProps {
   url: string;
@@ -63,6 +63,33 @@ function HlsVideoComponent({
   /** 當前 URL（用於偵測變更） */
   const urlRef = useRef<string>('');
   const [isBuffering, setIsBuffering] = useState(false);
+  const [showControls, setShowControls] = useState(false);
+  const [isFullScreen, setIsFullScreen] = useState(false);
+
+  // 全螢幕切換
+  const toggleFullscreen = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    if (document.fullscreenElement) {
+      document.exitFullscreen?.();
+      setIsFullScreen(false);
+    } else {
+      container.requestFullscreen?.();
+      setIsFullScreen(true);
+    }
+  }, []);
+
+  // 監聽全螢幕變化
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullScreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
 
   // 載入影片 / 切換 URL
   useEffect(() => {
@@ -131,20 +158,22 @@ function HlsVideoComponent({
           }
           const hls = new Hls({
             enableWorker: true,
-            // 緩衝優化：增大緩衝區減少重新緩衝次數
-            maxBufferLength: 30,        // 最多緩衝 30 秒（預設 30，設大一點讓直播更穩定）
-            maxMaxBufferLength: 120,    // 最大緩衝 120 秒（預設 60）
-            maxBufferSize: 50 * 1000 * 1000, // 最大緩衝 50MB
-            maxBufferHole: 0.5,        // 緩衝缺口閾值（預設 0.5）
-            // 直播優化：同步到直播邊緣，保持低延遲
-            liveSyncDurationCount: 3,   // 保持落後直播 3 個分段的延遲
-            liveMaxLatencyDurationCount: 8, // 最大落後 8 個分段
+            // 緩衝優化：增大緩衝區提升穩定性
+            maxBufferLength: 45,        // 最多緩衝 45 秒（提升流暢度）
+            maxMaxBufferLength: 180,    // 最大緩衝 180 秒
+            maxBufferSize: 80 * 1000 * 1000, // 最大緩衝 80MB
+            maxBufferHole: 0.8,        // 緩衝缺口閾值（容忍更大缺口）
+            // 直播優化：同步到直播邊緣
+            liveSyncDurationCount: 5,   // 保持落後直播 5 個分段的延遲（更穩定）
+            liveMaxLatencyDurationCount: 10, // 最大落後 10 個分段
             liveDurationInfinity: true, // 直播串流不應有 duration
             // 降低延遲
-            lowLatencyMode: false,      // 關閉低延遲模式（可能增加卡頓）
+            lowLatencyMode: false,      // 關閉低延遲模式以提升穩定性
             // 網路錯誤容忍度
-            fragLoadingMaxRetry: 3,    // 每個分段最多重試 3 次
-            manifestLoadingMaxRetry: 3, // manifest 載入最多重試 3 次
+            fragLoadingMaxRetry: 5,    // 每個分段最多重試 5 次
+            fragLoadingTimeOut: 20000,  // 分段載入超時 20 秒
+            manifestLoadingMaxRetry: 5, // manifest 載入最多重試 5 次
+            manifestLoadingTimeOut: 10000, // manifest 載入超時 10 秒
           });
           hlsInstanceRef.current = hls;
           hls.loadSource(url);
@@ -274,6 +303,8 @@ function HlsVideoComponent({
   return (
     <View
       ref={setContainerRef as any}
+      onMouseEnter={() => setShowControls(true)}
+      onMouseLeave={() => setShowControls(false)}
       // 為 RN Web 提供備用 style
       style={{
         position: 'absolute' as any,
@@ -304,8 +335,52 @@ function HlsVideoComponent({
           backgroundColor: '#000',
         } as any}
       />
+
+      {/* 全螢幕按鈕覆蓋層 */}
+      {showControls && (
+        <View style={styles.controlsOverlay}>
+          <View style={styles.topControls}>
+            <Pressable
+              style={styles.fullscreenBtn}
+              onPress={toggleFullscreen}
+            >
+              {isFullScreen ? (
+                <Minimize2 size={18} color="#FFFFFF" />
+              ) : (
+                <Maximize2 size={18} color="#FFFFFF" />
+              )}
+            </Pressable>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  controlsOverlay: {
+    position: 'absolute' as const,
+    top: 0 as const,
+    left: 0 as const,
+    right: 0 as const,
+    bottom: 0 as const,
+    zIndex: 10,
+    pointerEvents: 'box-none' as const,
+  },
+  topControls: {
+    flexDirection: 'row' as const,
+    justifyContent: 'flex-end' as const,
+    paddingHorizontal: 8,
+    paddingTop: 8,
+  },
+  fullscreenBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
 
 export const HlsVideo = memo(HlsVideoComponent);
