@@ -1106,11 +1106,11 @@ export default function DeliveryDetailScreen() {
       return;
     }
 
-    // 拍攝相片
+    // 拍攝相片（使用較低 quality 以減少初始大小，後續會再次壓縮）
     const photoResult = await ImagePicker.launchCameraAsync({
       mediaTypes: ['images'],
       allowsEditing: false,
-      quality: 0.8,
+      quality: 0.6,
     });
 
     await processPickupPhoto(photoResult);
@@ -1454,11 +1454,11 @@ export default function DeliveryDetailScreen() {
       return;
     }
 
-    // 拍攝相片
+    // 拍攝相片（使用較低 quality 以減少初始大小，後續會再次壓縮）
     const photoResult = await ImagePicker.launchCameraAsync({
       mediaTypes: ['images'],
       allowsEditing: false,
-      quality: 0.8,
+      quality: 0.6,
     });
 
     await processDeliveryPhoto(photoResult);
@@ -1684,7 +1684,7 @@ export default function DeliveryDetailScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsEditing: false,
-        quality: 0.8,
+        quality: 0.6,
         selectionLimit: 5,
       });
       if (!result.canceled && result.assets.length > 0) {

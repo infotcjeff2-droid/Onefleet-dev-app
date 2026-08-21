@@ -7,6 +7,7 @@ import { uploadDeliveryPhoto } from '@/utils/supabaseStorage';
 import { upsertDeliveryOrder, updateDeliveryStatus, assignDriverToDelivery } from '@/utils/deliveryOrderSync';
 import { pushFleetSnapshot, updateDeliveryOrder as updateDeliveryOrderInSupabase } from '@/utils/fleetSync';
 import { useAuthStore } from './authStore';
+import { compressImageCrossPlatform, savePendingPhotoToLocal, updatePendingPhotoStatus } from '@/utils/imageProcessor';
 
 const DELIVERY_FLOW: DeliveryStatus[] = ['pending', 'assigned', 'in_transit', 'delivered', 'signed'];
 
@@ -688,31 +689,89 @@ export const useDeliveryStore = create<DeliveryState>((set, get) => ({
   },
 
   addPhoto: async (deliveryId, photoUri, isPickupPhoto = false, locationInfo) => {
+    const photoId = `photo-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
     // 如果是 blob URL 或 data URL，必須上傳到 Supabase Storage
     if (typeof window !== 'undefined' && (photoUri.startsWith('blob:') || photoUri.startsWith('data:'))) {
       try {
-        const finalUri = await uploadDeliveryPhoto(photoUri, deliveryId);
-        const newPhoto: DeliveryPhoto = {
-          id: `photo-${Date.now()}`,
-          uri: finalUri,
+        // 1. 先保存本地預覽（base64），讓用戶立即看到圖片
+        let localPreviewUri = photoUri;
+        if (typeof window !== 'undefined') {
+          const savedPhotoId = await savePendingPhotoToLocal(deliveryId, photoUri, isPickupPhoto);
+          if (savedPhotoId) {
+            // 使用本地 base64 URI 立即顯示
+            const pendingPhotos = JSON.parse(localStorage.getItem(`pending_delivery_photos_${deliveryId}`) || '[]');
+            const pendingPhoto = pendingPhotos.find((p: any) => p.id === savedPhotoId);
+            if (pendingPhoto) {
+              localPreviewUri = pendingPhoto.uri;
+            }
+          }
+        }
+        
+        // 2. 先在本地 store 添加照片（使用本地預覽 URI）
+        const previewPhoto: DeliveryPhoto = {
+          id: photoId,
+          uri: localPreviewUri,
           takenAt: new Date().toISOString(),
-          // 取貨相片時帶入位置資訊
           ...(isPickupPhoto && locationInfo && {
             locationAddress: locationInfo.address,
             locationLatitude: locationInfo.latitude,
             locationLongitude: locationInfo.longitude,
           }),
         };
-        const updated = get().deliveries.map((delivery) =>
+        
+        let updated = get().deliveries.map((delivery) =>
           delivery.id === deliveryId
             ? isPickupPhoto
-              ? { ...delivery, pickupPhotos: [...(delivery.pickupPhotos ?? []), newPhoto] }
-              : { ...delivery, photos: [...(delivery.photos ?? []), newPhoto] }
+              ? { ...delivery, pickupPhotos: [...(delivery.pickupPhotos ?? []), previewPhoto] }
+              : { ...delivery, photos: [...(delivery.photos ?? []), previewPhoto] }
             : delivery
         );
         set({ deliveries: updated });
         await persistDeliveries(updated);
         pushDeliveriesInBackground(updated, (message) => set({ syncError: message }));
+        
+        // 3. 在背景進行圖片壓縮
+        let compressedUri = photoUri;
+        try {
+          console.log('[deliveryStore] Starting image compression...');
+          compressedUri = await compressImageCrossPlatform(photoUri, 1280, 720, 0.7);
+          console.log('[deliveryStore] Image compression completed');
+        } catch (compressError) {
+          console.warn('[deliveryStore] Image compression failed, using original:', compressError);
+        }
+        
+        // 4. 上傳壓縮後的圖片
+        console.log('[deliveryStore] Starting upload...');
+        const finalUri = await uploadDeliveryPhoto(compressedUri, deliveryId);
+        console.log('[deliveryStore] Upload completed:', finalUri);
+        
+        // 5. 更新本地狀態為上傳後的 URI
+        updated = get().deliveries.map((delivery) =>
+          delivery.id === deliveryId
+            ? isPickupPhoto
+              ? {
+                  ...delivery,
+                  pickupPhotos: (delivery.pickupPhotos ?? []).map((p) =>
+                    p.id === photoId ? { ...p, uri: finalUri } : p
+                  ),
+                }
+              : {
+                  ...delivery,
+                  photos: (delivery.photos ?? []).map((p) =>
+                    p.id === photoId ? { ...p, uri: finalUri } : p
+                  ),
+                }
+            : delivery
+        );
+        set({ deliveries: updated });
+        await persistDeliveries(updated);
+        pushDeliveriesInBackground(updated, (message) => set({ syncError: message }));
+        
+        // 6. 更新本地預覽狀態為完成
+        if (typeof window !== 'undefined') {
+          updatePendingPhotoStatus(deliveryId, photoId, 'completed', finalUri);
+        }
 
         // 如果是取貨相片，同步到 delivery_orders 表
         if (isPickupPhoto && hasSupabaseEnv) {
@@ -746,17 +805,41 @@ export const useDeliveryStore = create<DeliveryState>((set, get) => ({
         return; // 上傳成功，直接返回
       } catch (err) {
         console.error('Failed to upload photo to Supabase:', err);
+        
+        // 如果上傳失敗，仍保留本地 blob URL
+        const errorPhoto: DeliveryPhoto = {
+          id: photoId,
+          uri: photoUri,
+          takenAt: new Date().toISOString(),
+          ...(isPickupPhoto && locationInfo && {
+            locationAddress: locationInfo.address,
+            locationLatitude: locationInfo.latitude,
+            locationLongitude: locationInfo.longitude,
+          }),
+        };
+        
+        let updated = get().deliveries.map((delivery) =>
+          delivery.id === deliveryId
+            ? isPickupPhoto
+              ? { ...delivery, pickupPhotos: [...(delivery.pickupPhotos ?? []), errorPhoto] }
+              : { ...delivery, photos: [...(delivery.photos ?? []), errorPhoto] }
+            : delivery
+        );
+        set({ deliveries: updated });
+        await persistDeliveries(updated);
+        pushDeliveriesInBackground(updated, (message) => set({ syncError: message }));
+        
         Alert.alert(
           '上傳失敗',
-          `無法上傳圖片到雲端: ${err instanceof Error ? err.message : '未知錯誤'}\n\n請稍後重試。`
+          `無法上傳圖片到雲端: ${err instanceof Error ? err.message : '未知錯誤'}\n\n圖片已保存在本地，請稍後重試。`
         );
-        return; // 上傳失敗，不保存本地 blob URL
+        return;
       }
     }
 
     // 非 Web 平台或非 blob/data URL，直接保存本地 URI
     const newPhoto: DeliveryPhoto = {
-      id: `photo-${Date.now()}`,
+      id: photoId,
       uri: photoUri,
       takenAt: new Date().toISOString(),
       // 取貨相片時帶入位置資訊
@@ -819,6 +902,36 @@ export const useDeliveryStore = create<DeliveryState>((set, get) => ({
     set({ deliveries: updated });
     await persistDeliveries(updated);
     pushDeliveriesInBackground(updated, (message) => set({ syncError: message }));
+
+    // 如果是取貨相片，同步刪除到 delivery_orders 表
+    if (isPickupPhoto && hasSupabaseEnv) {
+      const updatedDelivery = updated.find((d) => d.id === deliveryId);
+      if (updatedDelivery) {
+        try {
+          await updateDeliveryOrderInSupabase(deliveryId, {
+            pickupPhotos: updatedDelivery.pickupPhotos,
+          });
+          console.log('[deliveryStore] Synced pickup photos deletion to delivery_orders');
+        } catch (err) {
+          console.error('[deliveryStore] Failed to sync pickup photos deletion:', err);
+        }
+      }
+    }
+
+    // 如果是送達相片，同步刪除到 delivery_orders 表
+    if (!isPickupPhoto && hasSupabaseEnv) {
+      const updatedDelivery = updated.find((d) => d.id === deliveryId);
+      if (updatedDelivery) {
+        try {
+          await updateDeliveryOrderInSupabase(deliveryId, {
+            photos: updatedDelivery.photos,
+          });
+          console.log('[deliveryStore] Synced delivery photos deletion to delivery_orders');
+        } catch (err) {
+          console.error('[deliveryStore] Failed to sync delivery photos deletion:', err);
+        }
+      }
+    }
   },
 
   recordPickupTime: async (deliveryId) => {
